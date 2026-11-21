@@ -42,13 +42,15 @@ $ErrorActionPreference = 'Stop'
 # ---------------------------------------------------------------- 路径
 
 $repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$srcDir = if (Test-Path (Join-Path $repoRoot 'src')) { Join-Path $repoRoot 'src' } else { $repoRoot }
+$srcDir   = if (Test-Path (Join-Path $repoRoot 'src')) { Join-Path $repoRoot 'src' } else { $repoRoot }
+$resDir   = $repoRoot   # 资源与脚本始终在仓库根
 
-$csFile    = Join-Path $srcDir 'TrayProgram.cs'
-$psFile    = Join-Path $srcDir 'bing-wallpaper.ps1'
-$iconFile  = Join-Path $srcDir 'bing.ico'
-$iconBusy  = Join-Path $srcDir 'bing-busy.ico'
-$cfgFile   = Join-Path $srcDir 'config.json'
+# 单文件模式的源码位置（多文件模式下改用 $srcDir 下所有 .cs）
+$csFile    = if (Test-Path (Join-Path $repoRoot 'TrayProgram.cs')) { Join-Path $repoRoot 'TrayProgram.cs' } else { Join-Path $srcDir 'Program.cs' }
+$psFile    = Join-Path $resDir 'bing-wallpaper.ps1'
+$iconFile  = Join-Path $resDir 'bing.ico'
+$iconBusy  = Join-Path $resDir 'bing-busy.ico'
+$cfgFile   = Join-Path $resDir 'config.json'
 
 if (-not (Test-Path $csFile)) { throw "找不到源文件：$csFile" }
 if (-not (Test-Path $psFile)) { throw "找不到核心脚本：$psFile" }
@@ -109,9 +111,20 @@ $buildArgs = @(
     '/reference:System.Windows.Forms.dll'
     '/reference:System.Web.Extensions.dll'
     '/reference:Microsoft.VisualBasic.dll'
-    $csFile
 )
-if (Test-Path $cfgFile) { $buildArgs = $buildArgs[0..($buildArgs.Count - 2)] + @("/resource:$cfgFile,config.json", $csFile) }
+
+# 源码：优先用 src\ 下的多文件；没有则退回单文件 TrayProgram.cs
+$srcDir = Join-Path $repoRoot 'src'
+if (Test-Path $srcDir) {
+    $csFiles = @(Get-ChildItem $srcDir -Recurse -Filter '*.cs' | Sort-Object FullName | ForEach-Object { $_.FullName })
+    Write-Host ("源码：src\ 下 " + $csFiles.Count + " 个 .cs 文件") -ForegroundColor DarkGray
+} else {
+    $csFiles = @($csFile)
+    Write-Host '源码：单文件 TrayProgram.cs' -ForegroundColor DarkGray
+}
+
+$buildArgs += $csFiles
+if (Test-Path $cfgFile) { $buildArgs += @("/resource:$cfgFile,config.json") }
 
 Write-Host "编译中…" -ForegroundColor Cyan
 $log = & $csc $buildArgs 2>&1 | Out-String

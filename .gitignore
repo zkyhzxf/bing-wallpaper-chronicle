@@ -46,3 +46,5 @@ CON
 PRN
 AUX
 NUL
+TrayProgram.cs
+src/**/*.bak
