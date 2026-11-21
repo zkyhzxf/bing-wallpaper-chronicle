@@ -40,3 +40,9 @@ BingWallpaperLite.exe
 Thumbs.db
 desktop.ini
 .DS_Store
+
+# Windows 保留设备名误创建（读取会阻塞）
+CON
+PRN
+AUX
+NUL
