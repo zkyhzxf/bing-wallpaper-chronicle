@@ -892,6 +892,17 @@ function Exit-Run {
 # ---------------------------------------------------------------- 状态查询
 
 if ($Status) {
+    # 版本号从 exe 读，避免和 src/Program.cs 里的 AssemblyVersion 两处维护
+    $appVer = '0.0.0'
+    $exeForVer = Join-Path $Root 'BingWallpaperLite.exe'
+    if (Test-Path $exeForVer) {
+        try {
+            $fv = (Get-Item $exeForVer).VersionInfo.FileVersion
+            if ($fv) { $appVer = ($fv -replace '\.0$', '') }
+        } catch { }
+    }
+    if ($appVer -eq '0.0.0') { $appVer = '3.2.2' }   # exe 不在时的兜底
+
     $st = Read-State
     $cfgNow = $config
     $idxCount = 0
@@ -933,7 +944,7 @@ if ($Status) {
             ageDays  = $idxAgeDays
             minDate  = $ArchiveMinDate
         }
-        version = '3.2.0'
+        version = $appVer
     }
     $txt = $obj | ConvertTo-Json -Depth 5
     if ($Json) {
@@ -950,7 +961,7 @@ if ($Status) {
 $locked = $false
 
 
-    if ($Query -or $Search -or $KwFile) {
+    if ($PSBoundParameters.ContainsKey('Query') -or $PSBoundParameters.ContainsKey('Search') -or $KwFile) {
     # ---- 关键词搜索
         # 关键词来源：-FindFile（UTF-8 文件，最可靠）> -Find > -Search
         $kw = ''
@@ -962,7 +973,10 @@ $locked = $false
         } else {
             $kw = $Search.ToString().Trim()
         }
-        if (-not $kw) { $kw = '''' }
+        if (-not $kw) {
+            Write-Log '关键词为空' 'ERROR'
+            Exit-Run 1
+        }
         try {
             $hits = Search-Archive -Keywords $kw -Limit 30
         } catch {

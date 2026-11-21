@@ -1,4 +1,4 @@
-# 必应壁纸编年史 · 回归测试
+﻿# 必应壁纸编年史 · 回归测试
 # 用法：pwsh -File test.ps1
 # 设计原则：幂等、不碰桌面壁纸、不依赖网络（用本地索引与缓存）
 
@@ -114,6 +114,25 @@ Check '-Query 无结果返回 [] 且退出码 5' {
     $r = Run-Script @('-Query', 'zzzz不存在zzzz')
     if ($r.Code -ne 5) { return ('退出码 ' + $r.Code + '，应为 5') }
     if ($r.Output.Trim() -ne '[]') { return ('输出: ' + $r.Output.Trim()) }
+    return $true
+}
+
+Check '-Query 空关键词应报错（退出码 1，不换图）' {
+    $before = (Get-Content (Join-Path $Root 'state.json') -Raw -Encoding UTF8 | ConvertFrom-Json).date
+    $r = Run-Script @('-Query', '')
+    $after = (Get-Content (Join-Path $Root 'state.json') -Raw -Encoding UTF8 | ConvertFrom-Json).date
+    if ($r.Code -ne 1) { return ('退出码 ' + $r.Code + '，应为 1') }
+    if ($before -ne $after) { return ('不该换图，state 从 ' + $before + ' 变成 ' + $after) }
+    return $true
+}
+
+Check '-Status -Json 的 version 与 exe 一致' {
+    $r = Run-Script @('-Status', '-Json')
+    $j = $r.Output | ConvertFrom-Json
+    $exe = Get-Item (Join-Path $Root 'BingWallpaperLite.exe') -ErrorAction SilentlyContinue
+    if (-not $exe) { return 'exe 不存在，跳过' }
+    $fv = $exe.VersionInfo.FileVersion -replace '\.0$', ''
+    if ($j.version -ne $fv) { return ('脚本 ' + $j.version + ' vs exe ' + $fv) }
     return $true
 }
 

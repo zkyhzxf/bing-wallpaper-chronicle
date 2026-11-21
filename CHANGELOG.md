@@ -6,6 +6,26 @@
 
 ---
 
+## [3.2.2] - 2026-11-21
+
+### 修复
+
+- **`-Query ""` 会意外换图** —— 空关键词本该报错，实际走了换图路径
+  - 根因：外层条件 `if ($Query -or ...)` 把空字符串挡掉了，走不到内层的 `throw`
+  - 修法：改用 `$PSBoundParameters.ContainsKey('Query')` 判断「传了没」而不是「是不是空」
+  - 顺带修掉 `if (-not $kw) { $kw = '''' }` —— 这行把空关键词变成了两个单引号字符，导致意外匹配到含 `'` 的版权信息
+  - 现在 `-Query ""` 返回退出码 1，不碰壁纸
+- **`-Status` 的 `version` 与 exe 版本不同步** —— 两处独立维护，改一处忘另一处
+  - 修法：脚本从 `BingWallpaperLite.exe` 的 `FileVersion` 读，exe 不在时才用兜底值
+
+### 新增
+
+- `test.ps1` 加 2 项断言（共 18 项）
+  - `-Query ""` 应返回退出码 1 且不换图
+  - `-Status -Json` 的 version 应与 exe 的 FileVersion 一致
+
+---
+
 ## [3.2.1] - 2026-11-21
 
 **验证 GitHub Actions 自动发布流程。无功能改动。**
