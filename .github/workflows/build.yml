@@ -46,7 +46,7 @@ jobs:
       - name: 编译
         shell: pwsh
         run: |
-          ./build.ps1 -Portable
+          ./build.ps1
           if (-not (Test-Path "./dist/BingWallpaperLite.exe")) {
             throw "编译产物不存在"
           }
@@ -96,7 +96,7 @@ jobs:
           path: |
             dist/BingWallpaperLite.exe
             dist/*-Setup.exe
-            dist/*-Portable.zip
+
           retention-days: 7
           if-no-files-found: warn
 
@@ -114,7 +114,7 @@ jobs:
 
       - name: 编译
         shell: pwsh
-        run: ./build.ps1 -Portable
+        run: ./build.ps1
 
       - name: 整理附件名
         shell: pwsh
@@ -124,9 +124,7 @@ jobs:
           Get-ChildItem dist -Filter "*-Setup.exe" | ForEach-Object {
             Copy-Item $_.FullName "dist/BingWallpaperChronicle-$tag-Setup.exe" -Force
           }
-          Get-ChildItem dist -Filter "*-Portable.zip" | ForEach-Object {
-            Copy-Item $_.FullName "dist/BingWallpaperChronicle-$tag-Portable.zip" -Force
-          }
+          # （绿色版已停发）
           Get-ChildItem dist | Select-Object Name, Length | Format-Table -AutoSize
 
       - name: 从 CHANGELOG 提取当前版本段落
@@ -162,4 +160,4 @@ jobs:
           body_path: release-body.md
           files: |
             dist/BingWallpaperChronicle-${{ github.ref_name }}-Setup.exe
-            dist/BingWallpaperChronicle-${{ github.ref_name }}-Portable.zip
+
