@@ -165,6 +165,35 @@ Check '-Date 无效日期退出码 5/7' {
     return $true
 }
 
+Check '-Date 下界前一天应被拒绝' {
+    $st = Get-Content (Join-Path $Root 'state.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    $before = $st.date
+    $r = Run-Script @('-Date', '20160304')
+    $after = (Get-Content (Join-Path $Root 'state.json') -Raw -Encoding UTF8 | ConvertFrom-Json).date
+    if ($r.Code -eq 0 -or $r.Code -eq 4) { return ('退出码 ' + $r.Code + '，越界不该成功') }
+    if ($before -ne $after) { return ('state 从 ' + $before + ' 变成 ' + $after) }
+    return $true
+}
+
+Check '-Status -Json 的 index.minDate 与代码下界一致' {
+    $r = Run-Script @('-Status', '-Json')
+    $j = $r.Output | ConvertFrom-Json
+    if (-not $j.index) { return '缺 index 键' }
+    if (-not $j.index.minDate) { return '缺 index.minDate 字段' }
+    if ($j.index.minDate -notmatch '^[0-9]{8}$') { return ('minDate 不是 8 位数字: ' + $j.index.minDate) }
+    if ($j.index.minDate -ne '20160305') { return ('minDate 为 ' + $j.index.minDate + '，与代码下界 20160305 不符') }
+    return $true
+}
+
+Check '-Date 位数不足应被拒绝' {
+    $st = Get-Content (Join-Path $Root 'state.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    $before = $st.date
+    $r = Run-Script @('-Date', '2016030')
+    $after = (Get-Content (Join-Path $Root 'state.json') -Raw -Encoding UTF8 | ConvertFrom-Json).date
+    if ($r.Code -eq 0 -or $r.Code -eq 4) { return ('退出码 ' + $r.Code + '，位数不足不该成功') }
+    if ($before -ne $after) { return ('state 从 ' + $before + ' 变成 ' + $after) }
+    return $true
+}
 Check '-Step -1 执行成功' {
     $r = Run-Script @('-Step', '-1')
     if ($r.Code -ne 0 -and $r.Code -ne 4) { return ('退出码 ' + $r.Code) }

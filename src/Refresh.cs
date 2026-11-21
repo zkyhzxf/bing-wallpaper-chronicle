@@ -505,7 +505,7 @@ namespace BingWallpaperLite
             ym.DropDownItems.Clear();
 
             DateTime today = DateTime.Today;
-            const int earliestYear = 2016;
+            int earliestYear = Program.ArchiveMinDateValue.Year;
             int lastYear = today.Year - 1;
             if (lastYear < earliestYear)
             {
@@ -524,7 +524,7 @@ namespace BingWallpaperLite
                 DateTime dt;
                 try { dt = new DateTime(y, today.Month, today.Day); }
                 catch { continue; }        // 2/29 这类不存在的日期
-                if (dt < new DateTime(2016, 3, 5)) { continue; }
+                if (dt < Program.ArchiveMinDateValue) { continue; }
 
                 string key = dt.ToString("yyyyMMdd");
                 string label = dt.ToString("yyyy-MM-dd");

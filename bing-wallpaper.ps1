@@ -319,6 +319,9 @@ function Save-ArchiveVia {
 function Get-ArchiveRecord {
     param([string]$Date)
     # 返回 @{ id=...; title=...; copyright=...; url=... } 或 $null
+    # 归一化：允许 2016-03-05 / 2016/03/05 等写法，非 8 位数字一律视为无效
+    $Date = ([string]$Date) -replace '[^0-9]', ''
+    if ($Date.Length -ne 8) { return $null }
     if ($Date -lt $ArchiveMinDate) { return $null }
 
     $y  = $Date.Substring(0, 4)
@@ -1323,6 +1326,9 @@ try {
 
     # ---- 指定日期
     if ($Date) {
+        # 归一化：允许 2016-03-05 / 2016/03/05 等写法，非 8 位数字一律视为格式错误
+        $Date = ([string]$Date) -replace '[^0-9]', ''
+        if ($Date.Length -ne 8) { Write-Log "日期格式错误（要 YYYYMMDD）：$Date" 'ERROR'; exit 1 }
         $dt = $null
         try { $dt = [datetime]::ParseExact($Date, 'yyyyMMdd', $null) } catch { }
         if (-not $dt) { Write-Log "日期格式错误（要 YYYYMMDD）：$Date" 'ERROR'; exit 1 }

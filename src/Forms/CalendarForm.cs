@@ -34,7 +34,7 @@ namespace BingWallpaperLite
             cal.MaxSelectionCount = 1;
             try
             {
-                cal.MinDate = new DateTime(2016, 3, 5);
+                cal.MinDate = Program.ArchiveMinDateValue;
                 cal.MaxDate = DateTime.Today;
                 cal.SetDate(DateTime.Today);
             }
