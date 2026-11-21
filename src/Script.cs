@@ -92,8 +92,12 @@ namespace BingWallpaperLite
                 psi.RedirectStandardError = true;
                 using (Process p = Process.Start(psi))
                 {
-                    p.StandardOutput.ReadToEnd();
+                    // 同 RunScriptEx：两个流必须并发读，否则 stderr 写满时死锁
+                    System.Threading.Tasks.Task<string> tOut = p.StandardOutput.ReadToEndAsync();
+                    System.Threading.Tasks.Task<string> tErr = p.StandardError.ReadToEndAsync();
                     if (!p.WaitForExit(240000)) { try { p.Kill(); } catch { } return -1; }
+                    try { tOut.Wait(3000); } catch { }
+                    try { tErr.Wait(3000); } catch { }
                     return p.ExitCode;
                 }
             }
