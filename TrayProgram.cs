@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -1537,6 +1537,16 @@ namespace BingWallpaperLite
             catch { }
         }
 
+        // ---------------------------------------------------------------- 刷新编排
+        //
+        // 分三层，每层可单独调用：
+        //   入口 RefreshAll      只做防重入与调度
+        //   第 2 层              读状态，产出 showDate/showTitle/isLocked
+        //   第 3 层              各部件独立更新，互不依赖
+        //
+        // 这样某层出问题时能立刻定位，不用像之前那样在一个 60 行函数里猜。
+
+        /// <summary>刷新编排入口：只负责防重入与调度，不做具体工作。</summary>
         private static void RefreshAll()
         {
             if (refreshing) { return; }
@@ -1547,65 +1557,88 @@ namespace BingWallpaperLite
                 SetBusy(running);
 
                 Dictionary<string, object> cfg = ReadConfig();
+                Dictionary<string, object> state = ReadJson(statePath);
                 bool isLocked = GetCfgBool(cfg, "locked", false);
 
-                Dictionary<string, object> state = ReadJson(statePath);
-                string date = GetStr(state, "date");
-                string title = GetStr(state, "title");
-                string appliedDate = GetStr(state, "appliedDate");
-                if (appliedDate.Length == 0) { appliedDate = date; }
+                string showDate;
+                string showTitle;
+                ResolveCurrent(state, isLocked, out showDate, out showTitle);
 
-                string showDate = isLocked ? appliedDate : date;
-                string showTitle = title;
-                if (isLocked && appliedDate != date) { showTitle = LookupTitle(appliedDate); }
-
-                string mark = isLocked ? S.LockPrefix() : "";
-                ToolStripMenuItem header = menu.Items["header"] as ToolStripMenuItem;
-                if (header != null)
-                {
-                    if (string.IsNullOrEmpty(showTitle) && showDate.Length > 0)
-                    {
-                        showTitle = LookupTitle(showDate);
-                    }
-
-                    if (string.IsNullOrEmpty(showTitle))
-                    {
-                        string readable = FormatDateCn(showDate);
-                        header.Text = mark + (readable.Length > 0 ? S.CurrentReadable(readable) : S.CurrentNone());
-                    }
-                    else
-                    {
-                        header.Text = mark + (showDate.Length > 0 ? S.CurrentWithDate(showTitle, showDate) : showTitle);
-                    }
-                }
-
-                if (tray != null && !running)
-                {
-                    // 标题为空时显示日期，日期也没有才显示「就绪」
-                    string tipBody = title;
-                    if (string.IsNullOrEmpty(tipBody) && showDate.Length > 0) { tipBody = FormatDateCn(showDate); }
-                    tray.Text = isLocked
-                        ? Clip(AppName + S.TooltipPaused, 60)
-                        : Clip(AppName + " · " + (tipBody.Length > 0 ? tipBody : S.TooltipReady), 60);
-                }
-
-                RefreshLibraryMenu(state, showDate);
-                RefreshFavoriteCheck();
-                RefreshTaskState();
-                RefreshYearsMenu();
-                RefreshRandomCheck();
-                RefreshArchiveCheck();
-                RefreshStartupCheck();
-                RefreshLockCheck();
-                RefreshCleanCheck();
-                RefreshNotifyCheck();
-                RefreshThemeCheck();
-
-                // 检测桌面壁纸是否被外部改动（有防重入，同一张只处理一次）
+                RefreshTrayTip(running, isLocked, showDate, showTitle, state);
+                RefreshHeader(showDate, showTitle, isLocked);
+                RefreshMenuItems(state, showDate);
                 SyncExternalWallpaper();
             }
             catch { }
             finally { refreshing = false; }
+        }
+
+        /// <summary>从 state 与锁定状态算出「要显示的日期」和「要显示的标题」。</summary>
+        private static void ResolveCurrent(Dictionary<string, object> state, bool isLocked,
+                                           out string showDate, out string showTitle)
+        {
+            string date = GetStr(state, "date");
+            string title = GetStr(state, "title");
+            string appliedDate = GetStr(state, "appliedDate");
+            if (appliedDate.Length == 0) { appliedDate = date; }
+
+            showDate = isLocked ? appliedDate : date;
+            showTitle = title;
+            if (isLocked && appliedDate != date) { showTitle = LookupTitle(appliedDate); }
+            if (string.IsNullOrEmpty(showTitle) && showDate.Length > 0) { showTitle = LookupTitle(showDate); }
+        }
+
+        /// <summary>更新托盘图标的悬停提示。</summary>
+        private static void RefreshTrayTip(bool running, bool isLocked, string showDate, string showTitle,
+                                           Dictionary<string, object> state)
+        {
+            if (tray == null || running) { return; }
+
+            if (isLocked)
+            {
+                tray.Text = Clip(AppName + S.TooltipPaused, 60);
+                return;
+            }
+
+            // 标题为空时显示日期，日期也没有才显示「就绪」
+            string body = showTitle;
+            if (string.IsNullOrEmpty(body) && showDate.Length > 0) { body = FormatDateCn(showDate); }
+            tray.Text = Clip(AppName + " · " + (body.Length > 0 ? body : S.TooltipReady), 60);
+        }
+
+        /// <summary>更新菜单顶部那行「当前：xxx」。</summary>
+        private static void RefreshHeader(string showDate, string showTitle, bool isLocked)
+        {
+            ToolStripMenuItem header = menu.Items["header"] as ToolStripMenuItem;
+            if (header == null) { return; }
+
+            string mark = isLocked ? S.LockPrefix() : "";
+
+            if (string.IsNullOrEmpty(showTitle))
+            {
+                string readable = FormatDateCn(showDate);
+                header.Text = mark + (readable.Length > 0 ? S.CurrentReadable(readable) : S.CurrentNone());
+            }
+            else
+            {
+                header.Text = mark + (showDate.Length > 0 ? S.CurrentWithDate(showTitle, showDate) : showTitle);
+            }
+        }
+
+        /// <summary>更新所有子菜单的勾选状态与文字。每个 RefreshXxx 只碰自己的那一项。</summary>
+        private static void RefreshMenuItems(Dictionary<string, object> state, string showDate)
+        {
+            RefreshLibraryMenu(state, showDate);
+            RefreshFavoriteCheck();
+            RefreshTaskState();
+            RefreshYearsMenu();
+            RefreshRandomCheck();
+            RefreshArchiveCheck();
+            RefreshStartupCheck();
+            RefreshLockCheck();
+            RefreshCleanCheck();
+            RefreshNotifyCheck();
+            RefreshThemeCheck();
         }
 
         private static void DoPickDate()
