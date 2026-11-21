@@ -1,0 +1,42 @@
+# 运行时产物（每台机器各不相同，不入库）
+cache/
+favorites/
+archive/
+dist/
+dist-test/
+state.json
+config.json
+pinned.json
+
+# 编译产物（走 Releases 分发，不入库）
+BingWallpaperLite.exe
+*.exe
+*.zip
+
+# 日志
+*.log
+
+# 临时与备份
+*.bak
+*.bak-*
+*.tmp
+*~
+
+# 编译中间产物
+*.pdb
+*.obj
+*.res
+*.resources
+
+# IDE / 编辑器
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.DotSettings.user
+
+# 系统
+Thumbs.db
+desktop.ini
+.DS_Store

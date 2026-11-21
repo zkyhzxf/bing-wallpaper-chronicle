@@ -1,0 +1,1783 @@
+﻿<#
+.SYNOPSIS
+    必应每日壁纸轮换 —— 拉取官方当日图的无水印高画质原图，设置为桌面壁纸。
+
+.DESCRIPTION
+    数据源（日期标签与微软 Bing Wallpaper 应用完全一致）:
+        https://bingwallpaper.microsoft.com/api/BWC/getHPImages
+
+    图片地址按以下顺序回退:
+        1. https://www.bing.com/th?id={ID}_UHD.jpg        3840x2160  约 3.4-3.6 MB
+        2. https://www.bing.com/th?id={ID}&w=3840&h=2160  3840x2160  约 0.8 MB
+        3. 微软 CDN url2  .../Latest/3840x2400/{date}.jpg  3840x2400  约 0.8 MB
+        4. https://www.bing.com/th?id={ID}_1920x1080.jpg  1920x1080  约 0.33 MB
+
+    并发安全：脚本用 cache\.running 做独占锁。抢锁失败时退出码为 2（表示"已有实例在跑"），
+    调用方（托盘程序）可据此显示"正在更新"。成功/跳过为 0，出错为 1。
+
+.PARAMETER Index
+    绝对位置：0 = 今天，1 = 昨天……不指定时默认 0。
+
+.PARAMETER Step
+    相对切换：以 state.json 记录的当前日期为基准，+1 = 更早一张，-1 = 更新一张。
+    越界自动夹在可获取范围内。与 -Index 同时给出时 -Step 优先。
+
+.PARAMETER Use
+    直接用指定的本地图片文件设壁纸，不联网、不下载。适合从缓存里挑图。
+
+.PARAMETER Force
+    忽略幂等判断，强制重新下载并重设壁纸。
+
+.PARAMETER DryRun
+    只打印将要做什么，不下载、不改壁纸。
+
+.PARAMETER Clean
+    只清理超过 keepDays 天的缓存文件，不换图。
+
+.EXAMPLE
+    bing-wallpaper.ps1                  # 换成今天
+    bing-wallpaper.ps1 -Step 1          # 往前一张
+    bing-wallpaper.ps1 -Step -1         # 往后一张（更新的）
+    bing-wallpaper.ps1 -Use "D:\tools\bing-wallpaper\cache\20261117_OHR.TrailCedars.jpg"
+#>
+[CmdletBinding()]
+param(
+    [int]$Index = 0,
+    [int]$Step = 0,
+    [string]$Use = '',
+    [switch]$Force,
+    [switch]$DryRun,
+    [switch]$Clean,
+    [int]$Keep = 0,
+    [switch]$CleanAll,
+    [switch]$Favorite,
+    [switch]$Unfavorite,
+    [string]$Date = '',
+    [switch]$Random,
+    [switch]$CleanArchive,
+    [string]$CleanMode = 'recycle',
+    [switch]$CleanArchiveIndex,
+    [switch]$CleanFavorites,
+    [string]$Query = '',
+    [string]$KwFile = '',
+    [string]$Search = '',
+    [switch]$Json,
+    [switch]$Status
+)
+
+$ErrorActionPreference = 'Stop'
+
+# 输出编码固定 UTF-8：被托盘捕获标准输出时，中文不会变成乱码
+try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
+
+# Windows PowerShell 5.1 默认可能只启用 TLS 1.0，需显式打开 1.2
+try {
+    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+} catch { }
+$ProgressPreference = 'SilentlyContinue'
+
+# ---------------------------------------------------------------- 路径
+
+$Root       = Split-Path -Parent $PSCommandPath
+$ConfigPath = Join-Path $Root 'config.json'
+$StatePath  = Join-Path $Root 'state.json'
+$IndexPath  = Join-Path $Root 'cache\index.json'
+$CacheDir   = Join-Path $Root 'cache'
+$LockPath   = Join-Path $CacheDir '.running'
+$LogPath    = Join-Path $env:TEMP 'BingWallpaperLite.log'
+$FavDir     = Join-Path $Root 'favorites'
+$FavIndex   = Join-Path $FavDir 'index.json'
+$ArchiveDir = Join-Path $Root 'archive'
+$ArchiveImgDir = Join-Path $ArchiveDir 'images';
+$PinnedPath = Join-Path $Root 'cache\pinned.json'
+
+if (-not (Test-Path $CacheDir)) { New-Item -ItemType Directory -Path $CacheDir -Force | Out-Null }
+
+# ---------------------------------------------------------------- 日志
+
+function Write-Log {
+    param([string]$Message, [string]$Level = 'INFO')
+    $line = '{0}  [{1}]  {2}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $Level, $Message
+    if ($DryRun) { Write-Host $line }
+    try {
+        [System.IO.File]::AppendAllText($LogPath, $line + "`r`n", (New-Object System.Text.UTF8Encoding($false)))
+    } catch { }
+    try {
+        $fi = Get-Item $LogPath -ErrorAction SilentlyContinue
+        if ($fi -and $fi.Length -gt 512KB) {
+            $txt = [System.IO.File]::ReadAllText($LogPath, [System.Text.Encoding]::UTF8)
+            $tail = $txt.Substring([Math]::Max(0, $txt.Length - 131072))
+            [System.IO.File]::WriteAllText($LogPath, $tail, (New-Object System.Text.UTF8Encoding($false)))
+        }
+    } catch { }
+}
+
+# ---------------------------------------------------------------- 并发锁
+
+function Enter-RunLock {
+    for ($attempt = 0; $attempt -lt 2; $attempt++) {
+        try {
+            $fs = [System.IO.File]::Open($LockPath, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
+            $bytes = [System.Text.Encoding]::UTF8.GetBytes("$PID|" + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'))
+            $fs.Write($bytes, 0, $bytes.Length)
+            $fs.Close()
+            return $true
+        } catch {
+            # 已存在：判断是有人正在跑，还是僵尸锁
+            try {
+                $txt = [System.IO.File]::ReadAllText($LockPath, [System.Text.Encoding]::UTF8)
+                $parts = $txt -split '\|'
+                if ($parts.Count -lt 2) { throw 'bad lock' }
+                $otherPid = [int]$parts[0]
+                $startAt = [datetime]::ParseExact($parts[1], 'yyyy-MM-dd HH:mm:ss', $null)
+                $alive = $null -ne (Get-Process -Id $otherPid -ErrorAction SilentlyContinue)
+                if ($alive -and ((Get-Date) - $startAt).TotalMinutes -lt 10) {
+                    Write-Log "已有实例在跑（PID $otherPid，$($parts[1])），本次退出" 'WARN'
+                    return $false
+                }
+                Write-Log "清理僵尸锁（PID $otherPid 已不存在或超时）" 'WARN'
+                [System.IO.File]::Delete($LockPath)
+            } catch {
+                # 读不到内容 = 正被独占 = 确实在跑
+                Write-Log '锁文件被占用，本次退出' 'WARN'
+                return $false
+            }
+        }
+    }
+    return $false
+}
+
+function Exit-RunLock {
+    try { [System.IO.File]::Delete($LockPath) } catch { }
+}
+
+# ---------------------------------------------------------------- 配置
+
+$defaults = [ordered]@{
+    source         = 'bing'
+    titleLanguage  = 'zh'
+    mkt            = 'zh-CN'
+    resolution     = 'UHD'
+    keepDays       = 30
+    autoClean      = $true
+    notify         = $false
+    archive        = $true
+    locked         = $false
+    wallpaperStyle = 'Fill'
+    proxy          = ''
+    archiveMaxMB   = 500
+}
+
+$config = @{}
+foreach ($k in $defaults.Keys) { $config[$k] = $defaults[$k] }
+if (Test-Path $ConfigPath) {
+    try {
+        $loaded = Get-Content $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        foreach ($p in $loaded.PSObject.Properties) { $config[$p.Name] = $p.Value }
+    } catch {
+        Write-Log "config.json 解析失败，使用默认配置: $($_.Exception.Message)" 'WARN'
+    }
+}
+
+$keepDays = [int]$config['keepDays']
+if ($keepDays -lt 8) { $keepDays = 8 }
+$proxy = [string]$config['proxy']
+
+function Invoke-Web {
+    param([hashtable]$Params)
+    if ($proxy) { $Params['Proxy'] = $proxy }
+    $Params['Headers'] = @{ 'User-Agent' = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
+    return $Params
+}
+
+# ---------------------------------------------------------------- 壁纸样式
+
+$styleMap = @{
+    'Center'  = @{ WallpaperStyle = '0';  TileWallpaper = '0' }
+    'Tile'    = @{ WallpaperStyle = '0';  TileWallpaper = '1' }
+    'Stretch' = @{ WallpaperStyle = '2';  TileWallpaper = '0' }
+    'Fit'     = @{ WallpaperStyle = '6';  TileWallpaper = '0' }
+    'Fill'    = @{ WallpaperStyle = '10'; TileWallpaper = '0' }
+    'Span'    = @{ WallpaperStyle = '22'; TileWallpaper = '0' }
+}
+$styleName = [string]$config['wallpaperStyle']
+if (-not $styleMap.ContainsKey($styleName)) { $styleName = 'Fill' }
+
+function Set-WallpaperStyle {
+    param([string]$Name)
+    $m = $styleMap[$Name]
+    try {
+        Set-ItemProperty 'HKCU:\Control Panel\Desktop' -Name 'WallpaperStyle' -Value $m.WallpaperStyle -ErrorAction Stop
+        Set-ItemProperty 'HKCU:\Control Panel\Desktop' -Name 'TileWallpaper'  -Value $m.TileWallpaper  -ErrorAction Stop
+    } catch {
+        Write-Log "写入壁纸样式失败: $($_.Exception.Message)" 'WARN'
+    }
+}
+
+# ---------------------------------------------------------------- 第三方归档（完整记录索引）
+
+# 数据源：Zhu-junwei/bing-wallpaper-archive（2016-03-05 至今，含中文标题与版权）
+# 备用源：niumoo/bing-wallpaper（2021-02 起，只有 ID，无标题）
+$ArchivePrimary = 'https://raw.githubusercontent.com/Zhu-junwei/bing-wallpaper-archive/master'
+$ArchiveBackup  = 'https://raw.githubusercontent.com/niumoo/bing-wallpaper/main/picture'
+$ArchiveMinDate = '20160305'
+
+# 归档抓取通道。实测（无代理直连）：
+#   raw.githubusercontent.com  → 100% 失败（TLS 阻断）
+#   gh-proxy.com               → 6/6 成功，平均 800 ms
+#   api.github.com             → 可通，未认证 60 次/小时
+# 顺序：记忆通道 → gh-proxy → raw 直连 → api.github.com → 本地代理
+$ArchiveProxyBase = 'https://gh-proxy.com/'
+$ArchiveRawBase   = 'https://raw.githubusercontent.com/'
+
+function Get-ArchiveCandidateUrls {
+    param([string]$RelPath)   # 形如 Zhu-junwei/bing-wallpaper-archive/master/2026/11/all.json
+    $urls = @()
+    $last = [string]$config['archiveVia']
+    if ($last -eq 'ghproxy')  { $urls += @{ tag='ghproxy';  url = $ArchiveProxyBase + $ArchiveRawBase + $RelPath } }
+    if ($last -eq 'raw')      { $urls += @{ tag='raw';      url = $ArchiveRawBase + $RelPath } }
+    if ($last -eq 'api')      { $urls += @{ tag='api';      url = '__API__' + $RelPath } }
+
+    $urls += @{ tag='ghproxy'; url = $ArchiveProxyBase + $ArchiveRawBase + $RelPath }
+    $urls += @{ tag='raw';     url = $ArchiveRawBase + $RelPath }
+    $urls += @{ tag='api';     url = '__API__' + $RelPath }
+
+    # 本地代理端口（有 Clash 时最快）
+    foreach ($px in @('http://127.0.0.1:7897', 'http://127.0.0.1:7890', 'http://127.0.0.1:10809')) {
+        $urls += @{ tag=('proxy:' + $px); url = ($ArchiveRawBase + $RelPath); proxy = $px }
+    }
+
+    # 去重，保持顺序
+    $seen = @{}
+    $out = @()
+    foreach ($c in $urls) {
+        $k = $c.tag
+        if (-not $seen.ContainsKey($k)) { $seen[$k] = $true; $out += $c }
+    }
+    return $out
+}
+
+function Invoke-ArchiveFetch {
+    param([string]$RelPath)
+    $reqHeaders = @{'User-Agent' = 'Mozilla/5.0'}
+    $cands = Get-ArchiveCandidateUrls -RelPath $RelPath
+    $lastErr = ''
+
+    foreach ($c in $cands) {
+        $tag = $c.tag
+        $u = $c.url
+        try {
+            if ($u.StartsWith('__API__')) {
+                # 用 GitHub contents API 取 base64
+                $apiPath = $u.Substring(7)     # owner/repo/branch/path...
+                $parts = $apiPath.Split('/')
+                if ($parts.Length -lt 4) { continue }
+                $owner = $parts[0]; $repo = $parts[1]; $branch = $parts[2]
+                $filePath = ($parts[3..($parts.Length - 1)] -join '/')
+                $apiUrl = "https://api.github.com/repos/$owner/$repo/contents/$filePath" + "?ref=$branch"
+                $r = Invoke-WebRequest -Uri $apiUrl -TimeoutSec 8 -UseBasicParsing -Headers $reqHeaders
+                $obj = $r.Content | ConvertFrom-Json
+                if (-not $obj.content) { throw 'API 无 content 字段' }
+                $txt = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(($obj.content -replace '\s', '')))
+                if ($txt.Length -gt 0) {
+                    Write-Log ("归档索引取到了（via GitHub API）")
+                    Save-ArchiveVia 'api'
+                    return [pscustomobject]@{ Content = $txt }
+                }
+            } else {
+                $ht = $reqHeaders
+                if ($c.proxy) {
+                    $r = Invoke-WebRequest -Uri $u -TimeoutSec 8 -UseBasicParsing -Headers $ht -Proxy $c.proxy
+                } else {
+                    $r = Invoke-WebRequest -Uri $u -TimeoutSec 8 -UseBasicParsing -Headers $ht
+                }
+                if ($r) {
+                    Write-Log ("归档索引取到了（via " + $tag + "）")
+                    if ($tag -eq 'ghproxy') { Save-ArchiveVia 'ghproxy' }
+                    elseif ($tag -eq 'raw') { Save-ArchiveVia 'raw' }
+                    return $r
+                }
+            }
+        } catch {
+            $lastErr = $_.Exception.Message
+            Write-Log ("  通道 " + $tag + " 失败：" + $lastErr) 'WARN'
+        }
+    }
+    Write-Log ("所有通道失败，最后错误：" + $lastErr) 'WARN'
+    return $null
+}
+
+function Save-ArchiveVia {
+    param([string]$Via)
+    try {
+        if ([string]$config['archiveVia'] -eq $Via) { return }
+        $config['archiveVia'] = $Via
+        [System.IO.File]::WriteAllText($ConfigPath, ($config | ConvertTo-Json -Depth 4), (New-Object System.Text.UTF8Encoding($false)))
+    } catch { }
+}
+
+function Get-ArchiveRecord {
+    param([string]$Date)
+    # 返回 @{ id=...; title=...; copyright=...; url=... } 或 $null
+    if ($Date -lt $ArchiveMinDate) { return $null }
+
+    $y  = $Date.Substring(0, 4)
+    $m  = $Date.Substring(4, 2)
+    $ym = $y + '-' + $m
+    if (-not (Test-Path $ArchiveDir)) {
+        try { New-Item -ItemType Directory -Path $ArchiveDir -Force | Out-Null } catch { }
+    }
+    $cacheFile = Join-Path $ArchiveDir "$ym.json"
+
+    # 先读本地缓存
+    if (Test-Path $cacheFile) {
+        try {
+            $m0 = Get-Content $cacheFile -Raw -Encoding UTF8 | ConvertFrom-Json
+            $v0 = $m0.$Date
+            if ($v0) {
+                if ($v0 -is [string]) {
+                    # 极老格式：只有 ID 字符串，视为无标题，继续联网补全
+                } elseif ($v0.id) {
+                    $tt = [string]$v0.t
+                    $cc = [string]$v0.c
+                    $uu = [string]$v0.u
+                    # 只有带标题或直链的才算新格式缓存；否则（旧 niumoo 格式）重新抓
+                    if ($tt -or $uu) {
+                        return @{
+                            id        = [string]$v0.id
+                            title     = $tt
+                            copyright = $cc
+                            url       = $uu
+                            searchUrl = [string]$v0.s
+                        }
+                    }
+                }
+            }
+        } catch { }
+    }
+
+    $map = @{}
+
+    # 主源：Zhu-junwei 月度 all.json（含标题、版权、直链）
+    $rel1 = "Zhu-junwei/bing-wallpaper-archive/master/$y/$m/all.json"
+    Write-Log ("归档索引: " + $rel1)
+    $r1 = Invoke-ArchiveFetch -RelPath $rel1
+    if ($r1) {
+        try {
+            $txt1 = $r1.Content
+            if ($txt1 -is [byte[]]) { $txt1 = [System.Text.Encoding]::UTF8.GetString($txt1) }
+            $obj1 = $txt1 | ConvertFrom-Json
+            foreach ($im in @($obj1.images)) {
+                $d = ([string]$im.enddate) -replace '-', ''
+                if (-not $d) { continue }
+                $ub = [string]$im.urlbase
+                $id = ($ub -replace '^/th\?id=', '')
+                if (-not $id) { continue }
+                if (-not $map.ContainsKey($d)) {
+                    $map[$d] = [ordered]@{
+                        id = $id
+                        t  = [string]$im.title
+                        c  = [string]$im.copyright
+                        u  = [string]$im.url
+                        s  = [string]$im.copyrightlink
+                    }
+                }
+            }
+        } catch { Write-Log "主源解析失败（$ym）: $($_.Exception.Message)" 'WARN' }
+    }
+
+    # 备用源：niumoo 月度 README（只有 ID）
+    if ($map.Count -eq 0) {
+        $r2 = Invoke-ArchiveFetch -RelPath "niumoo/bing-wallpaper/main/picture/$ym/README.md"
+        if ($r2) {
+            try {
+                $txt2 = $r2.Content
+                if ($txt2 -is [byte[]]) { $txt2 = [System.Text.Encoding]::UTF8.GetString($txt2) }
+                $rx = [regex]'th\?id=(OHR\.[A-Za-z0-9_\-]+)_UHD\.jpg[^|]*?(\d{4}-\d{2}-\d{2})'
+                foreach ($mm in $rx.Matches($txt2)) {
+                    $d = $mm.Groups[2].Value -replace '-', ''
+                    if (-not $map.ContainsKey($d)) {
+                        $map[$d] = [ordered]@{ id = $mm.Groups[1].Value; t = ''; c = ''; u = '' }
+                    }
+                }
+            } catch { }
+        }
+    }
+
+    if ($map.Count -eq 0) {
+        Write-Log "归档索引取不到（$ym）" 'WARN'
+        return $null
+    }
+
+    try {
+        $out = [ordered]@{}
+        foreach ($k in ($map.Keys | Sort-Object)) { $out[$k] = $map[$k] }
+        [System.IO.File]::WriteAllText($cacheFile, ($out | ConvertTo-Json -Depth 4), (New-Object System.Text.UTF8Encoding($false)))
+    } catch { }
+
+    if ($map.ContainsKey($Date)) {
+        $r = $map[$Date]
+        return @{
+            id        = [string]$r.id
+            title     = [string]$r.t
+            copyright = [string]$r.c
+            url       = [string]$r.u
+            searchUrl = [string]$r.s
+        }
+    }
+    return $null
+}
+
+# 兼容旧调用：只要 ID
+function Get-ArchiveId {
+    param([string]$Date)
+    $rec = Get-ArchiveRecord -Date $Date
+    if ($rec) { return $rec.id }
+    return ''
+}
+# ---------------------------------------------------------------- 取图列表
+
+# 把 HPImageArchive 的 fullstartdate（UTC）折算成北京时间展示日
+function Convert-BingDate {
+    param([string]$FullStartDate, [string]$StartDate)
+    # fullstartdate 形如 202611201600（UTC 2026-11-20 16:00 = 北京 11-21 00:00）
+    if ($FullStartDate -and $FullStartDate.Length -ge 12) {
+        try {
+            $y = [int]$FullStartDate.Substring(0, 4)
+            $mo = [int]$FullStartDate.Substring(4, 2)
+            $d = [int]$FullStartDate.Substring(6, 2)
+            $hh = [int]$FullStartDate.Substring(8, 2)
+            $mi = [int]$FullStartDate.Substring(10, 2)
+            $utc = New-Object DateTime($y, $mo, $d, $hh, $mi, 0, [DateTimeKind]::Utc)
+            return $utc.AddHours(8).ToString('yyyyMMdd')
+        } catch { }
+    }
+    if ($StartDate) { return ([string]$StartDate) -replace '-', '' }
+    return ''
+}
+
+# 返回 JSON 字符串，避免 PowerShell 数组展开的怪癖
+function Get-WallpaperListJson {
+    param([int]$Count)
+    $uri = "https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=$([Math]::Max($Count, 8))&mkt=$($config['mkt'])"
+    $p = Invoke-Web @{ Uri = $uri; TimeoutSec = 30; UseBasicParsing = $true }
+    $resp = Invoke-RestMethod @p
+    if (-not $resp.images) { throw 'Bing 接口返回空' }
+    $out = @()
+    foreach ($im in @($resp.images)) {
+        $show = Convert-BingDate -FullStartDate ([string]$im.fullstartdate) -StartDate ([string]$im.startdate)
+        $ub = [string]$im.urlbase
+        $id = ($ub -replace '^/th\?id=', '')
+        $out += [ordered]@{
+            startdate     = $show
+            enddate       = $show
+            title         = [string]$im.title
+            copyright     = [string]$im.copyright
+            copyrightlink = [string]$im.copyrightlink
+            urlbase       = $ub
+            imageId       = $id
+            rawStart      = [string]$im.startdate
+        }
+    }
+    if ($out.Count -gt $Count) { $out = $out[0..($Count - 1)] }
+    return ($out | ConvertTo-Json -Depth 3 -Compress)
+}
+
+# 兼容旧调用：返回对象数组
+function Get-WallpaperList {
+    param([int]$Count)
+    $json = Get-WallpaperListJson -Count $Count
+    $arr = @($json | ConvertFrom-Json)
+    return $arr
+}
+
+function Get-ZhTitleMap {
+    $map = @{}
+    try {
+        $p = Invoke-Web @{ Uri = "https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=8&mkt=$($config['mkt'])"; TimeoutSec = 25; UseBasicParsing = $true }
+        $resp = Invoke-RestMethod @p
+        foreach ($i in @($resp.images)) {
+            $id = ([string]$i.urlbase -replace '^/th\?id=', '') -replace '_(UHD|1920x1080).*$', ''
+            $base = $id -replace '_[A-Za-z]{2}-[A-Za-z]{2}\d+$', ''
+            if ($base) { $map[$base] = @{ title = [string]$i.title; copyright = [string]$i.copyright } }
+        }
+    } catch {
+        Write-Log "取中文标题失败（回退英文）: $($_.Exception.Message)" 'WARN'
+    }
+    return $map
+}
+
+# ---------------------------------------------------------------- 下载
+
+function Save-BingImage {
+    param([string]$Url, [string]$Dest, [int]$MinKB = 300)
+    $tmp = "$Dest.tmp"
+    $p = Invoke-Web @{ Uri = $Url; OutFile = $tmp; TimeoutSec = 150; UseBasicParsing = $true }
+    Invoke-WebRequest @p
+    $size = (Get-Item $tmp).Length
+    if ($size -lt ($MinKB * 1024)) {
+        [System.IO.File]::Delete($tmp)
+        throw "体积异常 $size 字节"
+    }
+    Move-Item -LiteralPath $tmp -Destination $Dest -Force
+    return $size
+}
+
+# ---------------------------------------------------------------- 设壁纸
+
+function Set-DesktopWallpaper {
+    param([string]$Path)
+    if (-not ('Native.Wallpaper' -as [type])) {
+        Add-Type -Namespace Native -Name Wallpaper -MemberDefinition @'
+[DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+public static extern int SystemParametersInfo(int uAction, int uParam, string lpvParam, int fuWinIni);
+'@
+    }
+    $r = [Native.Wallpaper]::SystemParametersInfo(0x0014, 0, $Path, 0x0001 -bor 0x0002)
+    if ($r -eq 0) { Write-Log 'SystemParametersInfo 返回 0，走 rundll32 兜底' 'WARN' }
+    Start-Sleep -Milliseconds 300
+    if ((Get-ItemProperty 'HKCU:\Control Panel\Desktop' -Name Wallpaper -ErrorAction SilentlyContinue).Wallpaper -ne $Path) {
+        & rundll32.exe user32.dll,UpdatePerUserSystemParameters 3,True
+        Start-Sleep -Milliseconds 500
+    }
+    return ((Get-ItemProperty 'HKCU:\Control Panel\Desktop' -Name Wallpaper).Wallpaper -eq $Path)
+}
+
+# ---------------------------------------------------------------- 关键词搜索
+
+# 全量索引缓存：1.6 MB，含 2016 至今所有日期的标题与版权
+$AllIndexPath = Join-Path $ArchiveDir 'all-index.json'
+$AllIndexUrl  = 'https://gh-proxy.com/https://raw.githubusercontent.com/Zhu-junwei/bing-wallpaper-archive/master/Bing_zh-CN_all.json'
+
+function Get-FullIndex {
+    # 本地缓存 7 天内直接用
+    if (Test-Path $AllIndexPath) {
+        try {
+            $age = (Get-Date) - (Get-Item $AllIndexPath).LastWriteTime
+            if ($age.TotalDays -lt 7) {
+                return @(Get-Content $AllIndexPath -Raw -Encoding UTF8 | ConvertFrom-Json)
+            }
+        } catch { }
+    }
+
+    Write-Log '正在下载全量索引（约 1.6 MB）…'
+    if (-not (Test-Path $ArchiveDir)) {
+        try { New-Item -ItemType Directory -Path $ArchiveDir -Force | Out-Null } catch { }
+    }
+    $resp = $null
+    $try = @($AllIndexUrl, 'https://raw.githubusercontent.com/Zhu-junwei/bing-wallpaper-archive/master/Bing_zh-CN_all.json')
+    foreach ($u in $try) {
+        try {
+            $resp = Invoke-WebRequest -Uri $u -TimeoutSec 40 -UseBasicParsing -Headers @{'User-Agent' = 'Mozilla/5.0'}
+            if ($resp) { break }
+        } catch {
+            Write-Log ("  索引下载失败（" + $u + "）：" + $_.Exception.Message) 'WARN'
+            $resp = $null
+        }
+    }
+    if (-not $resp) { throw '全量索引下载失败' }
+
+    $txt = $resp.Content
+    if ($txt -is [byte[]]) { $txt = [System.Text.Encoding]::UTF8.GetString($txt) }
+    $obj = $txt | ConvertFrom-Json
+    $arr = @($obj.images)
+
+    # 转成精简格式再落盘，省一半体积
+    $slim = @()
+    foreach ($im in $arr) {
+        $ub = [string]$im.urlbase
+        $id = ($ub -replace '^/th\?id=', '')
+        $slim += [ordered]@{
+            d = ([string]$im.enddate) -replace '-', ''
+            t = [string]$im.title
+            c = [string]$im.copyright
+            i = $id
+        }
+    }
+    try {
+        [System.IO.File]::WriteAllText($AllIndexPath, ($slim | ConvertTo-Json -Depth 3 -Compress), (New-Object System.Text.UTF8Encoding($false)))
+        Write-Log ("全量索引已缓存：" + $slim.Count + " 条")
+    } catch { }
+    return $slim
+}
+
+function Search-Archive {
+    param([string]$Keywords, [int]$Limit = 20)
+    # 关键词用空格或逗号分隔
+    $kws = @($Keywords -split '[\s,，、]+' | Where-Object { $_.Trim().Length -gt 0 } | ForEach-Object { $_.Trim() })
+    if ($kws.Count -eq 0) { return @() }
+
+    $idx = Get-FullIndex
+    $hits = @()
+    foreach ($item in $idx) {
+        $text = [string]$item.t + ' ' + [string]$item.c
+        $matched = @()
+        foreach ($kw in $kws) {
+            if ($text.IndexOf($kw, [StringComparison]::OrdinalIgnoreCase) -ge 0) { $matched += $kw }
+        }
+        if ($matched.Count -gt 0) {
+            $hits += [pscustomobject]@{
+                date      = [string]$item.d
+                title     = [string]$item.t
+                copyright = [string]$item.c
+                imageId   = [string]$item.i
+                matched   = $matched
+                score     = $matched.Count
+            }
+        }
+    }
+    # 命中词多的排前面，同分按日期新到旧
+    $sorted = $hits | Sort-Object -Property score, date -Descending
+    if ($sorted.Count -gt $Limit) { $sorted = $sorted[0..($Limit - 1)] }
+    return @($sorted)
+}
+
+# ---------------------------------------------------------------- 邻近日
+
+# 从全量索引里找紧邻的一天（Step=1 更早，Step=-1 更新），用于翻页越界续接
+function Get-NeighborDate {
+    param([string]$From, [int]$Step)
+    if (-not $From) { return '' }
+    try {
+        $idx = Get-FullIndex
+    } catch { return '' }
+    if (-not $idx -or @($idx).Count -eq 0) { return '' }
+
+    $best = ''
+    foreach ($it in $idx) {
+        $d = [string]$it.d
+        if ($d.Length -ne 8) { continue }
+        if ($Step -gt 0) {
+            # 找比 From 更早的里最新的
+            if ($d -lt $From -and ($best -eq '' -or $d -gt $best)) { $best = $d }
+        } else {
+            # 找比 From 更新的里最旧的
+            if ($d -gt $From -and ($best -eq '' -or $d -lt $best)) { $best = $d }
+        }
+    }
+    return $best
+}
+
+# ---------------------------------------------------------------- 主动保留名单
+
+function Read-Pinned {
+    $set = @{}
+    if (Test-Path $PinnedPath) {
+        try {
+            $o = Get-Content $PinnedPath -Raw -Encoding UTF8 | ConvertFrom-Json
+            foreach ($q in $o.PSObject.Properties) { if ($q.Value) { $set[$q.Name] = $true } }
+        } catch { }
+    }
+    return $set
+}
+
+function Add-Pinned {
+    param([string]$Date)
+    if (-not $Date) { return }
+    $set = Read-Pinned
+    if ($set.ContainsKey($Date)) { return }
+    $set[$Date] = $true
+    try {
+        [System.IO.File]::WriteAllText($PinnedPath, ($set | ConvertTo-Json -Depth 3), (New-Object System.Text.UTF8Encoding($false)))
+    } catch { }
+}
+
+# ---------------------------------------------------------------- 缓存清理
+
+function Clear-OldCache {
+    param([int]$Days)
+    $cut = (Get-Date).AddDays(-$Days)
+    $cur = (Get-ItemProperty 'HKCU:\Control Panel\Desktop' -Name Wallpaper -ErrorAction SilentlyContinue).Wallpaper
+    $removed = 0
+    $protected = 0
+    $pinnedSet = Read-Pinned
+    Get-ChildItem $CacheDir -Filter '*.jpg' -File -ErrorAction SilentlyContinue | ForEach-Object {
+        # 正在使用的壁纸永不清理（锁定中的那张就是靠这个保住）
+        if ($cur -and $_.FullName -ieq $cur) { $protected++; return }
+        # 用户主动挑的历史图，按日期登记，永不被自动清理
+        $dm = [regex]::Match($_.BaseName, '^(\d{8})_')
+        if ($dm.Success -and $pinnedSet.ContainsKey($dm.Groups[1].Value)) { $protected++; return }
+        $m = [regex]::Match($_.BaseName, '^(\d{8})_')
+        $keep = $true
+        if ($m.Success) {
+            try { $d = [datetime]::ParseExact($m.Groups[1].Value, 'yyyyMMdd', $null); if ($d -lt $cut) { $keep = $false } } catch { }
+        } elseif ($_.LastWriteTime -lt $cut) { $keep = $false }
+        if (-not $keep) {
+            if ($DryRun) { Write-Log "[DryRun] 将删除缓存 $($_.Name)" }
+            else { [System.IO.File]::Delete($_.FullName); $removed++ }
+        }
+    }
+    if ($removed -gt 0 -or $protected -gt 0) {
+        Write-Log "清理缓存：删除 $removed 个（保留 $Days 天），保护当前壁纸 $protected 个"
+    }
+
+    # 同步清理索引里的失效条目（文件已不在的）
+    if (-not $DryRun -and (Test-Path $IndexPath)) {
+        try {
+            $ciA = Get-Content $IndexPath -Raw -Encoding UTF8 | ConvertFrom-Json
+            $tmpA = [ordered]@{}
+            $changed = $false
+            foreach ($q in $ciA.PSObject.Properties) {
+                if (Test-Path (Join-Path $CacheDir ([string]$q.Value.file))) { $tmpA[$q.Name] = $q.Value }
+                else { $changed = $true }
+            }
+            if ($changed) {
+                [System.IO.File]::WriteAllText($IndexPath, ($tmpA | ConvertTo-Json -Depth 6), (New-Object System.Text.UTF8Encoding($false)))
+                Write-Log '索引已同步，移除失效条目'
+            }
+        } catch { }
+    }
+    return $removed
+}
+
+# 归档图片总量超限时，从最旧的开始删；收藏过的、pinned 的、当前在用的都跳过
+# 按指定方式删除文件：recycle 进回收站，permanent 彻底删
+function Remove-OneFile {
+    param([string]$Path, [string]$Mode = 'recycle')
+    if (-not (Test-Path -LiteralPath $Path)) { return $false }
+    if ($Mode -eq 'permanent') {
+        try { [System.IO.File]::Delete($Path); return $true } catch { return $false }
+    }
+    try {
+        [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile(
+            $Path,
+            [Microsoft.VisualBasic.FileIO.UIOption]::OnlyErrorDialogs,
+            [Microsoft.VisualBasic.FileIO.RecycleOption]::SendToRecycleBin,
+            [Microsoft.VisualBasic.FileIO.UICancelOption]::DoNothing)
+        return $true
+    } catch {
+        # 回收站不可用（被禁用/网络盘）时降级为直接删
+        try { [System.IO.File]::Delete($Path); return $true } catch { return $false }
+    }
+}
+
+function Clear-ArchiveBySize {
+    param([int]$MaxMB)
+    if ($MaxMB -le 0) { return 0 }
+    if (-not (Test-Path $ArchiveImgDir)) { return 0 }
+
+    $files = @(Get-ChildItem $ArchiveImgDir -Filter '*.jpg' -File -ErrorAction SilentlyContinue | Sort-Object Name)
+    if ($files.Count -eq 0) { return 0 }
+    $total = ($files | Measure-Object -Property Length -Sum).Sum
+    $cap = [int64]$MaxMB * 1MB
+    if ($total -le $cap) { return 0 }
+
+    # 保护名单：收藏夹里的日期 + pinned 里的日期 + 当前壁纸文件
+    $favDates = @{}
+    Get-ChildItem $FavDir -Filter '*.jpg' -File -ErrorAction SilentlyContinue | ForEach-Object {
+        if ($_.Name -match '^(\d{8})') { $favDates[$matches[1]] = $true }
+    }
+    $pinnedSet = Read-Pinned
+    $curWp = ''
+    try { $curWp = [string](Get-ItemProperty 'HKCU:\Control Panel\Desktop' -Name Wallpaper -ErrorAction SilentlyContinue).Wallpaper } catch { }
+
+    $removed = 0
+    $freed = 0
+    foreach ($f in $files) {
+        if ($total -le $cap) { break }
+        $d = ''
+        if ($f.Name -match '^(\d{8})') { $d = $matches[1] }
+        if ($d -and $favDates.ContainsKey($d)) { continue }
+        if ($d -and $pinnedSet.ContainsKey($d)) { continue }
+        if ($curWp -and $curWp -eq $f.FullName) { continue }
+
+        $sz = $f.Length
+        if ($DryRun) {
+            Write-Log "[DryRun] 归档超限，将删除 $($f.Name)"
+            $removed++
+            $freed += $sz
+            $total -= $sz
+        } else {
+            try {
+                [System.IO.File]::Delete($f.FullName)
+                $removed++
+                $freed += $sz
+                $total -= $sz
+            } catch {
+                Write-Log ("归档清理失败：" + $f.Name + " - " + $_.Exception.Message) 'WARN'
+            }
+        }
+    }
+    if ($removed -gt 0) {
+        $mode = if ($DryRun) { '[DryRun] ' } else { '' }
+        Write-Log ($mode + '归档超限清理：删除 ' + $removed + ' 张，释放 ' + [math]::Round($freed / 1MB, 1) + ' MB，现存 ' + [math]::Round($total / 1MB, 1) + ' MB（上限 ' + $MaxMB + ' MB）')
+    }
+    return $removed
+}
+function Clear-AllCache {
+    param([string]$Mode = 'recycle')
+    $cur = (Get-ItemProperty 'HKCU:\Control Panel\Desktop' -Name Wallpaper -ErrorAction SilentlyContinue).Wallpaper
+    $removed = 0
+    $kept = 0
+    $freed = 0
+    Get-ChildItem $CacheDir -Filter '*.jpg' -File -ErrorAction SilentlyContinue | ForEach-Object {
+        if ($cur -and $_.FullName -ieq $cur) { $kept++; return }
+        if ($DryRun) { Write-Log "[DryRun] 将删除 $($_.Name)"; $removed++; $freed += $_.Length; return }
+        $sz = $_.Length
+        if (Remove-OneFile -Path $_.FullName -Mode $Mode) { $removed++; $freed += $sz }
+    }
+    if (-not $DryRun) {
+        # 同步清理 index.json 里指向已删文件的条目
+        if (Test-Path $IndexPath) {
+            try {
+                $cat = Get-Content $IndexPath -Raw -Encoding UTF8 | ConvertFrom-Json
+                $new = @{}
+                foreach ($pp in $cat.PSObject.Properties) {
+                    if (Test-Path (Join-Path $CacheDir $pp.Value.file)) { $new[$pp.Name] = $pp.Value }
+                }
+                [System.IO.File]::WriteAllText($IndexPath, ($new | ConvertTo-Json -Depth 6), (New-Object System.Text.UTF8Encoding($false)))
+            } catch { }
+        }
+    }
+    Write-Log "清空缓存：删除 $removed 个，保留当前壁纸 $kept 个"
+    return $removed
+}
+
+# ---------------------------------------------------------------- 状态读写
+
+function Read-State {
+    if (Test-Path $StatePath) {
+        try { return Get-Content $StatePath -Raw -Encoding UTF8 | ConvertFrom-Json } catch { }
+    }
+    return $null
+}
+
+function Write-State {
+    param([string]$Date, [string]$File, [string]$Title, [string]$ImageId, [string]$AppliedDate,
+          [string]$Copyright = '', [string]$SearchUrl = '')
+    $o = [ordered]@{
+        date        = $Date
+        file        = $File
+        title       = $Title
+        copyright   = $Copyright
+        searchUrl   = $SearchUrl
+        imageId     = $ImageId
+        appliedDate = $AppliedDate
+        updatedAt   = (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
+    }
+    [System.IO.File]::WriteAllText($StatePath, ($o | ConvertTo-Json), (New-Object System.Text.UTF8Encoding($false)))
+}
+
+# ---------------------------------------------------------------- 主流程
+
+# ---------------------------------------------------------------- 统一退出
+
+# 所有退出都走这里：-Json 时输出结构化结果，否则静默退出
+function Exit-Run {
+    param([int]$Code)
+    if ($Json) {
+        $st = $null
+        # 只有成功时才读 state；失败时 state 是上一次的图，不能冒充本次结果
+        if ($Code -eq 0) { try { $st = Read-State } catch { } }
+        $sizeMB = 0
+        try {
+            if ($st -and $st.file -and (Test-Path ([string]$st.file))) {
+                $sizeMB = [math]::Round((Get-Item ([string]$st.file)).Length / 1MB, 2)
+            }
+        } catch { }
+        $obj = [ordered]@{
+            ok      = ($Code -eq 0)
+            code    = $Code
+            date    = $(if ($st) { [string]$st.date } else { '' })
+            title   = $(if ($st) { [string]$st.title } else { '' })
+            file    = $(if ($st) { [string]$st.file } else { '' })
+            sizeMB  = $sizeMB
+            imageId = $(if ($st) { [string]$st.imageId } else { '' })
+        }
+        try { Write-Output ($obj | ConvertTo-Json -Depth 4) } catch { }
+    }
+    exit $Code
+}
+
+# ---------------------------------------------------------------- 状态查询
+
+if ($Status) {
+    $st = Read-State
+    $cfgNow = $config
+    $idxCount = 0
+    $idxAgeDays = -1
+    if (Test-Path $AllIndexPath) {
+        try {
+            $idxCount = @(Get-Content $AllIndexPath -Raw -Encoding UTF8 | ConvertFrom-Json).Count
+            $idxAgeDays = [math]::Round(((Get-Date) - (Get-Item $AllIndexPath).LastWriteTime).TotalDays, 2)
+        } catch { }
+    }
+    $favCount = @(Get-ChildItem $FavDir -Filter '*.jpg' -File -ErrorAction SilentlyContinue).Count
+    $cacheCount = @(Get-ChildItem $CacheDir -Filter '*.jpg' -File -ErrorAction SilentlyContinue).Count
+    $archCount = @(Get-ChildItem $ArchiveImgDir -Filter '*.jpg' -File -ErrorAction SilentlyContinue).Count
+
+    $obj = [ordered]@{
+        current = [ordered]@{
+            date      = $(if ($st) { [string]$st.date } else { '' })
+            title     = $(if ($st) { [string]$st.title } else { '' })
+            file      = $(if ($st) { [string]$st.file } else { '' })
+            appliedAt = $(if ($st) { [string]$st.updatedAt } else { '' })
+        }
+        counts = [ordered]@{
+            cache     = $cacheCount
+            favorites = $favCount
+            archive   = $archCount
+        }
+        config = [ordered]@{
+            locked     = [bool]$cfgNow['locked']
+            archive    = [bool]$cfgNow['archive']
+            keepDays   = [int]$cfgNow['keepDays']
+            autoClean  = [bool]$cfgNow['autoClean']
+            updateTime = $(if ($cfgNow['updateTime']) { [string]$cfgNow['updateTime'] } else { '00:10' })
+            resolution = [string]$cfgNow['resolution']
+            style      = [string]$cfgNow['wallpaperStyle']
+        }
+        index = [ordered]@{
+            cached   = ($idxCount -gt 0)
+            entries  = $idxCount
+            ageDays  = $idxAgeDays
+            minDate  = $ArchiveMinDate
+        }
+        version = '2.5.0'
+    }
+    $txt = $obj | ConvertTo-Json -Depth 5
+    if ($Json) {
+        Write-Output $txt
+    } else {
+        Write-Output ('当前：' + $obj.current.title + '（' + $obj.current.date + '）')
+        Write-Output ('收藏 ' + $favCount + ' / 缓存 ' + $cacheCount + ' / 归档 ' + $archCount)
+        Write-Output ('索引 ' + $idxCount + ' 条，' + $idxAgeDays + ' 天前')
+    }
+    Exit-Run 0
+}
+
+$locked = $false
+
+
+    if ($Query -or $Search -or $KwFile) {
+    # ---- 关键词搜索
+        # 关键词来源：-FindFile（UTF-8 文件，最可靠）> -Find > -Search
+        $kw = ''
+        if ($KwFile) {
+            if (-not (Test-Path $KwFile)) { throw "关键词文件不存在: $KwFile" }
+            $kw = (Get-Content $KwFile -Raw -Encoding UTF8).Trim()
+        } elseif ($Query) {
+            $kw = $Query.ToString().Trim()
+        } else {
+            $kw = $Search.ToString().Trim()
+        }
+        if (-not $kw) { $kw = '''' }
+        try {
+            $hits = Search-Archive -Keywords $kw -Limit 30
+        } catch {
+            Write-Log ("搜索失败: " + $_.Exception.Message) 'ERROR'
+            Exit-Run 7
+        }
+        if ($hits.Count -eq 0) {
+            Write-Log ("没有匹配「" + $kw + "」的壁纸") 'WARN'
+            Write-Output '[]'
+            Exit-Run 5
+        }
+        Write-Log ("搜索「" + $kw + "」命中 " + $hits.Count + " 条")
+        if (($Query -or $KwFile) -and -not $Search) {
+            # 手工拼 JSON，避免 ConvertTo-Json 在字典数组上的类型问题
+            $parts = New-Object System.Collections.ArrayList
+            foreach ($h in $hits) {
+                $t = ([string]$h.title) -replace '\\', '\\\\' -replace '"', '\"'
+                $c = ([string]$h.copyright) -replace '\\', '\\\\' -replace '"', '\"'
+                $ms = @()
+                foreach ($m in @($h.matched)) {
+                    $ms += '"' + (([string]$m) -replace '"', '\"') + '"'
+                }
+                [void]$parts.Add('  {"date":"' + ([string]$h.date) + '","title":"' + $t + '","copyright":"' + $c + '","matched":[' + ($ms -join ',') + ']}')
+            }
+            $jsonText = "[" + [Environment]::NewLine + ($parts -join ("," + [Environment]::NewLine)) + [Environment]::NewLine + "]"
+            try {
+                $outFile = Join-Path $env:TEMP 'bwl-output.json'
+                [System.IO.File]::WriteAllText($outFile, $jsonText, ([System.Text.UTF8Encoding]::new($false)))
+            } catch { }
+            Write-Output $jsonText
+            exit 0
+        }
+        $Date = [string]$hits[0].date
+        Write-Log ("搜索命中，换这张: " + $Date + "  " + $hits[0].title)
+    }
+try {
+    if ($CleanAll) {
+        Write-Log '--- 清空缓存（保留当前壁纸）---'
+        [void](Clear-AllCache -Mode $CleanMode)
+        Exit-Run 0
+    }
+
+    # ---- 收藏 / 取消收藏
+    if ($Favorite -or $Unfavorite) {
+        $cur = (Get-ItemProperty 'HKCU:\Control Panel\Desktop' -Name Wallpaper -ErrorAction SilentlyContinue).Wallpaper
+        if (-not $cur -or -not (Test-Path $cur)) {
+            Write-Log '当前没有可收藏的壁纸' 'ERROR'
+            Exit-Run 1
+        }
+        $name = Split-Path $cur -Leaf
+        $srcDir = (Split-Path $cur -Parent).TrimEnd('\')
+        $inCache = ($srcDir -ieq $CacheDir.TrimEnd('\'))
+        $inFav   = ($srcDir -ieq $FavDir.TrimEnd('\'))
+        if ($Favorite -and -not $inCache) {
+            Write-Log "只有缓存目录里的壁纸才能收藏：$cur" 'ERROR'
+            Exit-Run 3
+        }
+        if ($Unfavorite -and -not $inFav) {
+            Write-Log "当前壁纸不在收藏夹里，无需取消：$cur" 'ERROR'
+            Exit-Run 3
+        }
+
+        if (-not (Test-Path $FavDir)) { New-Item -ItemType Directory -Path $FavDir -Force | Out-Null }
+        $dest = Join-Path $FavDir $name
+
+        # 读收藏索引
+        $favIdx = @{}
+        if (Test-Path $FavIndex) {
+            try {
+                $fi = Get-Content $FavIndex -Raw -Encoding UTF8 | ConvertFrom-Json
+                foreach ($q in $fi.PSObject.Properties) { $favIdx[$q.Name] = $q.Value }
+            } catch { }
+        }
+        $dateKey = ($name -split '_')[0]
+
+        if ($Favorite) {
+            # 移动而非复制：一份文件，缓存清理碰不到收藏
+            Move-Item -LiteralPath $cur -Destination $dest -Force
+            # 从缓存索引捞元信息
+            $meta = $null
+            if (Test-Path $IndexPath) {
+                try {
+                    $ci = Get-Content $IndexPath -Raw -Encoding UTF8 | ConvertFrom-Json
+                    if ($ci.PSObject.Properties.Name -contains $dateKey) { $meta = $ci.$dateKey }
+                } catch { }
+            }
+            # 缓存索引里查不到就退回接口再查一次，别写空标题
+            if (-not $meta -or [string]$meta.title -eq '') {
+                try {
+                    $l8 = @((Get-WallpaperListJson -Count 8) | ConvertFrom-Json)
+                    $hit8 = $l8 | Where-Object { [string]$_.startdate -eq $dateKey } | Select-Object -First 1
+                    if ($hit8) {
+                        $zhMap = Get-ZhTitleMap
+                        $bid = ([string]$hit8.urlbase) -replace '.*id=', '' -replace '_UHD\.jpg$', '' -replace '_[A-Za-z]{2}-[A-Za-z]{2}\d+$', ''
+                        $zt = [string]$hit8.title
+                        if ($zhMap.ContainsKey($bid)) { $zt = $zhMap[$bid] }
+                        $meta = [pscustomobject]@{
+                            title     = $zt
+                            titleEn   = [string]$hit8.title
+                            copyright = [string]$hit8.copyright
+                            imageId   = $bid
+                        }
+                    }
+                } catch { }
+            }
+            # 还查不到就用 state 里的记录兜底
+            if ((-not $meta -or [string]$meta.title -eq '') -and $state -and [string]$state.date -eq $dateKey) {
+                $meta = [pscustomobject]@{
+                    title     = [string]$state.title
+                    titleEn   = ''
+                    copyright = ''
+                    imageId   = [string]$state.imageId
+                }
+            }
+
+            if ($meta -and [string]$meta.title -ne '') {
+                $favIdx[$dateKey] = [ordered]@{
+                    title     = [string]$meta.title
+                    titleEn   = [string]$meta.titleEn
+                    copyright = [string]$meta.copyright
+                    file      = $name
+                    imageId   = [string]$meta.imageId
+                    sizeBytes = (Get-Item $dest).Length
+                }
+            } else {
+                $favIdx[$dateKey] = [ordered]@{
+                    title     = ''
+                    titleEn   = ''
+                    copyright = ''
+                    file      = $name
+                    imageId   = ''
+                    sizeBytes = (Get-Item $dest).Length
+                }
+            }
+            [System.IO.File]::WriteAllText($FavIndex, ($favIdx | ConvertTo-Json -Depth 6), (New-Object System.Text.UTF8Encoding($false)))
+            # 文件已经挪走，壁纸路径要跟着改到收藏夹，否则桌面指向一个不存在的文件
+            Set-WallpaperStyle -Name $styleName
+            [void](Set-DesktopWallpaper -Path $dest)
+            if ($state -and [string]$state.date -eq $dateKey) {
+                Write-State -Date $dateKey -File $dest -Title ([string]$favIdx[$dateKey].title) -ImageId ([string]$favIdx[$dateKey].imageId) -AppliedDate $dateKey
+            }
+            Write-Log "已收藏（移入收藏夹）：$name"
+            # 文件已离开缓存，缓存索引里的条目要同步删掉，避免越积越多的失效记录
+            if (Test-Path $IndexPath) {
+                try {
+                    $ciClean = Get-Content $IndexPath -Raw -Encoding UTF8 | ConvertFrom-Json
+                    if ($ciClean.PSObject.Properties.Name -contains $dateKey) {
+                        $tmpIdx = [ordered]@{}
+                        foreach ($q in $ciClean.PSObject.Properties) {
+                            if ($q.Name -ne $dateKey) { $tmpIdx[$q.Name] = $q.Value }
+                        }
+                        [System.IO.File]::WriteAllText($IndexPath, ($tmpIdx | ConvertTo-Json -Depth 6), (New-Object System.Text.UTF8Encoding($false)))
+                    }
+                } catch { }
+            }
+            Exit-Run 0
+        } else {
+            $back = Join-Path $CacheDir $name
+            # 先取标题等信息再删索引，否则取消收藏后标题会丢
+            $keptTitle = ''
+            $keptId = ''
+            $keptCpr = ''
+            $keptSearch = ''
+            if ($favIdx.ContainsKey($dateKey)) {
+                $keptTitle = [string]$favIdx[$dateKey].title
+                $keptId = [string]$favIdx[$dateKey].imageId
+                $keptCpr = [string]$favIdx[$dateKey].copyright
+            }
+            if (-not $keptTitle -and $state -and [string]$state.date -eq $dateKey) {
+                $keptTitle = [string]$state.title
+                if (-not $keptId) { $keptId = [string]$state.imageId }
+                if (-not $keptCpr) { $keptCpr = [string]$state.copyright }
+            }
+            if (Test-Path $dest) { Move-Item -LiteralPath $dest -Destination $back -Force }
+            if ($favIdx.ContainsKey($dateKey)) { $favIdx.Remove($dateKey) }
+            [System.IO.File]::WriteAllText($FavIndex, ($favIdx | ConvertTo-Json -Depth 6), (New-Object System.Text.UTF8Encoding($false)))
+            if (Test-Path $back) {
+                Set-WallpaperStyle -Name $styleName
+                [void](Set-DesktopWallpaper -Path $back)
+                if ($state -and [string]$state.date -eq $dateKey) {
+                    Write-State -Date $dateKey -File $back -Title $keptTitle -Copyright $keptCpr -ImageId $keptId -AppliedDate $dateKey
+                }
+            }
+            Write-Log "已取消收藏（移回缓存）：$name"
+            Exit-Run 0
+        }
+    }
+
+    if ($Clean) {
+        $keepArg = if ($Keep -gt 0) { $Keep } else { $keepDays }
+        Write-Log "--- 仅执行缓存清理（保留 $keepArg 天）---"
+        [void](Clear-OldCache -Days $keepArg)
+        Exit-Run 0
+    }
+
+    # ---- 清理历史归档（保留当前壁纸）
+    if ($CleanFavorites) {
+        # 清空收藏：当前壁纸如果在收藏里，先移回缓存，避免桌面指向不存在的文件
+        $curF = ''
+        try { $curF = [string](Get-ItemProperty 'HKCU:\Control Panel\Desktop' -Name Wallpaper -ErrorAction SilentlyContinue).Wallpaper } catch { }
+        $favFiles = @(Get-ChildItem $FavDir -Filter '*.jpg' -File -ErrorAction SilentlyContinue)
+        $removedF = 0
+        $keptF = 0
+        $freedF = 0
+        foreach ($ff in $favFiles) {
+            if ($curF -and $curF -ieq $ff.FullName) {
+                # 当前壁纸：移回缓存，不删
+                $backF = Join-Path $CacheDir $ff.Name
+                if (-not $DryRun) {
+                    try {
+                        Move-Item -LiteralPath $ff.FullName -Destination $backF -Force
+                        [void](Set-DesktopWallpaper -Path $backF)
+                        $stF = Read-State
+                        $dF = ($ff.Name -split '_')[0]
+                        if ($stF -and [string]$stF.date -eq $dF) {
+                            Write-State -Date $dF -File $backF -Title ([string]$stF.title) -Copyright ([string]$stF.copyright) -ImageId ([string]$stF.imageId) -AppliedDate $dF
+                        }
+                    } catch { }
+                }
+                $keptF++
+                continue
+            }
+            $szF = $ff.Length
+            if ($DryRun) { Write-Log "[DryRun] 将删除收藏 $($ff.Name)"; $removedF++; $freedF += $szF; continue }
+            if (Remove-OneFile -Path $ff.FullName -Mode $CleanMode) { $removedF++; $freedF += $szF }
+        }
+        if (-not $DryRun) {
+            try {
+                [System.IO.File]::WriteAllText($FavIndex, '{}', (New-Object System.Text.UTF8Encoding($false)))
+            } catch { }
+        }
+        $modeF = if ($CleanMode -eq 'permanent') { '彻底删除' } else { '进回收站' }
+        Write-Log ("清空收藏（" + $modeF + "）：删除 " + $removedF + " 张，释放 " + [math]::Round($freedF / 1MB, 1) + " MB，保留当前壁纸 " + $keptF + " 张")
+        Exit-Run 0
+    }
+
+    if ($CleanArchiveIndex) {
+        $nIdx = 0
+        Get-ChildItem $ArchiveDir -Filter '*.json' -File -ErrorAction SilentlyContinue | ForEach-Object {
+            if ($_.Name -eq 'all-index.json' -or $_.Name -match '^\d{4}-\d{2}\.json$') {
+                if ($DryRun) { Write-Log "[DryRun] 将删除索引 $($_.Name)"; $nIdx++ }
+                elseif (Remove-OneFile -Path $_.FullName -Mode $CleanMode) { $nIdx++ }
+            }
+        }
+        Write-Log ("清理归档索引：删除 " + $nIdx + " 个文件")
+        Exit-Run 0
+    }
+
+    if ($CleanArchive) {
+        if (-not (Test-Path $ArchiveImgDir)) {
+            Write-Log '历史归档目录不存在，无需清理'
+            Exit-Run 0
+        }
+        # 保护：收藏过的 / pinned 里的 / 当前壁纸，一律不删
+        $favA = @{}
+        Get-ChildItem $FavDir -Filter '*.jpg' -File -ErrorAction SilentlyContinue | ForEach-Object {
+            if ($_.Name -match '^(\d{8})') { $favA[$matches[1]] = $true }
+        }
+        $pinA = Read-Pinned
+        $curA = ''
+        try { $curA = [string](Get-ItemProperty 'HKCU:\Control Panel\Desktop' -Name Wallpaper -ErrorAction SilentlyContinue).Wallpaper } catch { }
+        $removedA = 0
+        $keptA = 0
+        $freedA = 0
+        $filesA = @(Get-ChildItem $ArchiveImgDir -Filter '*.jpg' -File -ErrorAction SilentlyContinue | Sort-Object Name)
+        foreach ($fa in $filesA) {
+            $dA = ''
+            if ($fa.Name -match '^(\d{8})') { $dA = $matches[1] }
+            if ($dA -and $favA.ContainsKey($dA)) { $keptA++; continue }
+            if ($dA -and $pinA.ContainsKey($dA)) { $keptA++; continue }
+            if ($curA -and $curA -eq $fa.FullName) { $keptA++; continue }
+            $szA = $fa.Length
+            if ($DryRun) {
+                Write-Log "[DryRun] 将删除归档图 $($fa.Name)"
+                $removedA++; $freedA += $szA
+                continue
+            }
+            if (Remove-OneFile -Path $fa.FullName -Mode $CleanMode) { $removedA++; $freedA += $szA }
+        }
+        if (-not $DryRun) {
+            # 同步清掉 pinned 名单里已经没图的日期
+            $setA = Read-Pinned
+            $leftA = @{}
+            foreach ($k in $setA.Keys) {
+                $still = Get-ChildItem $ArchiveImgDir -Filter "${k}_*.jpg" -File -ErrorAction SilentlyContinue | Select-Object -First 1
+                if ($still) { $leftA[$k] = $true }
+            }
+            try {
+                [System.IO.File]::WriteAllText($PinnedPath, ($leftA | ConvertTo-Json -Depth 3), (New-Object System.Text.UTF8Encoding($false)))
+            } catch { }
+        }
+        $modeTxt = if ($CleanMode -eq 'permanent') { '彻底删除' } else { '进回收站' }
+        Write-Log ("清理历史归档（" + $modeTxt + "）：删除 " + $removedA + " 张，释放 " + [math]::Round($freedA / 1MB, 1) + " MB，保留 " + $keptA + " 张")
+        Exit-Run 0
+    }
+
+    # ---- 随机一张（收藏优先，排除当前这张）
+    if ($Random) {
+        $pool = @(Get-ChildItem $FavDir -Filter *.jpg -File -ErrorAction SilentlyContinue)
+        $from = '收藏'
+        if ($pool.Count -eq 0) {
+            $pool = @(Get-ChildItem $CacheDir -Filter *.jpg -File -ErrorAction SilentlyContinue)
+            $from = '缓存'
+        }
+        if ($pool.Count -eq 0) { Write-Log '没有可随机的图（收藏与缓存都是空的）' 'ERROR'; exit 1 }
+
+        $curWp = (Get-ItemProperty 'HKCU:\Control Panel\Desktop' -Name Wallpaper -ErrorAction SilentlyContinue).Wallpaper
+        $filtered = @($pool | Where-Object { $_.FullName -ne $curWp })
+        if ($filtered.Count -gt 0) { $pool = $filtered }
+
+        $pick = $pool | Get-Random
+        $pickDate = ($pick.BaseName -split '_')[0]
+
+        $locked = Enter-RunLock
+        if (-not $locked) { exit 2 }
+
+        Set-WallpaperStyle -Name $styleName
+        [void](Set-DesktopWallpaper -Path $pick.FullName)
+        Write-Log "随机切换（$from，共 $($pool.Count) 张候选）：$($pick.Name)"
+
+        $ttl = ''
+        $iid = ''
+        foreach ($ix in @($FavIndex, $IndexPath)) {
+            if (Test-Path $ix) {
+                try {
+                    $obj = Get-Content $ix -Raw -Encoding UTF8 | ConvertFrom-Json
+                    if ($obj.PSObject.Properties.Name -contains $pickDate) {
+                        $ttl = [string]$obj.$pickDate.title
+                        $iid = [string]$obj.$pickDate.imageId
+                        break
+                    }
+                } catch { }
+            }
+        }
+        Write-State -Date $pickDate -File $pick.FullName -Title $ttl -ImageId $iid -AppliedDate $pickDate
+        Write-Log '--- 完成 ---'
+        if ([bool]$config['autoClean']) {
+            $capMB2 = 0
+            try { $capMB2 = [int]$config['archiveMaxMB'] } catch { }
+            if ($capMB2 -gt 0) { [void](Clear-ArchiveBySize -MaxMB $capMB2) }
+        }
+        Exit-Run 0
+    }
+
+    # ---- 指定日期
+    if ($Date) {
+        $dt = $null
+        try { $dt = [datetime]::ParseExact($Date, 'yyyyMMdd', $null) } catch { }
+        if (-not $dt) { Write-Log "日期格式错误（要 YYYYMMDD）：$Date" 'ERROR'; exit 1 }
+        if ($dt.Date -gt (Get-Date).Date) { Write-Log '不能选择未来日期' 'ERROR'; exit 5 }
+
+        Write-Log "--- 指定日期：$Date ---"
+
+        # 1) 本地已有（收藏优先）
+        $hit = Get-ChildItem $FavDir -Filter "${Date}_*.jpg" -File -ErrorAction SilentlyContinue | Select-Object -First 1
+        if (-not $hit) {
+            $hit = Get-ChildItem $CacheDir -Filter "${Date}_*.jpg" -File -ErrorAction SilentlyContinue | Select-Object -First 1
+        }
+        if (-not $hit -and (Test-Path $ArchiveImgDir)) {
+            $hit = Get-ChildItem $ArchiveImgDir -Filter "${Date}_*.jpg" -File -ErrorAction SilentlyContinue | Select-Object -First 1
+        }
+        if ($hit) {
+            $locked = Enter-RunLock
+            if (-not $locked) { exit 2 }
+            Set-WallpaperStyle -Name $styleName
+            [void](Set-DesktopWallpaper -Path $hit.FullName)
+            # 标题优先级：state（同一天）→ 归档索引 → 空
+            $st = Read-State
+            $tTitle = ''
+            $tId = ''
+            $tCpr = ''
+            $tSearch = ''
+            if ($st -and [string]$st.date -eq $Date) {
+                $tTitle = [string]$st.title
+                $tId = [string]$st.imageId
+                $tCpr = [string]$st.copyright
+                $tSearch = [string]$st.searchUrl
+            }
+            if (-not $tTitle -and $config['archive']) {
+                try {
+                    $recHit = Get-ArchiveRecord -Date $Date
+                    if ($recHit) {
+                        if (-not $tTitle) { $tTitle = [string]$recHit.title }
+                        if (-not $tCpr) { $tCpr = [string]$recHit.copyright }
+                        if (-not $tSearch) { $tSearch = [string]$recHit.searchUrl }
+                        if (-not $tId -and $recHit.id) { $tId = [string]$recHit.id }
+                    }
+                } catch { }
+            }
+            # 翻页/取历史图命中本地时也要进保留名单，否则会被自动清理删掉
+            Add-Pinned -Date $Date
+            if ($tTitle.Length -gt 60) { $tTitle = $tTitle.Substring(0, 60) }
+            Write-State -Date $Date -File $hit.FullName -Title $tTitle -Copyright $tCpr -SearchUrl $tSearch -ImageId $tId -AppliedDate $Date
+            Write-Log "命中本地：$($hit.Name)"
+            if ([bool]$config['autoClean']) {
+                $capMB1 = 0
+                try { $capMB1 = [int]$config['archiveMaxMB'] } catch { }
+                if ($capMB1 -gt 0) { [void](Clear-ArchiveBySize -MaxMB $capMB1) }
+            }
+            Exit-Run 0
+        }
+
+        # 2) 接口 8 天内 → 走正常下载（带元信息）
+        $list8 = @((Get-WallpaperListJson -Count 8) | ConvertFrom-Json)
+        $pos8 = -1
+        for ($i = 0; $i -lt $list8.Count; $i++) {
+            if ([string]$list8[$i].startdate -eq $Date) { $pos8 = $i; break }
+        }
+        if ($pos8 -ge 0) {
+            $Index = $pos8
+            $modeDesc = "date $Date"
+            Write-Log "该日期在接口范围内，走高质量下载（第 $pos8 位）"
+        } else {
+            # 3) 先试第三方归档拿原图 ID（能拿到就是 3.5 MB 以上的原图）
+            $useArchive = [bool]$config['archive']
+            if ($useArchive) {
+                $rec = Get-ArchiveRecord -Date $Date
+                if ($rec -and $rec.id) {
+                    $archId  = [string]$rec.id
+                    $archTtl = [string]$rec.title
+                    $archCpr = [string]$rec.copyright
+                    $shortId = $archId -replace '_[A-Za-z]{2}-[A-Za-z]{2}\d+$', ''
+                    $fileName = "${Date}_$shortId.jpg"
+                    $dest = Join-Path $ArchiveImgDir $fileName
+                    $locked = Enter-RunLock
+                    if (-not $locked) { exit 2 }
+
+                    # 候选地址：UHD 原图 > 归档给出的直链
+                    $cand = @()
+                    $cand += @{ url = "https://www.bing.com/th?id=${archId}_UHD.jpg"; tag = '归档原图'; minKb = 300 }
+                    if ($rec.url) {
+                        $u2 = [string]$rec.url
+                        if ($u2.StartsWith('/')) { $u2 = 'https://www.bing.com' + $u2 }
+                        $cand += @{ url = $u2; tag = '归档直链'; minKb = 60 }
+                    }
+
+                    $got = $null
+                    foreach ($c in $cand) {
+                        try {
+                            $sz = Save-BingImage -Url $c.url -Dest $dest -MinKB $c.minKb
+                            $got = $c.tag
+                            Write-Log ("下载完成 " + [math]::Round($sz / 1MB, 2) + ' MB（' + $c.tag + '）')
+                            break
+                        } catch {
+                            Write-Log "候选失败（$($c.tag)）：$($_.Exception.Message)" 'WARN'
+                        }
+                    }
+
+                    if ($got) {
+                        Set-WallpaperStyle -Name $styleName
+                        if (Set-DesktopWallpaper -Path $dest) { Write-Log "壁纸已设置: $dest" }
+                        if ($archTtl.Length -gt 60) { $archTtl = $archTtl.Substring(0, 60) }
+                        Add-Pinned -Date $Date
+                        Write-State -Date $Date -File $dest -Title $archTtl -Copyright $archCpr -SearchUrl ([string]$rec.searchUrl) -ImageId $archId -AppliedDate $Date
+                        Write-Log '--- 完成 ---'
+        if ([bool]$config['autoClean']) {
+            $capMB2 = 0
+            try { $capMB2 = [int]$config['archiveMaxMB'] } catch { }
+            if ($capMB2 -gt 0) { [void](Clear-ArchiveBySize -MaxMB $capMB2) }
+        }
+                        Exit-Run 0
+                    }
+                    $locked = $false
+                    Write-Log '归档所有通道都失败（gh-proxy / raw / api.github.com / 本地代理），回退 CDN' 'WARN'
+                }
+            }
+
+            # 4) 兜底：微软 CDN 按日期直取
+            $url = "https://bingwallpaperimages.microsoft.com/Latest/3840x2400/$Date.jpg"
+            $fileName = "${Date}_CDN.jpg"
+            $dest = Join-Path $CacheDir $fileName
+            $locked = Enter-RunLock
+            if (-not $locked) { exit 2 }
+            try {
+                $size = Save-BingImage -Url $url -Dest $dest
+                Write-Log ("下载完成 " + [math]::Round($size / 1MB, 2) + (if ($archTried) { ' MB（微软 CDN，降级）' } else { ' MB（微软 CDN 3840x2400）' }))
+            } catch {
+                if ($Date -lt '20250301') {
+                    if (-not $useArchive) {
+                        Write-Log "该日期需要增强数据源（归档已关闭）：$Date" 'ERROR'
+                        Exit-Run 6
+                    } else {
+                        Write-Log "归档源不可用，且 CDN 无此日期：$Date" 'ERROR'
+                        Exit-Run 7
+                    }
+                }
+                Write-Log "该日期没有可用壁纸：$Date" 'ERROR'
+                Exit-Run 5
+            }
+            Set-WallpaperStyle -Name $styleName
+            if (Set-DesktopWallpaper -Path $dest) { Write-Log "壁纸已设置: $dest" }
+            Add-Pinned -Date $Date
+            # 降级 CDN 时也尽量带上标题，避免托盘显示空白
+            $cdTtl = [string]$archTtl
+            $cdCpr = [string]$archCpr
+            $cdId = [string]$archId
+            if (-not $cdTtl -and $Date.Length -eq 8) {
+                try {
+                    $cdRec = Get-ArchiveRecord -Date $Date
+                    if ($cdRec) {
+                        $cdTtl = [string]$cdRec.title
+                        $cdCpr = [string]$cdRec.copyright
+                        $cdId = [string]$cdRec.id
+                    }
+                } catch { }
+            }
+            Write-State -Date $Date -File $dest -Title $cdTtl -Copyright $cdCpr -ImageId $cdId -AppliedDate $Date
+            if ($archTried) {
+                Write-Log '--- 完成（降级 CDN 压缩版）---'
+                Exit-Run 8
+            }
+            Write-Log '--- 完成 ---'
+            Exit-Run 0
+        }
+    }
+
+    $modeDesc = 'today'
+    if ($Use) { $modeDesc = "use $Use" }
+    elseif ($Step -ne 0) { $modeDesc = "step $Step" }
+    elseif ($PSBoundParameters.ContainsKey('Index')) { $modeDesc = "index $Index" }
+
+    Write-Log "--- 开始 mode=$modeDesc KeepDays=$keepDays Style=$styleName Source=$($config['source']) Lang=$($config['titleLanguage']) DryRun=$($DryRun.IsPresent) ---"
+
+    # ---- 纯本地模式：-Use
+    if ($Use) {
+        if (-not (Test-Path $Use)) { throw "文件不存在: $Use" }
+        $file = (Resolve-Path -LiteralPath $Use).Path
+        $ext = [System.IO.Path]::GetExtension($file).ToLower()
+        if ($ext -notin @('.jpg', '.jpeg', '.png', '.bmp')) { throw "不支持的格式: $ext" }
+
+        $mDate = [regex]::Match([System.IO.Path]::GetFileName($file), '^(\d{8})')
+        $dateStr = if ($mDate.Success) { $mDate.Groups[1].Value } else { (Get-Date -Format 'yyyyMMdd') }
+        Write-Log "目标(本地): $dateStr  $([System.IO.Path]::GetFileName($file))"
+
+        if ($DryRun) {
+            Write-Log "[DryRun] 将设置壁纸: $file"
+            Exit-Run 0
+        }
+
+        $locked = Enter-RunLock
+        if (-not $locked) { exit 2 }
+
+        Set-WallpaperStyle -Name $styleName
+        if (Set-DesktopWallpaper -Path $file) { Write-Log "壁纸已设置: $file" }
+        else { Write-Log '壁纸设置后注册表未更新' 'WARN' }
+        # 本地图也尽量补标题：先查缓存索引，再查归档索引
+        $uTtl = ''
+        $uCpr = ''
+        $uId = ''
+        try {
+            $uIdx = @{}
+            if (Test-Path $IndexPath) {
+                $uRaw = Get-Content $IndexPath -Raw -Encoding UTF8 | ConvertFrom-Json
+                if ($uRaw.PSObject.Properties.Name -contains $dateStr) {
+                    $uTtl = [string]$uRaw.$dateStr.title
+                    $uCpr = [string]$uRaw.$dateStr.copyright
+                    $uId = [string]$uRaw.$dateStr.imageId
+                }
+            }
+            if (-not $uTtl -and $dateStr.Length -eq 8) {
+                $uRec = Get-ArchiveRecord -Date $dateStr
+                if ($uRec) {
+                    $uTtl = [string]$uRec.title
+                    $uCpr = [string]$uRec.copyright
+                    $uId = [string]$uRec.id
+                }
+            }
+        } catch { }
+        Write-State -Date $dateStr -File $file -Title $uTtl -Copyright $uCpr -ImageId $uId
+        Write-Log '--- 完成 ---'
+        if ([bool]$config['autoClean']) {
+            $capMB2 = 0
+            try { $capMB2 = [int]$config['archiveMaxMB'] } catch { }
+            if ($capMB2 -gt 0) { [void](Clear-ArchiveBySize -MaxMB $capMB2) }
+        }
+        Exit-Run 0
+    }
+
+    $wpJson = Get-WallpaperListJson -Count ([Math]::Max($keepDays, 8))
+    $wallpapers = @($wpJson | ConvertFrom-Json)
+    # ---- 联网模式
+    Write-Log "微软接口返回 $($wallpapers.Count) 天"
+
+    $state = Read-State
+
+    # -Step：以 state.date 为基准相对移动
+    if ($Step -ne 0) {
+        $curDate = if ($state) { [string]$state.date } else { '' }
+        $pos = -1
+        for ($i = 0; $i -lt $wallpapers.Count; $i++) {
+            if ([string]$wallpapers[$i].startdate -eq $curDate) { $pos = $i; break }
+        }
+        if ($pos -lt 0) {
+            # 当前日期不在 8 天窗口里（可能已经翻到归档区），直接从索引找邻近的一天
+            $outOfWindow = Get-NeighborDate -From $curDate -Step $Step
+            if ($outOfWindow) {
+                Write-Log ("当前日期不在窗口内（" + $curDate + "），从归档接续：" + $outOfWindow)
+                & $PSCommandPath -Date $outOfWindow
+                exit $LASTEXITCODE
+            }
+            Write-Log "state 里没有当前日期（$curDate），从最新一张起算" 'WARN'
+            $pos = 0
+        }
+        $target = $pos + $Step
+        $hitEdge = 0
+        $beyondDate = ''
+        if ($target -lt 0) {
+            # 已经到窗口最新端，尝试从归档索引找更新的一天
+            $beyondDate = Get-NeighborDate -From $curDate -Step -1
+            if ($beyondDate) {
+                Write-Log "越过 8 天窗口，接续归档：$beyondDate"
+            } else {
+                $target = 0; $hitEdge = -1; Write-Log '已经是最新的一张（归档里也没有更新的了）' 'WARN'; $Index = $target
+            }
+        }
+        if (-not $beyondDate -and $target -ge $wallpapers.Count) {
+            # 已经到窗口最旧端，尝试从归档索引找更早的一天
+            $beyondDate = Get-NeighborDate -From $curDate -Step 1
+            if ($beyondDate) {
+                Write-Log "越过 8 天窗口，接续归档：$beyondDate"
+            } else {
+                $target = $wallpapers.Count - 1; $hitEdge = 1; Write-Log '已经是归档里最旧的一张' 'WARN'; $Index = $target
+            }
+        }
+        if ($beyondDate) {
+            Write-Log ("相对移动（跨窗口）: " + $curDate + " Step=" + $Step + " -> " + $beyondDate)
+            # 越界了：交给 -Date 分支处理（会走归档下载）
+            & $PSCommandPath -Date $beyondDate
+            exit $LASTEXITCODE
+        } else {
+            Write-Log "相对移动: 当前第 $pos 位($curDate) Step=$Step -> 第 $target 位"
+            $Index = $target
+        }
+    }
+
+    if ($Index -lt 0 -or $Index -ge $wallpapers.Count) { throw "Index=$Index 超出范围（0..$($wallpapers.Count - 1)）" }
+
+    # 自动模式（today）才做「新图发了吗」的判断；手动翻页不受影响
+    $isAuto = ($modeDesc -eq 'today')
+    if ($isAuto -and $Index -eq 0) {
+        $todayB = Get-Date -Format 'yyyyMMdd'
+        $topDate = [string]$wallpapers[0].startdate
+        if ($topDate -lt $todayB) {
+            Write-Log ("Bing 尚未发布 " + $todayB + " 的图，最新是 " + $topDate + "（等待中）") 'WARN'
+            Exit-Run 9
+        }
+    }
+
+    $img = $wallpapers[$Index]
+    $dateStr = [string]$img.startdate
+
+    $m = [regex]::Match([string]$img.urlbase, 'id=([^&]+)')
+    if (-not $m.Success) { throw '无法从 urlbase 解析图片 ID' }
+    $fullId = $m.Groups[1].Value -replace '_UHD\.jpg$', ''
+    $baseId = $fullId -replace '_[A-Za-z]{2}-[A-Za-z]{2}\d+$', ''
+    $fileName = "${dateStr}_${baseId}.jpg"
+    $dest = Join-Path $CacheDir $fileName
+
+    # 同一天只可能有一张 Bing 图：不管本地存的是 _OHR.Xxx 还是 _CDN，都复用同一份
+    # 优先用非 _CDN（原图质量更高），没有再退回 _CDN
+    $cands = @()
+    $cands += Get-ChildItem $FavDir -Filter "${dateStr}_*.jpg" -File -ErrorAction SilentlyContinue
+    $cands += Get-ChildItem $CacheDir -Filter "${dateStr}_*.jpg" -File -ErrorAction SilentlyContinue
+    $existing = $null
+    if ($cands.Count -gt 0) {
+        $existing = $cands | Where-Object { $_.Name -notlike '*_CDN*' } | Select-Object -First 1
+        if (-not $existing) { $existing = $cands | Select-Object -First 1 }
+    }
+    if ($existing) { $dest = $existing.FullName }
+
+    # 标题：HPImageArchive 返回的已经是 mkt 对应的语言，直接用
+    $title = [string]$img.title
+    $copy  = [string]$img.copyright
+    Write-Log "目标: $dateStr  $title"
+
+    # 幂等（DryRun 也要能提前退出）
+    $curWp = (Get-ItemProperty 'HKCU:\Control Panel\Desktop' -Name Wallpaper -ErrorAction SilentlyContinue).Wallpaper
+    if ($isAuto -and -not $Force -and $state -and $state.date -eq $dateStr -and (Test-Path $dest) -and $curWp -eq $dest) {
+        Write-Log ("当天壁纸已就位（" + $dateStr + "），无需重复设置")
+        if ([bool]$config['autoClean']) {
+            [void](Clear-OldCache -Days $keepDays)
+            $capMB = 0
+            try { $capMB = [int]$config['archiveMaxMB'] } catch { }
+            if ($capMB -gt 0) { [void](Clear-ArchiveBySize -MaxMB $capMB) }
+        }
+        Exit-Run 0
+    }
+    if (-not $Force -and $state -and $state.date -eq $dateStr -and (Test-Path $dest) -and $curWp -eq $dest) {
+        if ($hitEdge -ne 0) {
+            Write-Log ('已经在边界，无可切换：edge=' + $hitEdge)
+            Exit-Run 4
+        }
+        Write-Log '已是最新且壁纸已就位，跳过'
+        if ([bool]$config['autoClean']) {
+            [void](Clear-OldCache -Days $keepDays)
+            $capMB = 0
+            try { $capMB = [int]$config['archiveMaxMB'] } catch { }
+            if ($capMB -gt 0) { [void](Clear-ArchiveBySize -MaxMB $capMB) }
+        }
+        Exit-Run 0
+    }
+
+    # 候选地址
+    $bingUhd  = "https://www.bing.com/th?id=${fullId}_UHD.jpg"
+    $bingWh   = "https://www.bing.com/th?id=${fullId}&w=3840&h=2160"
+    $bing1080 = "https://www.bing.com/th?id=${fullId}_1920x1080.jpg"
+    $msUrl2   = [string]$img.url2
+    $msUrl    = [string]$img.url
+
+    $res = [string]$config['resolution']
+    if ([string]$config['source'] -eq 'microsoft') {
+        $candidates = @($msUrl2, $msUrl, $bingUhd, $bing1080)
+    } elseif ($res -eq '1920x1080') {
+        $candidates = @($bing1080, $bingWh, $bingUhd, $msUrl2, $msUrl)
+    } else {
+        $candidates = @($bingUhd, $bingWh, $msUrl2, $msUrl, $bing1080)
+    }
+    $candidates = $candidates | Where-Object { $_ } | Select-Object -Unique
+
+    $lockedNow = [bool]$config['locked']
+    $autoMode = ($modeDesc -eq 'today')
+
+    if ($DryRun) {
+        Write-Log "[DryRun] 分辨率档位 $res，首选 $($candidates[0])"
+        Write-Log "[DryRun] 将下载 -> $dest"
+        if ($autoMode -and $lockedNow) {
+            Write-Log '[DryRun] 锁定中，只下载不切换壁纸'
+        } else {
+            Write-Log "[DryRun] 将设置壁纸: $dest （样式 $styleName）"
+        }
+        Exit-Run 0
+    }
+
+    $locked = Enter-RunLock
+    if (-not $locked) { exit 2 }
+
+    $size = 0
+    $needDownload = $true
+    if (Test-Path $dest) {
+        $existSize = (Get-Item $dest).Length
+        if ($existSize -ge 300KB) {
+            $needDownload = $false
+        } elseif ($existSize -lt 300KB) {
+            Write-Log "缓存文件异常（$existSize 字节 < 300 KB），将重新下载" 'WARN'
+        }
+    }
+    if ($Force) { $needDownload = $true }
+
+    if ($needDownload) {
+        $ok = $false
+        foreach ($u in $candidates) {
+            try {
+                Write-Log "下载 $u"
+                $size = Save-BingImage -Url $u -Dest $dest
+                Write-Log ("下载完成 " + [math]::Round($size / 1MB, 2) + ' MB')
+                $ok = $true
+                break
+            } catch {
+                Write-Log "失败($u): $($_.Exception.Message)" 'WARN'
+            }
+        }
+        if (-not $ok) { throw '所有候选地址都下载失败' }
+    } else {
+        $size = (Get-Item $dest).Length
+        Write-Log ("缓存已存在，复用 " + (Split-Path $dest -Leaf) + " (" + [math]::Round($size / 1MB, 2) + " MB)")
+    }
+
+    # 索引
+    $catalog = @{}
+    if (Test-Path $IndexPath) {
+        try {
+            $old = Get-Content $IndexPath -Raw -Encoding UTF8 | ConvertFrom-Json
+            foreach ($pp in $old.PSObject.Properties) { $catalog[$pp.Name] = $pp.Value }
+        } catch { }
+    }
+    $catalog[$dateStr] = [ordered]@{
+        title     = $title
+        titleEn   = $titleEn
+        copyright = $copy
+        file      = $fileName
+        imageId   = $fullId
+        sizeBytes = $size
+    }
+    [System.IO.File]::WriteAllText($IndexPath, ($catalog | ConvertTo-Json -Depth 6), (New-Object System.Text.UTF8Encoding($false)))
+
+    # 设壁纸（锁定 + 自动触发时只下载不切换）
+    if ($autoMode -and $lockedNow) {
+        $prevApplied = $dateStr
+        if ($state -and $state.appliedDate) { $prevApplied = [string]$state.appliedDate }
+        Write-Log "锁定中：已下载 $fileName，不切换壁纸（保持 $prevApplied）"
+        Write-State -Date $dateStr -File $dest -Title $title -Copyright $copy -SearchUrl ([string]$img.copyrightlink) -ImageId $fullId -AppliedDate $prevApplied
+    } else {
+        Set-WallpaperStyle -Name $styleName
+        if (Set-DesktopWallpaper -Path $dest) { Write-Log "壁纸已设置: $dest" }
+        else { Write-Log '壁纸设置后注册表未更新' 'WARN' }
+        Write-State -Date $dateStr -File $dest -Title $title -Copyright $copy -SearchUrl ([string]$img.copyrightlink) -ImageId $fullId -AppliedDate $dateStr
+        if ($lockedNow) { Write-Log "锁定中，手动切换已更新保持对象：$title" }
+    }
+
+    if ([bool]$config['autoClean']) {
+        $capMB = 0
+        try { $capMB = [int]$config['archiveMaxMB'] } catch { }
+        if ($capMB -gt 0) { [void](Clear-ArchiveBySize -MaxMB $capMB) }
+        [void](Clear-OldCache -Days $keepDays)
+    } else {
+        Write-Log '自动清理已关闭，跳过缓存清理'
+    }
+    Write-Log '--- 完成 ---'
+    Exit-Run 0
+}
+catch {
+    Write-Log ("失败: " + $_.Exception.Message) 'ERROR'
+    Write-Log ("位置: " + $_.InvocationInfo.PositionMessage) 'ERROR'
+    Exit-Run 1
+}
+finally {
+    if ($locked) { Exit-RunLock }
+}
+
