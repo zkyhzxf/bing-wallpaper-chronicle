@@ -109,6 +109,21 @@ namespace BingWallpaperLite
             RunScriptEx(arguments, "");
         }
 
+        /// <summary>从脚本输出的 JSON 里取一个整数字段，取不到返回 0。</summary>
+        private static int ExtractInt(string json, string key)
+        {
+            if (string.IsNullOrEmpty(json)) { return 0; }
+            try
+            {
+                System.Text.RegularExpressions.Match m = System.Text.RegularExpressions.Regex.Match(
+                    json, "\"" + key + "\"\\s*:\\s*(\\d+)");
+                int v = 0;
+                if (m.Success) { int.TryParse(m.Groups[1].Value, out v); }
+                return v;
+            }
+            catch { return 0; }
+        }
+
         private static void RunScriptEx(string arguments, string opMode)
         {
             if (busy) { return; }
@@ -123,6 +138,7 @@ namespace BingWallpaperLite
             ThreadPool.QueueUserWorkItem(delegate
             {
                 int code = -1;
+                string outText = "";
                 try
                 {
                     ProcessStartInfo psi = new ProcessStartInfo();
@@ -150,6 +166,7 @@ namespace BingWallpaperLite
                             try { tOut.Wait(3000); } catch { }
                             try { tErr.Wait(3000); } catch { }
                             code = p.ExitCode;
+                            try { outText = tOut.Result ?? ""; } catch { }
                         }
                     }
                 }
@@ -170,10 +187,40 @@ namespace BingWallpaperLite
                             Balloon(S.BReady,
                                 S.BReadyHint);
                         }
-                        else if (opMode == "cleanarch")
+                        else if (opMode == "clean" || opMode == "cleanall" ||
+                                 opMode == "cleanarch" || opMode == "cleanidx" ||
+                                 opMode == "cleanfav")
                         {
                             RefreshAll();
-                            Balloon(S.BCleared, S.CleanedHint);
+                            string body;
+                            if (opMode == "cleanfav")
+                            {
+                                body = S.CleanDoneFav(ExtractInt(outText, "removed"), ExtractInt(outText, "moved"));
+                            }
+                            else if (opMode == "cleanarch")
+                            {
+                                body = S.CleanDoneArch(ExtractInt(outText, "removed"),
+                                                       ExtractInt(outText, "keptFav"),
+                                                       ExtractInt(outText, "keptCur"));
+                                int idxN = ExtractInt(outText, "idxRemoved");
+                                if (idxN > 0) { body = body + S.CleanIdxSuffix(idxN); }
+                            }
+                            else if (opMode == "cleanidx")
+                            {
+                                body = S.CleanDoneIdx(ExtractInt(outText, "removed"));
+                            }
+                            else if (opMode == "cleanall")
+                            {
+                                body = S.CleanDoneAll(ExtractInt(outText, "removed"), ExtractInt(outText, "protected"));
+                            }
+                            else
+                            {
+                                int rmN = ExtractInt(outText, "removed");
+                                int ptN = ExtractInt(outText, "protected");
+                                body = S.CleanDoneCache(rmN, ptN);
+                                if (ptN >= 5 && ptN >= rmN) { body = body + " " + S.PinHintMore; }
+                            }
+                            Balloon(S.IsEn ? "Cleaned" : "清理完成", body);
                         }
                         else if (opMode == "fav")
                         {

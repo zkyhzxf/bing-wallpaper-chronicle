@@ -51,6 +51,7 @@ $psFile    = Join-Path $resDir 'bing-wallpaper.ps1'
 $iconFile  = Join-Path $resDir 'bing.ico'
 $iconBusy  = Join-Path $resDir 'bing-busy.ico'
 $cfgFile   = Join-Path $resDir 'config.json'
+$snapFile  = Join-Path $resDir 'assets\all-index.json'
 
 if (-not (Test-Path $csFile)) { throw "找不到源文件：$csFile" }
 if (-not (Test-Path $psFile)) { throw "找不到核心脚本：$psFile" }
@@ -113,6 +114,20 @@ $buildArgs = @(
     '/reference:Microsoft.VisualBasic.dll'
 )
 
+# 离线索引快照：本地有更新的运行时索引时同步到 assets，保证发布产物带最新数据
+$liveIdx = Join-Path $repoRoot 'archive\all-index.json'
+if ((Test-Path $liveIdx) -and (Test-Path $snapFile)) {
+    $liveTime = (Get-Item $liveIdx).LastWriteTime
+    $snapTime = (Get-Item $snapFile).LastWriteTime
+    if ($liveTime -gt $snapTime) {
+        Copy-Item $liveIdx $snapFile -Force
+        Write-Host '已刷新 assets\all-index.json 快照' -ForegroundColor DarkGray
+    }
+} elseif ((Test-Path $liveIdx) -and -not (Test-Path $snapFile)) {
+    Copy-Item $liveIdx $snapFile -Force
+    Write-Host '已生成 assets\all-index.json 快照' -ForegroundColor DarkGray
+}
+
 # 源码：优先用 src\ 下的多文件；没有则退回单文件 TrayProgram.cs
 $srcDir = Join-Path $repoRoot 'src'
 if (Test-Path $srcDir) {
@@ -125,6 +140,7 @@ if (Test-Path $srcDir) {
 
 $buildArgs += $csFiles
 if (Test-Path $cfgFile) { $buildArgs += @("/resource:$cfgFile,config.json") }
+if (Test-Path $snapFile) { $buildArgs += @("/resource:$snapFile,all-index.json") }
 
 Write-Host "编译中…" -ForegroundColor Cyan
 $log = & $csc $buildArgs 2>&1 | Out-String

@@ -17,12 +17,76 @@ namespace BingWallpaperLite
     {
         // ---------------------------------------------------------------- 安装 / 卸载
 
+        /// <summary>安装时是否创建桌面快捷方式（由安装窗口勾选）。</summary>
+        internal static bool WantDesktopShortcut;
+
+        private static string StartMenuLnk()
+        {
+            try { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Programs), AppName + ".lnk"); }
+            catch { return ""; }
+        }
+
+        private static string DesktopLnk()
+        {
+            try { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), AppName + ".lnk"); }
+            catch { return ""; }
+        }
+
+        /// <summary>用 WScript.Shell 写一个 .lnk；失败不抛。</summary>
+        private static void CreateShortcut(string lnkPath, string target, string desc)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(lnkPath) || !File.Exists(target)) { return; }
+                if (File.Exists(lnkPath)) { return; }
+                Type t = Type.GetTypeFromProgID("WScript.Shell");
+                if (t == null) { return; }
+                object shell = Activator.CreateInstance(t);
+                object sc = t.InvokeMember("CreateShortcut", BindingFlags.InvokeMethod,
+                    null, shell, new object[] { lnkPath });
+                Type st = sc.GetType();
+                st.InvokeMember("TargetPath", BindingFlags.SetProperty, null, sc, new object[] { target });
+                st.InvokeMember("WorkingDirectory", BindingFlags.SetProperty, null, sc,
+                    new object[] { Path.GetDirectoryName(target) });
+                st.InvokeMember("Description", BindingFlags.SetProperty, null, sc, new object[] { desc });
+                st.InvokeMember("IconLocation", BindingFlags.SetProperty, null, sc, new object[] { target + ",0" });
+                st.InvokeMember("Save", BindingFlags.InvokeMethod, null, sc, null);
+            }
+            catch { }
+        }
+
+        /// <summary>开始菜单必建；桌面只在安装时勾选了才建。</summary>
+        private static void EnsureShortcuts()
+        {
+            try
+            {
+                string exe = Application.ExecutablePath;
+                CreateShortcut(StartMenuLnk(), exe, AppName);
+                if (WantDesktopShortcut) { CreateShortcut(DesktopLnk(), exe, AppName); }
+            }
+            catch { }
+        }
+
+        /// <summary>卸载时删掉两个快捷方式。</summary>
+        private static void RemoveShortcuts()
+        {
+            try
+            {
+                foreach (string p in new string[] { StartMenuLnk(), DesktopLnk() })
+                {
+                    try { if (!string.IsNullOrEmpty(p) && File.Exists(p)) { File.Delete(p); } } catch { }
+                }
+            }
+            catch { }
+        }
+
         private static void EnsureRegistered(bool verbose)
         {
             bool changed = false;
             if (!IsStartupPointingHere()) { SetStartup(true); changed = true; }
             if (!IsTaskPointingHere()) { RegisterTask(); changed = true; }
             SetUninstallEntry();
+            if (verbose) { EnsureShortcuts(); }
             if (changed && verbose)
             {
                 MessageBox.Show(S.MsgRegistered, AppName,
@@ -158,6 +222,7 @@ namespace BingWallpaperLite
                 try { SetStartup(false); } catch { }
                 try { RunSchtasks("/delete /tn \"" + TaskName + "\" /f"); } catch { }
                 try { RemoveUninstallEntry(); } catch { }
+                try { RemoveShortcuts(); } catch { }
 
                 // 归档处理：月份索引一律清（纯缓存）；图片按勾选
                 bool keepArch = f.KeepArchive;

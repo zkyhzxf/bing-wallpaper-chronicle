@@ -88,16 +88,23 @@ namespace BingWallpaperLite
             int by = 20 + ThumbH + 26;
             if (thumb == null) { by = 268; }
 
-            Button btnSearch = new Button();
-            btnSearch.Text = S.InfoBtnSearch;
-            btnSearch.SetBounds(20, by, 130, 32);
-            btnSearch.Enabled = searchUrl.Length > 0;
-            btnSearch.Click += delegate { Program.OpenUrl(searchUrl); };
-            Controls.Add(btnSearch);
+            Button btnLearn = new Button();
+            btnLearn.Text = S.InfoBtnSearch;
+            btnLearn.SetBounds(20, by, 110, 32);
+            btnLearn.Enabled = searchUrl.Length > 0;
+            btnLearn.Click += delegate { Program.OpenUrl(searchUrl); };
+            Controls.Add(btnLearn);
+
+            Button btnFolder = new Button();
+            btnFolder.Text = S.InfoBtnFolder;
+            btnFolder.SetBounds(140, by, 130, 32);
+            btnFolder.Enabled = !string.IsNullOrEmpty(file);
+            btnFolder.Click += delegate { Program.ShowInFolder(file); };
+            Controls.Add(btnFolder);
 
             Button btnMore = new Button();
             btnMore.Text = S.InfoBtnMore;
-            btnMore.SetBounds(162, by, 130, 32);
+            btnMore.SetBounds(280, by, 130, 32);
             btnMore.Click += delegate { Program.OpenUrl(MoreUrl); };
             Controls.Add(btnMore);
 

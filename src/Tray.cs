@@ -127,7 +127,7 @@ namespace BingWallpaperLite
             {
                 if (f.ShowDialog(anchor) != DialogResult.OK) { return; }
                 string mode = f.Permanent ? "permanent" : "recycle";
-                RunScript("-CleanAll -CleanMode " + mode);
+                RunScriptEx("-CleanAll -CleanMode " + mode, "cleanall");
             }
         }
 
@@ -138,7 +138,8 @@ namespace BingWallpaperLite
             {
                 if (f.ShowDialog(anchor) != DialogResult.OK) { return; }
                 string mode = f.Permanent ? "permanent" : "recycle";
-                RunScript("-CleanArchive -CleanMode " + mode);
+                string extra = f.WithIndex ? " -WithIndex" : "";
+                RunScriptEx("-CleanArchive -CleanMode " + mode + extra, "cleanarch");
             }
         }
 
@@ -148,7 +149,7 @@ namespace BingWallpaperLite
             using (CleanForm f = new CleanForm(CleanForm.Target.ArchiveIndex))
             {
                 if (f.ShowDialog(anchor) != DialogResult.OK) { return; }
-                RunScript("-CleanArchiveIndex");
+                RunScriptEx("-CleanArchiveIndex", "cleanidx");
             }
         }
 
@@ -159,7 +160,7 @@ namespace BingWallpaperLite
             {
                 if (f.ShowDialog(anchor) != DialogResult.OK) { return; }
                 string mode = f.Permanent ? "permanent" : "recycle";
-                RunScript("-CleanFavorites -CleanMode " + mode);
+                RunScriptEx("-CleanFavorites -CleanMode " + mode, "cleanfav");
             }
         }
 

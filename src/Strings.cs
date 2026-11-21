@@ -42,13 +42,13 @@ namespace BingWallpaperLite
         public static string NotifyOff        { get { return T("☐ 换图后通知", "☐ Notify on change"); } }
         public static string StartupOn        { get { return T("☑ 开机启动", "☑ Run at startup"); } }
         public static string StartupOff       { get { return T("☐ 开机启动", "☐ Run at startup"); } }
-        public static string CleanMenu        { get { return T("清理缓存", "Cache"); } }
+        public static string CleanMenu        { get { return T("清理", "Cleanup"); } }
         public static string AutoCleanOn      { get { return T("☑ 自动清理缓存", "☑ Auto-clean cache"); } }
         public static string AutoCleanOff     { get { return T("☐ 自动清理缓存", "☐ Auto-clean cache"); } }
-        public static string Clean7           { get { return T("清理 7 天前", "Clear older than 7 days"); } }
-        public static string Clean30          { get { return T("清理 30 天前", "Clear older than 30 days"); } }
-        public static string CleanArchive     { get { return T("清理历史归档", "Clear history archive"); } }
-        public static string CleanAll         { get { return T("清除全部（保留当前壁纸）", "Clear all (keep current)"); } }
+        public static string Clean7           { get { return T("清理缓存（保留 7 天）", "Clean cache (keep 7 days)"); } }
+        public static string Clean30          { get { return T("清理缓存（保留 30 天）", "Clean cache (keep 30 days)"); } }
+        public static string CleanArchive     { get { return T("清理归档图片…", "Clean archived images…"); } }
+        public static string CleanAll         { get { return T("清空缓存（保留当前）…", "Clear cache (keep current)…"); } }
         public static string ArchiveMenu      { get { return T("增强数据源", "Data sources"); } }
         public static string ArchiveOn        { get { return T("☑ 启用第三方归档", "☑ Enable third-party archive"); } }
         public static string ArchiveOff       { get { return T("☐ 启用第三方归档", "☐ Enable third-party archive"); } }
@@ -94,12 +94,73 @@ namespace BingWallpaperLite
         public static string CleanTtlIndex    { get { return T(" · 清理归档索引", " · Clear archive index"); } }
         public static string CleanTtlFav      { get { return T(" · 清空收藏", " · Clear favorites"); } }
         public static string CleanFavMenu     { get { return T("清空收藏…", "Clear favorites…"); } }
-        public static string CleanArchiveIndexMenu { get { return T("清理归档索引…", "Clear archive index…"); } }
+        public static string CleanArchiveIndexMenu { get { return T("清除归档索引", "Clear archive index"); } }
+        public static string CleanResult(int n) { return _en ? ("Cleaned " + n + " items") : ("清理完成：删除 " + n + " 个"); }
+        public static string CleanDoneCache(int rm, int pt) { return _en ? ("Cleaned " + rm + ", protected " + pt) : ("清理完成：删除 " + rm + " 张，保护 " + pt + " 张"); }
+        public static string CleanDoneAll(int rm, int kept) { return _en ? ("Cache cleared — " + rm + " removed, " + kept + " kept (current)") : ("缓存已清空：删除 " + rm + " 张，当前壁纸 " + kept + " 张保留"); }
+        public static string CleanDoneFav(int rm, int moved) { return _en ? ("Favorites cleared — " + rm + " removed, " + moved + " moved back to cache") : ("收藏夹已清空：删除 " + rm + " 张，当前壁纸 " + moved + " 张已移回缓存"); }
+        public static string CleanDoneIdx(int rm) { return _en ? ("Removed " + rm + " index files") : ("删除 " + rm + " 个索引文件"); }
+        public static string CleanWithIndex { get { return T("同时清理索引（15 个月份 + 全量索引）", "Also clear indexes (monthly + full)"); } }
+        public static string CleanWithIndexHint { get { return T("删掉的是目录册，不是图片：之后取历史图要联网查，搜索会重下索引", "Removes the catalogue, not the images: later lookups go online and search re-downloads the index"); } }
+        public static string CleanIdxSuffix(int n) { return _en ? ("; " + n + " index files removed") : ("；另删 " + n + " 个索引文件"); }
+        public static string CleanDoneArch(int rm, int fav, int cur)
+        {
+            int kept = fav + cur;
+            return _en
+                ? ("Removed " + rm + "; kept " + kept + ": favorites " + fav + ", current " + cur)
+                : ("删除 " + rm + " 张；未删 " + kept + " 张：收藏 " + fav + "、当前壁纸 " + cur);
+        }
+        public static string CleanResult2(int rm, int pt)
+        {
+            return _en
+                ? ("Cleaned " + rm + " items, " + pt + " protected")
+                : ("清理完成：删除 " + rm + " 个，保护 " + pt + " 个");
+        }
+
+        // ---------------- 自动清理保留
+        public static string PinMenu      { get { return T("自动清理保留…", "Keep during auto-clean…"); } }
+        public static string PinTitle     { get { return T(" · 自动清理保留", " · Kept from auto-clean"); } }
+        public static string PinIntro1    { get { return T("这里记的是你用「翻页」「按日期」「搜索」取过的历史图。", "Dates recorded when you browsed, picked by date, or searched."); } }
+        public static string PinIntro2    { get { return T("登记过的日期，自动清理和归档超限清理都不会动。", "Those dates are never touched by auto-clean or archive size limits."); } }
+        public static string PinColDate   { get { return T("日期", "Date"); } }
+        public static string PinColTitle  { get { return T("标题", "Title"); } }
+        public static string PinColSize   { get { return T("体积", "Size"); } }
+        public static string PinGone      { get { return T("文件已不在", "file missing"); } }
+        public static string PinNoTitle   { get { return T("(无标题)", "(no title)"); } }
+        public static string PinRemove    { get { return T("移出名单", "Remove"); } }
+        public static string PinOpenFile  { get { return T("打开文件", "Open file"); } }
+        public static string PinClose     { get { return T("关闭", "Close"); } }
+        public static string PinHintMore  { get { return T("这些天在自动清理时被跳过，可在「清理 → 自动清理保留」里移出。", "Skipped during auto-clean; manage them under Cleanup → Keep during auto-clean."); } }
+        public static string PinNote      { get { return T("这里列出你在翻页、按日期、搜索时取过的历史图。自动清理缓存（30 天规则）会跳过这些日期。手动的「清空缓存」和「清理归档图片」不看这份清单，只保留收藏和当前壁纸。", "Dates you browsed, picked, or searched. The 30-day auto-clean skips them. Manual \"clear cache\" and \"clean archived images\" ignore this list and keep only favorites and the current wallpaper."); } }
+        public static string PinSum(int n, double mb) { return _en ? (n + " days · about " + mb.ToString("0.0") + " MB") : ("共 " + n + " 天 · 约 " + mb.ToString("0.0") + " MB"); }
+        public static string PinConfirm(int n) { return _en ? ("These " + n + " dates will no longer be skipped by auto-clean and may be removed next time it runs. Nothing is moved out now. Continue?") : ("这 " + n + " 天将不再被自动清理跳过，下次清理可能删掉它们。本次操作不移出任何文件。确定吗？"); }
+        public static string PinPurgeDead(int n) { return _en ? ("Purge missing (" + n + ")") : ("清理失效项（" + n + "）"); }
+        public static string PinFav        { get { return T("加入收藏", "Add to favorites"); } }
+        public static string PinFavDone    { get { return T("已加入收藏", "Added to favorites"); } }
+        public static string PinFavBatch(int ok, int skip, int fail)
+        {
+            if (fail == 0 && skip == 0) { return _en ? (ok + " added to favorites") : ("已加入收藏：" + ok + " 张"); }
+            return _en
+                ? ("Done — added " + ok + ", already saved " + skip + ", failed " + fail)
+                : ("完成：成功 " + ok + " 张，已在收藏 " + skip + " 张，失败 " + fail + " 张");
+        }
+        public static string FavManager    { get { return T("收藏管理…", "Manage favorites…"); } }
+        public static string FavTitle      { get { return T(" · 收藏管理", " · Manage favorites"); } }
+        public static string FavIntro      { get { return T("这里列出收藏夹里的全部图片。移出收藏只是把文件退回缓存，本窗口不删除任何文件；之后它会进入 30 天清理规则，和普通缓存一样。", "All images in your favorites. Removing one only moves the file back to cache — this window deletes nothing; it then falls under the 30-day cache rule like any other cache file."); } }
+        public static string FavSum(int n, double mb) { return _en ? (n + " items · " + mb.ToString("0.0") + " MB") : ("收藏 " + n + " 张 · " + mb.ToString("0.0") + " MB"); }
+        public static string FavRemove     { get { return T("移出收藏", "Remove"); } }
+        public static string FavConfirm(int n) { return _en ? ("Move these " + n + " images back to cache? Nothing is deleted now, but they lose the favorites exemption and may be auto-cleaned after 30 days.") : ("把这 " + n + " 张移出收藏？文件会退回缓存，本次不删除；之后不再享受收藏的免清理，30 天后可能被自动清掉。"); }
+        public static string FavDone(int n) { return _en ? ("Moved " + n + " files back to cache") : ("已移出 " + n + " 张，文件已退回缓存"); }
+        public static string PinFavAlready { get { return T("这张已经在收藏里了", "Already in favorites"); } }
+        public static string PinFavNoFile  { get { return T("文件已不在，无法收藏", "File is gone, cannot favorite"); } }
+        public static string PinNoSelection { get { return T("选中一行查看预览", "Select a row to preview"); } }
+        public static string PinListEmpty  { get { return T("名单是空的", "List is empty"); } }
         public static string CleanTotal       { get { return T("图片总数", "Total files"); } }
         public static string CleanSize        { get { return T("占用空间", "Total size"); } }
         public static string CleanFavProtected{ get { return T("已被收藏（保留）", "Favorited (kept)"); } }
-        public static string CleanPinProtected{ get { return T("清单保护（保留）", "Pinned (kept)"); } }
-        public static string CleanCurProtected{ get { return T("当前壁纸（保留）", "Current (kept)"); } }
+        public static string CleanPinProtected{ get { return T("清单保护（保留，可在「自动清理保留」调整）", "Pinned (kept, adjustable in auto-clean list)"); } }
+        public static string CleanCurProtected{ get { return T("当前壁纸（保留，删了桌面会黑）", "Current (kept — deleting it would blank the desktop)"); } }
+        public static string CleanCurMoved  { get { return T("当前壁纸（将移回缓存）", "Current (will return to cache)"); } }
         public static string CleanActual      { get { return T("实际可清理", "Will remove"); } }
         public static string CleanModeTitle   { get { return T("删除方式", "Delete method"); } }
         public static string CleanToRecycle   { get { return T("进回收站", "Move to Recycle Bin"); } }
@@ -108,7 +169,7 @@ namespace BingWallpaperLite
         public static string CleanToDelete2   { get { return T("立即释放空间，不可恢复", "Frees space now; not recoverable"); } }
         public static string CleanStart       { get { return T("开始清理", "Start"); } }
         public static string CleanNothing     { get { return T("全部受保护，没有可清理的内容。", "Nothing to clean — everything is protected."); } }
-        public static string CleanIndexHint   { get { return T("删除后首次取历史图会重新下载（约 2-3 秒）。", "Indexes will be re-downloaded on next use (2-3 s)."); } }
+        public static string CleanIndexHint   { get { return T("索引是目录册，删掉后取历史图要联网查；搜索会重新下载索引。", "Indexes are just catalogues: after removal, history lookups go online and search re-downloads them."); } }
         public static string CleanDone        { get { return T("清理完成", "Cleanup finished"); } }
         public static string CleanWorking     { get { return T("清理中…", "Cleaning…"); } }
         public static string ExtChangedMsg    { get { return T("检测到你手动换了桌面壁纸，本程序原先管理的那张已备份到桌面：", "The desktop wallpaper was changed outside this app. The previously managed image was backed up to Desktop:"); } }
@@ -176,6 +237,25 @@ namespace BingWallpaperLite
         public static string BtnRunPortable   { get { return T("绿色运行", "Run portable"); } }
         public static string BtnBrowse        { get { return T("浏览…", "Browse…"); } }
         public static string BtnApply         { get { return T("换这张", "Use this"); } }
+        public static string BtnToday         { get { return T("今天", "Today"); } }
+        public static string LinkTitle        { get { return T(" · 下载链接", " · Download links"); } }
+        public static string LinkGenerating   { get { return T("正在生成链接…", "Generating links…"); } }
+        public static string LinkCopy         { get { return T("复制全部", "Copy all"); } }
+        public static string LinkCopied       { get { return T("已复制 ✓", "Copied ✓"); } }
+        public static string LinkSave         { get { return T("保存为 txt…", "Save as txt…"); } }
+        public static string LinkNoLinks      { get { return T("这个范围里没有可用链接", "No links in this range"); } }
+        public static string BtnExportLinks   { get { return T("只导出链接", "Links only"); } }
+        public static string LinkStat(int ok, int miss)
+        {
+            if (_en) { return (ok + " links" + (miss > 0 ? (", " + miss + " days skipped") : "")); }
+            return ("共 " + ok + " 条" + (miss > 0 ? ("，跳过 " + miss + " 天无记录") : ""));
+        }
+        public static string LinkSaved(string path) { return _en ? ("Saved to " + path) : ("已保存到 " + path); }
+        public static string CalNoTitle       { get { return T("索引里没有这一天的标题", "No title for this date"); } }
+        public static string CalLocFav        { get { return T("● 已在本地 · 收藏", "● Local · favorites"); } }
+        public static string CalLocCache      { get { return T("● 已在本地 · 缓存", "● Local · cache"); } }
+        public static string CalLocArch       { get { return T("● 已在本地 · 归档", "● Local · archive"); } }
+        public static string CalLocNone       { get { return T("○ 本地没有 · 需联网", "○ Not local · needs network"); } }
         public static string BtnOK            { get { return T("确定", "OK"); } }
 
         // ---------------- 对话框
@@ -190,7 +270,7 @@ namespace BingWallpaperLite
         public static string DlKeepFav         { get { return T("保留收藏夹里的壁纸（", "Keep favorites ("); } }
         public static string DlKeepArch        { get { return T("保留历史归档的壁纸（", "Keep history archive ("); } }
         public static string DlUninstHint      { get { return T("取消勾选会把对应文件夹整个移入回收站，之后可从回收站找回。\r\n", "Unchecking moves that folder to the Recycle Bin; you can restore it later.\r\n"); } }
-        public static string DlArchNote        { get { return T("归档图是主动从历史里挑的，保留后可用「选日期」重新设为壁纸。", "Archived images were hand-picked; keep them to reuse via Pick a date."); } }
+        public static string DlArchNote        { get { return T("归档里的图是你从历史里挑出来的，可用「选日期」重新设为壁纸。归档有 500 MB 上限，满了会从最旧的开始自动清。", "Images you picked from history; reuse them via Pick a date. The archive is capped at 500 MB and clears oldest-first when full."); } }
         public static string DlNoArch          { get { return T("（归档里还没有图）", "(archive is empty)"); } }
         public static string DlEmptyFav        { get { return T("（收藏夹是空的，无需选择）", "(favorites empty, nothing to choose)"); } }
         public static string DlProgramDir      { get { return T("程序目录：", "Program folder: "); } }
@@ -214,7 +294,7 @@ namespace BingWallpaperLite
         public static string ConfirmCleanAll   { get { return T("将删除缓存目录里除当前壁纸以外的所有图片。\r\n当前壁纸会保留，其它全部清掉。确定吗？", "Delete every image in the cache except the current wallpaper?\r\nThe current one is kept. Continue?"); } }
         public static string ConfirmCleanTtl   { get { return T(" · 清理缓存", " · Clear cache"); } }
         public static string ConfirmArchTtl    { get { return T(" · 清理历史归档", " · Clear history archive"); } }
-        public static string ConfirmArchBody   { get { return T(" 张图移入回收站？\r\n\r\n当前正在显示的壁纸会保留。之后可从回收站找回，\r\n也可以通过「选日期」重新下载。", " images will be moved to the Recycle Bin.\r\n\r\nThe current wallpaper is kept. You can restore from the Recycle Bin\r\nor re-download later via Pick a date."); } }
+        public static string ConfirmArchBody   { get { return T(" 张图移入回收站？\r\n\r\n当前正在显示的壁纸不动。之后可从回收站找回，\r\n也可以通过「选日期」重新下载。", " images will be moved to the Recycle Bin.\r\n\r\nThe current wallpaper is left untouched. You can restore from the Recycle Bin\r\nor re-download later via Pick a date."); } }
         public static string BRepairKOHint     { get { return T("计划任务仍不可用，请用管理员身份运行一次或查看日志", "Task still unavailable; run as administrator once, or check the log"); } }
         public static string BRepairedHint     { get { return T("计划任务已重新注册，自动换图恢复正常", "Task re-registered; daily changes resumed"); } }
         public static string BReadyHint        { get { return T("壁纸每天 0:10 自动更新，8:30 与 12:00 会补查一次。右键托盘图标可换图、收藏、暂停。", "Wallpaper updates daily at 00:10, with retries at 08:30 and 12:00. Right-click the tray icon to change, favorite, or pause."); } }
@@ -258,8 +338,31 @@ namespace BingWallpaperLite
                 : ("　｜已缓存 " + months + " 个月（" + kb.ToString("0") + " KB）");
         }
         public static string ArchInfoPrefix { get { return _en ? "  " : "　"; } }
+        public static string ArchImgInfo(int n, double mb, int prot) { return _en ? (" · " + n + " images / " + mb + " MB (" + prot + " protected)") : (" · 图片 " + n + " 张 / " + mb + " MB（" + prot + " 张受保护）"); }
         public static string ArchSrcLine1   { get { return T("主源 Zhu-junwei  ·  2016-03 起  ·  带中文标题", "Primary  Zhu-junwei  ·  since Mar 2016  ·  with titles"); } }
         public static string ArchSrcLine2   { get { return T("兜底 niumoo      ·  2021-02 起  ·  仅 ID", "Fallback niumoo    ·  since Feb 2021  ·  IDs only"); } }
+        public static string ArchRowArchive(int n, double mb, int cap, int prot)
+        {
+            return _en
+                ? ("Archive  " + n + " images / " + mb.ToString("0.0") + " MB (cap " + cap + " MB, " + prot + " protected)")
+                : ("归档  " + n + " 张 / " + mb.ToString("0.0") + " MB（上限 " + cap + " MB，" + prot + " 张受保护）");
+        }
+        public static string ArchRowIndex(int months, double kb, int total)
+        {
+            return _en
+                ? ("Index  " + months + " months + full index " + kb.ToString("0") + " KB (" + total + " dates available)")
+                : ("索引  " + months + " 个月份 + 全量索引 " + kb.ToString("0") + " KB（共 " + total + " 条可下载）");
+        }
+        public static string CleanCapHint(int mb)
+        {
+            return _en
+                ? ("The archive is capped at " + mb + " MB; when full, the oldest is cleared automatically." + Environment.NewLine +
+                   "To keep one image: open \"Keep during auto-clean\" and click \"Add to favorites\"." + Environment.NewLine +
+                   "To move a batch out: use \"Library → Download wallpapers…\".")
+                : ("归档有 " + mb + " MB 上限，满了会从最旧的开始自动清理。" + Environment.NewLine +
+                   "单张留存：在「自动清理保留」里点「加入收藏」。" + Environment.NewLine +
+                   "批量搬走：用「壁纸库 → 导出已下载壁纸…」，勾上「归档」，复制到指定文件夹。");
+        }
         public static string ArchOffLine    { get { return T("已关闭，8 天以外的日期只能走压缩版", "Disabled — dates older than 8 days fall back to compressed"); } }
 
         // ---------------- 信息窗口
@@ -270,7 +373,8 @@ namespace BingWallpaperLite
         public static string InfoCopy        { get { return T("版权：", "Copyright: "); } }
         public static string InfoFile        { get { return T("文件：", "File: "); } }
         public static string InfoSize        { get { return T("大小：", "Size: "); } }
-        public static string InfoBtnSearch   { get { return T("必应搜这张图", "Search this image"); } }
+        public static string InfoBtnSearch   { get { return T("了解更多", "Learn more"); } }
+        public static string InfoBtnFolder   { get { return T("文件夹中打开", "Show in folder"); } }
         public static string InfoBtnMore     { get { return T("浏览更多壁纸", "Browse more"); } }
 
         // ---------------- 关于正文
@@ -316,17 +420,43 @@ namespace BingWallpaperLite
         public static string SetupNote3   { get { return T("壁纸缓存固定放在安装目录下的 cache 子文件夹，日志在 %TEMP%。\r\n\r\n", "Wallpaper cache lives in the cache subfolder; logs go to %TEMP%.\r\n\r\n"); } }
         public static string SetupNote4   { get { return T("「绿色运行」= 不安装，直接在当前文件夹展开使用。", "Run portable = no install; unpack and use in place."); } }
         public static string SetupBackupWarn { get { return T("安装前会先把你当前的桌面壁纸备份一份到桌面（同名只备一次）。\r\n安装后立即把桌面壁纸换成今天的必应图。", "Your current wallpaper is copied to the Desktop first (once per image),\r\nthen replaced with today's Bing image."); } }
+
+        // ---------------- 导出与批量下载
+        public static string ExportDownloaded { get { return T("导出已下载壁纸…", "Export downloaded…"); } }
+        public static string DownloadRange    { get { return T("批量下载壁纸…", "Batch download…"); } }
+        public static string ExpTitle         { get { return T(" · 导出已下载壁纸", " · Export downloaded"); } }
+        public static string ExpWhich         { get { return T("导出哪些", "Include"); } }
+        public static string ExpTo            { get { return T("导出到", "Export to"); } }
+        public static string ExpBtn            { get { return T("导出", "Export"); } }
+        public static string ExpEmpty         { get { return T("这个目录里没有图片。", "No images in this folder."); } }
+        public static string ExpSum(int n, double mb) { return _en ? (n + " selected, " + mb.ToString("0.0") + " MB") : ("已选 " + n + " 张，共 " + mb.ToString("0.0") + " MB"); }
+        public static string ExpDone(int ok, int skip) { return _en ? ("Export done — " + ok + " new, " + skip + " skipped") : ("导出完成：新存 " + ok + " 张，跳过 " + skip + " 张"); }
+
+        public static string DlTitle           { get { return T(" · 批量下载壁纸", " · Batch download"); } }
+        public static string DlRange           { get { return T("时间范围", "Date range"); } }
+        public static string DlFrom            { get { return T("从", "From"); } }
+        public static string DlTo              { get { return T("到", "To"); } }
+        public static string DlDest            { get { return T("下载到", "Save to"); } }
+        public static string DlNote            { get { return T("本地已有同一张会直接跳过，不会重复下载", "Existing files are skipped, nothing is downloaded twice"); } }
+        public static string DlBtn             { get { return T("开始", "Start"); } }
+        public static string DlWorking         { get { return T("正在下载…", "Downloading…"); } }
+        public static string DlEst(int n, double mb) { return _en ? (n + " days, about " + mb.ToString("0") + " MB") : ("共 " + n + " 天，约 " + mb.ToString("0") + " MB"); }
+        public static string DlEstWarn(int n, double mb, int mins) { return _en ? (n + " days, about " + mb.ToString("0") + " MB · large batch, roughly " + mins + " min") : ("共 " + n + " 天，约 " + mb.ToString("0") + " MB · 数量较大，预计 " + mins + " 分钟"); }
+        public static string DlRangeDone(int ok, int skip, int fail) { return _en ? ("Done — " + ok + " downloaded, " + skip + " skipped, " + fail + " failed") : ("完成：下载 " + ok + " 张，跳过 " + skip + " 张，失败 " + fail + " 张"); }
+        public static string WarnDateOrder     { get { return T("起始日期不能晚于结束日期。", "Start date is after end date."); } }
+        public static string WarnInsideApp     { get { return T("不能选程序自己的目录或它的子目录——那里会被自动清理误伤，程序文件也可能被覆盖。请换一个位置。", "Cannot use the program's own folder or its subfolders — auto-cleanup would delete them and program files could be overwritten. Please pick another location."); } }
         public static string WarnNoPath   { get { return T("请填写安装路径。", "Please enter an install path."); } }
         public static string WarnBadDir   { get { return T("目录不可用：", "Folder unavailable: "); } }
         public static string BtnInstallTx { get { return T("安装", "Install"); } }
         public static string BtnPortable  { get { return T("绿色运行", "Run portable"); } }
-        public static string ArchNoteAlt  { get { return T("归档图是主动从历史里挑的，保留后可用「选日期」重新设为壁纸。", "Archived images were hand-picked; keep them to reuse via Pick a date."); } }
+        public static string SetupDeskLink { get { return T("在桌面创建快捷方式", "Create a desktop shortcut"); } }
+        public static string ArchNoteAlt  { get { return T("归档里的图是你从历史里挑出来的，可用「选日期」重新设为壁纸。归档有 500 MB 上限，满了会从最旧的开始自动清。", "Images you picked from history; reuse them via Pick a date. The archive is capped at 500 MB and clears oldest-first when full."); } }
 
         public static string AboutArchLine(bool on, int months)
         {
             return _en
-                ? ("Archive   Zhu-junwei since 2016, niumoo fallback (" + (on ? "on" : "off") + ", " + months + " months indexed)")
-                : ("历史归档  Zhu-junwei（2016 起）+ niumoo 兜底（" + (on ? "已启用" : "已关闭") + "，索引 " + months + " 个月份）");
+                ? ("Archive   Zhu-junwei since 2016, niumoo fallback (" + (on ? "on" : "off") + ", " + months + " months indexed, size-capped)")
+                : ("历史归档  Zhu-junwei（2016 起）+ niumoo 兜底（" + (on ? "已启用" : "已关闭") + "，索引 " + months + " 个月份，有容量上限）");
         }
         public static string AboutOrigLine   { get { return T("原图      www.bing.com/th?id=…_UHD.jpg（最高 5445×3063）", "Original  www.bing.com/th?id=…_UHD.jpg (up to 5445×3063)"); } }
         public static string AboutBackupLine { get { return T("兜底      bingwallpaperimages.microsoft.com（3840×2400）", "Fallback  bingwallpaperimages.microsoft.com (3840×2400)"); } }
@@ -413,8 +543,8 @@ namespace BingWallpaperLite
         public static string AboutArchState(bool on, int months)
         {
             return _en
-                ? ("Archive   Zhu-junwei since 2016, niumoo fallback (" + (on ? "enabled" : "disabled") + ", " + months + " months indexed)")
-                : ("历史归档  Zhu-junwei（2016 起）+ niumoo 兜底（" + (on ? "已启用" : "已关闭") + "，索引 " + months + " 个月份）");
+                ? ("Archive   Zhu-junwei since 2016, niumoo fallback (" + (on ? "enabled" : "disabled") + ", " + months + " months indexed, size-capped)")
+                : ("历史归档  Zhu-junwei（2016 起）+ niumoo 兜底（" + (on ? "已启用" : "已关闭") + "，索引 " + months + " 个月份，有容量上限）");
         }
         public static string AboutStore(int cCount, double cMb, int fCount, double fMb, int aCount, double aMb)
         {
@@ -422,11 +552,11 @@ namespace BingWallpaperLite
             {
                 return "Cache    " + cCount + " items / " + cMb.ToString("0.0") + " MB (last 30 days, auto-cleaned)\r\n" +
                        "Favs     " + fCount + " items / " + fMb.ToString("0.0") + " MB (kept forever)\r\n" +
-                       "Archive  " + aCount + " items / " + aMb.ToString("0.0") + " MB (manually fetched history)";
+                       "Archive  " + aCount + " items / " + aMb.ToString("0.0") + " MB (capped, oldest cleared first)";
             }
             return "缓存  " + cCount + " 张 / " + cMb.ToString("0.0") + " MB（最近 30 天，自动清理）\r\n" +
                    "收藏  " + fCount + " 张 / " + fMb.ToString("0.0") + " MB（永久保留）\r\n" +
-                   "归档  " + aCount + " 张 / " + aMb.ToString("0.0") + " MB（主动下载的历史图）";
+                   "归档  " + aCount + " 张 / " + aMb.ToString("0.0") + " MB（有容量上限，满了从旧到新清）";
         }
     }
 

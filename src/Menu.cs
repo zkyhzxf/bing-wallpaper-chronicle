@@ -53,6 +53,16 @@ namespace BingWallpaperLite
                 anchor.BeginInvoke((MethodInvoker)delegate { RunScriptEx(args, mode); });
             };
             m.Items.Add(favToggle);
+
+            ToolStripMenuItem favMgr = new ToolStripMenuItem(S.FavManager);
+            favMgr.Name = "favmgr";
+            favMgr.Click += delegate
+            {
+                keepMenuOpenAfterClick = true;
+                anchor.BeginInvoke((MethodInvoker)delegate { DoFavManager(); });
+            };
+            m.Items.Add(favMgr);
+
             m.Items.Add(new ToolStripSeparator());
 
             m.Items.Add(MakeKeepOpenItem(S.ChangeToday, "-Index 0"));
@@ -175,9 +185,15 @@ namespace BingWallpaperLite
                 WriteConfig(c);
             };
             cleanMenu.DropDownItems.Add(autoCleanItem);
+            cleanMenu.DropDownItems.Add(MakeItem(S.PinMenu, delegate { DoPinnedList(); }));
             cleanMenu.DropDownItems.Add(new ToolStripSeparator());
-            cleanMenu.DropDownItems.Add(MakeItem(S.Clean7, delegate { RunScript("-Clean -Keep 7"); }));
-            cleanMenu.DropDownItems.Add(MakeItem(S.Clean30, delegate { RunScript("-Clean -Keep 30"); }));
+
+            // 缓存
+            cleanMenu.DropDownItems.Add(MakeItem(S.Clean7, delegate { RunScriptEx("-Clean -Keep 7", "clean"); }));
+            cleanMenu.DropDownItems.Add(MakeItem(S.Clean30, delegate { RunScriptEx("-Clean -Keep 30", "clean"); }));
+            cleanMenu.DropDownItems.Add(MakeItem(S.CleanAll, delegate { ConfirmCleanAll(); }));
+
+            // 归档
             cleanMenu.DropDownItems.Add(new ToolStripSeparator());
             ToolStripMenuItem cleanArch = new ToolStripMenuItem(S.CleanArchive);
             cleanArch.Name = "cleanarch";
@@ -188,16 +204,11 @@ namespace BingWallpaperLite
             };
             cleanMenu.DropDownItems.Add(cleanArch);
 
-            ToolStripMenuItem cleanArchIdx = new ToolStripMenuItem(S.CleanArchiveIndexMenu);
-            cleanArchIdx.Name = "cleanarchidx";
-            cleanArchIdx.Click += delegate
-            {
-                keepMenuOpenAfterClick = true;
-                anchor.BeginInvoke((MethodInvoker)delegate { ConfirmCleanArchiveIndex(); });
-            };
-            cleanMenu.DropDownItems.Add(cleanArchIdx);
 
-            cleanMenu.DropDownItems.Add(MakeItem(S.CleanAll, delegate { ConfirmCleanAll(); }));
+            // 收藏
+            cleanMenu.DropDownItems.Add(new ToolStripSeparator());
+            cleanMenu.DropDownItems.Add(MakeItem(S.CleanFavMenu, delegate { ConfirmCleanFavorites(); }));
+
             m.Items.Add(cleanMenu);
 
             ToolStripMenuItem archiveMenu = new ToolStripMenuItem(S.ArchiveMenu);
@@ -241,33 +252,16 @@ namespace BingWallpaperLite
             archInfo.Enabled = false;
             archiveMenu.DropDownItems.Add(archInfo);
 
+            ToolStripMenuItem archIdxInfo = new ToolStripMenuItem("…");
+            archIdxInfo.Name = "archidxinfo";
+            archIdxInfo.Enabled = false;
+            archiveMenu.DropDownItems.Add(archIdxInfo);
+
             archiveMenu.DropDownItems.Add(new ToolStripSeparator());
 
             ToolStripMenuItem archOpen = new ToolStripMenuItem(S.OpenArchiveDir);
             archOpen.Click += delegate { OpenTarget(archiveDir); };
             archiveMenu.DropDownItems.Add(archOpen);
-
-            ToolStripMenuItem archClear = new ToolStripMenuItem(S.ClearArchiveIdx);
-            archClear.Click += delegate
-            {
-                keepMenuOpenAfterClick = true;
-                try
-                {
-                    if (Directory.Exists(archiveDir))
-                    {
-                        foreach (string f in Directory.GetFiles(archiveDir))
-                        {
-                            Microsoft.VisualBasic.FileIO.FileSystem.DeleteFile(
-                                f,
-                                Microsoft.VisualBasic.FileIO.UIOption.OnlyErrorDialogs,
-                                Microsoft.VisualBasic.FileIO.RecycleOption.SendToRecycleBin);
-                        }
-                    }
-                }
-                catch { }
-                anchor.BeginInvoke((MethodInvoker)delegate { RefreshArchiveCheck(); });
-            };
-            archiveMenu.DropDownItems.Add(archClear);
 
             m.Items.Add(archiveMenu);
 

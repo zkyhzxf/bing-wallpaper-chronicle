@@ -55,6 +55,7 @@ param(
     [string]$Date = '',
     [switch]$Random,
     [switch]$CleanArchive,
+    [switch]$WithIndex,
     [string]$CleanMode = 'recycle',
     [switch]$CleanArchiveIndex,
     [switch]$CleanFavorites,
@@ -62,6 +63,13 @@ param(
     [int]$PickRandom = 0,
     [string]$DateInfo = '',
     [switch]$UpdateIndex,
+    [switch]$ExportRange,
+    [string]$RangeFrom = '',
+    [string]$RangeTo = '',
+    [string]$DestDir = '',
+    [string]$FavDate = '',
+    [switch]$ExportLinks,
+    [string]$UnfavDate = '',
     [string]$KwFile = '',
     [string]$Search = '',
     [switch]$Json,
@@ -92,7 +100,8 @@ $FavDir     = Join-Path $Root 'favorites'
 $FavIndex   = Join-Path $FavDir 'index.json'
 $ArchiveDir = Join-Path $Root 'archive'
 $ArchiveImgDir = Join-Path $ArchiveDir 'images';
-$PinnedPath = Join-Path $Root 'cache\pinned.json'
+$PinnedPath = Join-Path $Root 'pinned.json'
+$PinnedLegacyPath = Join-Path $Root 'cache\pinned.json'
 
 if (-not (Test-Path $CacheDir)) { New-Item -ItemType Directory -Path $CacheDir -Force | Out-Null }
 
@@ -678,13 +687,199 @@ function Get-NeighborDate {
 
 function Read-Pinned {
     $set = @{}
-    if (Test-Path $PinnedPath) {
+    # 新位置优先；旧版放在 cache\ 下的名单继续兼容读取
+    $srcP = $PinnedPath
+    if (-not (Test-Path $srcP) -and (Test-Path $PinnedLegacyPath)) { $srcP = $PinnedLegacyPath }
+    if (Test-Path $srcP) {
         try {
-            $o = Get-Content $PinnedPath -Raw -Encoding UTF8 | ConvertFrom-Json
+            $o = Get-Content $srcP -Raw -Encoding UTF8 | ConvertFrom-Json
             foreach ($q in $o.PSObject.Properties) { if ($q.Value) { $set[$q.Name] = $true } }
         } catch { }
     }
     return $set
+}
+
+# 移动文件；若是当前桌面壁纸，先复制并切过去再删源，避免桌面指向不存在的文件
+function Move-FileKeepWallpaper {
+    param([string]$Src, [string]$Dest, [switch]$IsCurrentWallpaper)
+
+    if ($IsCurrentWallpaper) {
+        Copy-Item -LiteralPath $Src -Destination $Dest -Force
+        [void](Set-DesktopWallpaper -Path $Dest)
+        try { [System.IO.File]::Delete($Src) }
+        catch { Write-Log ("复制后未能删除源文件（保留两份）：" + $Src) 'WARN' }
+    } else {
+        Move-Item -LiteralPath $Src -Destination $Dest -Force
+    }
+}
+
+# 把指定文件移入收藏夹并维护两份索引；不给 -SetWallpaper 时不动桌面
+function Move-ToFavorite {
+    param([string]$SrcPath, [switch]$SetWallpaper)
+
+    if (-not (Test-Path $SrcPath)) { throw '文件不存在' }
+    $nameF = Split-Path $SrcPath -Leaf
+    $dateKeyF = ($nameF -split '_')[0]
+    if (-not $dateKeyF) { throw '文件名不含日期' }
+
+    if (-not (Test-Path $FavDir)) { New-Item -ItemType Directory -Path $FavDir -Force | Out-Null }
+    $destF = Join-Path $FavDir $nameF
+
+    $favIdxF = @{}
+    if (Test-Path $FavIndex) {
+        try {
+            $fiF = Get-Content $FavIndex -Raw -Encoding UTF8 | ConvertFrom-Json
+            foreach ($q in $fiF.PSObject.Properties) { $favIdxF[$q.Name] = $q.Value }
+        } catch { }
+    }
+
+    $isCurF = $false
+    try {
+        $curWF = [string](Get-ItemProperty 'HKCU:\Control Panel\Desktop' -Name Wallpaper -ErrorAction SilentlyContinue).Wallpaper
+        if ($curWF -and $curWF -ieq $SrcPath) { $isCurF = $true }
+    } catch { }
+    Move-FileKeepWallpaper -Src $SrcPath -Dest $destF -IsCurrentWallpaper:$isCurF
+
+    # 元信息：缓存索引 → state 兜底
+    $metaF = $null
+    if (Test-Path $IndexPath) {
+        try {
+            $ciF = Get-Content $IndexPath -Raw -Encoding UTF8 | ConvertFrom-Json
+            if ($ciF.PSObject.Properties.Name -contains $dateKeyF) { $metaF = $ciF.$dateKeyF }
+        } catch { }
+    }
+    if ((-not $metaF -or [string]$metaF.title -eq '')) {
+        $stF = Read-State
+        if ($stF -and [string]$stF.date -eq $dateKeyF) {
+            $metaF = [pscustomobject]@{
+                title     = [string]$stF.title
+                titleEn   = ''
+                copyright = [string]$stF.copyright
+                imageId   = [string]$stF.imageId
+            }
+        }
+    }
+
+    $ttlF = ''
+    $enF = ''
+    $cprF = ''
+    $idF = ''
+    if ($metaF) {
+        $ttlF = [string]$metaF.title
+        $cprF = [string]$metaF.copyright
+        $idF = [string]$metaF.imageId
+        try { $enF = [string]$metaF.titleEn } catch { }
+    }
+
+    $favIdxF[$dateKeyF] = [ordered]@{
+        title     = $ttlF
+        titleEn   = $enF
+        copyright = $cprF
+        file      = $nameF
+        imageId   = $idF
+        sizeBytes = (Get-Item $destF).Length
+    }
+    [System.IO.File]::WriteAllText($FavIndex, ($favIdxF | ConvertTo-Json -Depth 6), (New-Object System.Text.UTF8Encoding($false)))
+
+    # 只有「收藏当前壁纸」才改桌面与 state
+    if ($SetWallpaper) {
+        Set-WallpaperStyle -Name $styleName
+        [void](Set-DesktopWallpaper -Path $destF)
+        $stF2 = Read-State
+        if ($stF2 -and [string]$stF2.date -eq $dateKeyF) {
+            Write-State -Date $dateKeyF -File $destF -Title $ttlF -ImageId $idF -AppliedDate $dateKeyF
+        }
+    }
+
+    # 文件已离开缓存，缓存索引里的条目同步删掉
+    if (Test-Path $IndexPath) {
+        try {
+            $ciCleanF = Get-Content $IndexPath -Raw -Encoding UTF8 | ConvertFrom-Json
+            if ($ciCleanF.PSObject.Properties.Name -contains $dateKeyF) {
+                $tmpIdxF = [ordered]@{}
+                foreach ($q in $ciCleanF.PSObject.Properties) {
+                    if ($q.Name -ne $dateKeyF) { $tmpIdxF[$q.Name] = $q.Value }
+                }
+                [System.IO.File]::WriteAllText($IndexPath, ($tmpIdxF | ConvertTo-Json -Depth 6), (New-Object System.Text.UTF8Encoding($false)))
+            }
+        } catch { }
+    }
+    Write-Log "已收藏（移入收藏夹）：$nameF"
+}
+
+# 把收藏夹里的图移回缓存并维护两份索引（不删文件）
+function Move-ToCache {
+    param([string]$SrcPath)
+
+    if (-not (Test-Path $SrcPath)) { throw '文件不存在' }
+    $nameU = Split-Path $SrcPath -Leaf
+    $dateKeyU = ($nameU -split '_')[0]
+    if (-not $dateKeyU) { throw '文件名不含日期' }
+
+    if (-not (Test-Path $CacheDir)) { New-Item -ItemType Directory -Path $CacheDir -Force | Out-Null }
+    $destU = Join-Path $CacheDir $nameU
+
+    $favIdxU = @{}
+    if (Test-Path $FavIndex) {
+        try {
+            $fiU = Get-Content $FavIndex -Raw -Encoding UTF8 | ConvertFrom-Json
+            foreach ($q in $fiU.PSObject.Properties) { $favIdxU[$q.Name] = $q.Value }
+        } catch { }
+    }
+    $metaU = $favIdxU[$dateKeyU]
+
+    # 先从收藏索引里删掉
+    if ($favIdxU.ContainsKey($dateKeyU)) {
+        $tmpU = [ordered]@{}
+        foreach ($q in $favIdxU.Keys) {
+            if ($q -ne $dateKeyU) { $tmpU[$q] = $favIdxU[$q] }
+        }
+        [System.IO.File]::WriteAllText($FavIndex, ($tmpU | ConvertTo-Json -Depth 6), (New-Object System.Text.UTF8Encoding($false)))
+    }
+
+    $isCurU = $false
+    try {
+        $curWU = [string](Get-ItemProperty 'HKCU:\Control Panel\Desktop' -Name Wallpaper -ErrorAction SilentlyContinue).Wallpaper
+        if ($curWU -and $curWU -ieq $SrcPath) { $isCurU = $true }
+    } catch { }
+    Move-FileKeepWallpaper -Src $SrcPath -Dest $destU -IsCurrentWallpaper:$isCurU
+
+    # 补回缓存索引
+    if ($metaU) {
+        $ciU = [ordered]@{}
+        if (Test-Path $IndexPath) {
+            try {
+                $jU = Get-Content $IndexPath -Raw -Encoding UTF8 | ConvertFrom-Json
+                foreach ($q in $jU.PSObject.Properties) { $ciU[$q.Name] = $q.Value }
+            } catch { }
+        }
+        $ttlU = ''
+        $enU = ''
+        $cprU = ''
+        $idU = ''
+        try { $ttlU = [string]$metaU.title; $enU = [string]$metaU.titleEn; $cprU = [string]$metaU.copyright; $idU = [string]$metaU.imageId } catch { }
+        $ciU[$dateKeyU] = [ordered]@{
+            title     = $ttlU
+            titleEn   = $enU
+            copyright = $cprU
+            file      = $nameU
+            imageId   = $idU
+            sizeBytes = (Get-Item $destU).Length
+        }
+        [System.IO.File]::WriteAllText($IndexPath, ($ciU | ConvertTo-Json -Depth 6), (New-Object System.Text.UTF8Encoding($false)))
+    }
+
+    # 当前壁纸指向收藏那份时，改指缓存
+    $curU = ''
+    try { $curU = [string](Get-ItemProperty 'HKCU:\Control Panel\Desktop' -Name Wallpaper -ErrorAction SilentlyContinue).Wallpaper } catch { }
+    if ($curU -and $curU -ieq $SrcPath) {
+        [void](Set-DesktopWallpaper -Path $destU)
+        $stU = Read-State
+        if ($stU -and [string]$stU.date -eq $dateKeyU) {
+            Write-State -Date $dateKeyU -File $destU -Title ([string]$metaU.title) -ImageId ([string]$metaU.imageId) -AppliedDate $dateKeyU
+        }
+    }
+    Write-Log "已移出收藏（退回缓存）：$nameU"
 }
 
 function Add-Pinned {
@@ -708,6 +903,12 @@ function Clear-OldCache {
     $protected = 0
     $pinnedSet = Read-Pinned
     Get-ChildItem $CacheDir -Filter '*.jpg' -File -ErrorAction SilentlyContinue | ForEach-Object {
+        # 收藏里已有同名副本：这份是安全移动的残留，直接清掉
+        if (Test-Path -LiteralPath (Join-Path $FavDir $_.Name)) {
+            if ($DryRun) { Write-Log "[DryRun] 将删除重复副本 $($_.Name)" }
+            else { try { [System.IO.File]::Delete($_.FullName); $removed++ } catch { } }
+            return
+        }
         # 正在使用的壁纸永不清理（锁定中的那张就是靠这个保住）
         if ($cur -and $_.FullName -ieq $cur) { $protected++; return }
         # 用户主动挑的历史图，按日期登记，永不被自动清理
@@ -723,8 +924,9 @@ function Clear-OldCache {
             else { [System.IO.File]::Delete($_.FullName); $removed++ }
         }
     }
+    $script:PinProtected = $protected
     if ($removed -gt 0 -or $protected -gt 0) {
-        Write-Log "清理缓存：删除 $removed 个（保留 $Days 天），保护当前壁纸 $protected 个"
+        Write-Log "清理缓存：删除 $removed 个（保留 $Days 天），保护 $protected 个"
     }
 
     # 同步清理索引里的失效条目（文件已不在的）
@@ -789,6 +991,9 @@ function Clear-ArchiveBySize {
 
     $removed = 0
     $freed = 0
+    $gone = @{}
+
+    # 第一轮：先删「从没登记过」的，从旧到新；收藏与当前壁纸始终跳过
     foreach ($f in $files) {
         if ($total -le $cap) { break }
         $d = ''
@@ -797,26 +1002,63 @@ function Clear-ArchiveBySize {
         if ($d -and $pinnedSet.ContainsKey($d)) { continue }
         if ($curWp -and $curWp -eq $f.FullName) { continue }
 
-        $sz = $f.Length
+        $szF = $f.Length
         if ($DryRun) {
             Write-Log "[DryRun] 归档超限，将删除 $($f.Name)"
             $removed++
-            $freed += $sz
-            $total -= $sz
+            $freed += $szF
+            $total -= $szF
+            $gone[$f.FullName] = $true
         } else {
             try {
                 [System.IO.File]::Delete($f.FullName)
                 $removed++
-                $freed += $sz
-                $total -= $sz
+                $freed += $szF
+                $total -= $szF
+                $gone[$f.FullName] = $true
             } catch {
                 Write-Log ("归档清理失败：" + $f.Name + " - " + $_.Exception.Message) 'WARN'
             }
         }
     }
+
+    # 第二轮：还没降到上限，才动「登记过」的（收藏与当前壁纸仍不动）
+    if ($total -gt $cap) {
+        foreach ($f in $files) {
+            if ($total -le $cap) { break }
+            if ($gone.ContainsKey($f.FullName)) { continue }
+            $d = ''
+            if ($f.Name -match '^(\d{8})') { $d = $matches[1] }
+            if ($d -and $favDates.ContainsKey($d)) { continue }
+            if ($curWp -and $curWp -eq $f.FullName) { continue }
+
+            $szF = $f.Length
+            if ($DryRun) {
+                Write-Log "[DryRun] 归档超限（含已登记），将删除 $($f.Name)"
+                $removed++
+                $freed += $szF
+                $total -= $szF
+                $gone[$f.FullName] = $true
+            } else {
+                try {
+                    [System.IO.File]::Delete($f.FullName)
+                    $removed++
+                    $freed += $szF
+                    $total -= $szF
+                    $gone[$f.FullName] = $true
+                } catch {
+                    Write-Log ("归档清理失败：" + $f.Name + " - " + $_.Exception.Message) 'WARN'
+                }
+            }
+        }
+    }
+
     if ($removed -gt 0) {
         $mode = if ($DryRun) { '[DryRun] ' } else { '' }
         Write-Log ($mode + '归档超限清理：删除 ' + $removed + ' 张，释放 ' + [math]::Round($freed / 1MB, 1) + ' MB，现存 ' + [math]::Round($total / 1MB, 1) + ' MB（上限 ' + $MaxMB + ' MB）')
+    }
+    if ($total -gt $cap) {
+        Write-Log ('归档仍超限：' + [math]::Round($total / 1MB, 1) + ' MB（上限 ' + $MaxMB + ' MB），剩余全部受收藏或当前壁纸保护') 'WARN'
     }
     return $removed
 }
@@ -1032,6 +1274,161 @@ if ($UpdateIndex) {
     }
 }
 
+if ($FavDate) {
+    $listF = @(([string]$FavDate) -split ',' |
+        ForEach-Object { $_ -replace '[^0-9]', '' } |
+        Where-Object { $_.Length -eq 8 })
+    if ($listF.Count -eq 0) { Write-Output '{"ok":0,"skip":0,"fail":0,"error":"badarg"}'; Exit-Run 1 }
+
+    $okF = 0
+    $skipF = 0
+    $failF = 0
+    foreach ($d8f in $listF) {
+        if (Test-Path $FavDir) {
+            $hadF = @(Get-ChildItem $FavDir -Filter "${d8f}_*.jpg" -File -ErrorAction SilentlyContinue) | Select-Object -First 1
+            if ($hadF) { $skipF++; continue }
+        }
+        $srcF = $null
+        foreach ($dirF in @($CacheDir, $ArchiveImgDir)) {
+            if ($srcF) { break }
+            if (-not (Test-Path $dirF)) { continue }
+            $hitF = @(Get-ChildItem $dirF -Filter "${d8f}_*.jpg" -File -ErrorAction SilentlyContinue) | Select-Object -First 1
+            if ($hitF) { $srcF = $hitF.FullName }
+        }
+        if (-not $srcF) { $failF++; continue }
+        try { Move-ToFavorite -SrcPath $srcF; $okF++ } catch { $failF++ }
+    }
+    Write-Output ('{"ok":' + $okF + ',"skip":' + $skipF + ',"fail":' + $failF + '}')
+    exit 0
+}
+
+if ($UnfavDate) {
+    $listU = @(([string]$UnfavDate) -split ',' |
+        ForEach-Object { $_ -replace '[^0-9]', '' } |
+        Where-Object { $_.Length -eq 8 })
+    if ($listU.Count -eq 0) { Write-Output '{"ok":0,"skip":0,"fail":0,"error":"badarg"}'; Exit-Run 1 }
+
+    $okU = 0
+    $skipU = 0
+    $failU = 0
+    foreach ($d8u in $listU) {
+        $srcU = $null
+        if (Test-Path $FavDir) {
+            $hitU = @(Get-ChildItem $FavDir -Filter "${d8u}_*.jpg" -File -ErrorAction SilentlyContinue) | Select-Object -First 1
+            if ($hitU) { $srcU = $hitU.FullName }
+        }
+        if (-not $srcU) { $skipU++; continue }
+        try { Move-ToCache -SrcPath $srcU; $okU++ } catch { $failU++ }
+    }
+    Write-Output ('{"ok":' + $okU + ',"skip":' + $skipU + ',"fail":' + $failU + '}')
+    exit 0
+}
+
+if ($ExportLinks) {
+    $d1L = ([string]$RangeFrom) -replace '[^0-9]', ''
+    $d2L = ([string]$RangeTo)   -replace '[^0-9]', ''
+    if ($d1L.Length -ne 8 -or $d2L.Length -ne 8) { Write-Output '{"ok":0,"miss":0,"links":[],"error":"badarg"}'; Exit-Run 1 }
+    if ($d1L -lt $ArchiveMinDate) { $d1L = $ArchiveMinDate }
+    $todayL = (Get-Date).ToString('yyyyMMdd')
+    if ($d2L -gt $todayL) { $d2L = $todayL }
+    if ($d1L -gt $d2L) { Write-Output '{"ok":0,"miss":0,"links":[],"error":"range"}'; Exit-Run 1 }
+
+    $idxL = @()
+    try { $idxL = @(Get-FullIndex) } catch { }
+    $byDateL = @{}
+    foreach ($it in $idxL) { $byDateL[[string]$it.d] = $it }
+
+    $linksL = @()
+    $missL = 0
+    $dayL = [datetime]::ParseExact($d1L, 'yyyyMMdd', $null)
+    $endL = [datetime]::ParseExact($d2L, 'yyyyMMdd', $null)
+    while ($dayL -le $endL) {
+        $curL = $dayL.ToString('yyyyMMdd')
+        $dayL = $dayL.AddDays(1)
+        $recL = $byDateL[$curL]
+        if (-not $recL -or -not $recL.i) { $missL++; continue }
+        $linksL += ('https://www.bing.com/th?id=' + [string]$recL.i + '_UHD.jpg')
+    }
+    $arrL = (($linksL | ForEach-Object { '"' + $_ + '"' }) -join ',')
+    Write-Output ('{"ok":' + $linksL.Count + ',"miss":' + $missL + ',"links":[' + $arrL + ']}')
+    exit 0
+}
+
+if ($ExportRange) {
+    # 按日期范围批量下载：目标目录已有同名则跳过，索引里没有记失败
+    $d1 = ([string]$RangeFrom) -replace '[^0-9]', ''
+    $d2 = ([string]$RangeTo)   -replace '[^0-9]', ''
+    if ($d1.Length -ne 8 -or $d2.Length -ne 8) {
+        Write-Output '{"ok":0,"skip":0,"fail":0,"error":"日期格式错误"}'
+        Exit-Run 1
+    }
+    if ($d1 -lt $ArchiveMinDate) { $d1 = $ArchiveMinDate }
+    $todayD = (Get-Date).ToString('yyyyMMdd')
+    if ($d2 -gt $todayD) { $d2 = $todayD }
+    if ($d1 -gt $d2) {
+        Write-Output '{"ok":0,"skip":0,"fail":0,"error":"起始日期晚于结束日期"}'
+        Exit-Run 1
+    }
+    if (-not $DestDir) {
+        Write-Output '{"ok":0,"skip":0,"fail":0,"error":"未指定下载目录"}'
+        Exit-Run 1
+    }
+    try {
+        if (-not (Test-Path $DestDir)) { New-Item -ItemType Directory -Path $DestDir -Force | Out-Null }
+    } catch {
+        Write-Output '{"ok":0,"skip":0,"fail":0,"error":"目录不可写"}'
+        Exit-Run 1
+    }
+
+    $idx = @()
+    try { $idx = @(Get-FullIndex) } catch { }
+    $byDate = @{}
+    foreach ($it in $idx) { $byDate[[string]$it.d] = $it }
+
+    $okN = 0
+    $skipN = 0
+    $failN = 0
+    $firstErr = ''
+
+    $day = [datetime]::ParseExact($d1, 'yyyyMMdd', $null)
+    $end = [datetime]::ParseExact($d2, 'yyyyMMdd', $null)
+    while ($day -le $end) {
+        $cur = $day.ToString('yyyyMMdd')
+        $day = $day.AddDays(1)
+
+        $had = @(Get-ChildItem $DestDir -Filter "${cur}_*.jpg" -File -ErrorAction SilentlyContinue) | Select-Object -First 1
+        if ($had) { $skipN++; continue }
+
+        $rec = $byDate[$cur]
+        if (-not $rec) {
+            $failN++
+            if (-not $firstErr) { $firstErr = "$cur 索引里没有这一天" }
+            continue
+        }
+        $imgId = [string]$rec.i
+        if (-not $imgId) {
+            $failN++
+            if (-not $firstErr) { $firstErr = "$cur 缺少 imageId" }
+            continue
+        }
+
+        $shortId = $imgId -replace '_[A-Za-z]{2}-[A-Za-z]{2}\d+$', ''
+        $destFile = Join-Path $DestDir "${cur}_$shortId.jpg"
+        try {
+            [void](Save-BingImage -Url "https://www.bing.com/th?id=${imgId}_UHD.jpg" -Dest $destFile -MinKB 300)
+            $okN++
+        } catch {
+            $failN++
+            if (-not $firstErr) { $firstErr = ($_.Exception.Message) -replace '"', "'" }
+        }
+        Start-Sleep -Milliseconds 350
+    }
+
+    Write-Log ("批量下载完成：成功 $okN，跳过 $skipN，失败 $failN")
+    Write-Output ('{"ok":' + $okN + ',"skip":' + $skipN + ',"fail":' + $failN + ',"error":"' + $firstErr + '"}')
+    exit 0
+}
+
     if ($PSBoundParameters.ContainsKey('Query') -or $PSBoundParameters.ContainsKey('Search') -or $KwFile) {
     # ---- 关键词搜索
         # 关键词来源：-FindFile（UTF-8 文件，最可靠）> -Find > -Search
@@ -1086,7 +1483,8 @@ if ($UpdateIndex) {
 try {
     if ($CleanAll) {
         Write-Log '--- 清空缓存（保留当前壁纸）---'
-        [void](Clear-AllCache -Mode $CleanMode)
+        $allN = [int](Clear-AllCache -Mode $CleanMode)
+        Write-Output ('{"removed":' + $allN + ',"protected":' + $kept + '}')
         Exit-Run 0
     }
 
@@ -1239,7 +1637,8 @@ try {
     if ($Clean) {
         $keepArg = if ($Keep -gt 0) { $Keep } else { $keepDays }
         Write-Log "--- 仅执行缓存清理（保留 $keepArg 天）---"
-        [void](Clear-OldCache -Days $keepArg)
+        $cleanN = [int](Clear-OldCache -Days $keepArg)
+        Write-Output ('{"removed":' + $cleanN + ',"protected":' + [int]$script:PinProtected + '}')
         Exit-Run 0
     }
 
@@ -1258,7 +1657,7 @@ try {
                 $backF = Join-Path $CacheDir $ff.Name
                 if (-not $DryRun) {
                     try {
-                        Move-Item -LiteralPath $ff.FullName -Destination $backF -Force
+                        Move-FileKeepWallpaper -Src $ff.FullName -Dest $backF -IsCurrentWallpaper
                         [void](Set-DesktopWallpaper -Path $backF)
                         $stF = Read-State
                         $dF = ($ff.Name -split '_')[0]
@@ -1281,6 +1680,7 @@ try {
         }
         $modeF = if ($CleanMode -eq 'permanent') { '彻底删除' } else { '进回收站' }
         Write-Log ("清空收藏（" + $modeF + "）：删除 " + $removedF + " 张，释放 " + [math]::Round($freedF / 1MB, 1) + " MB，保留当前壁纸 " + $keptF + " 张")
+        Write-Output ('{"removed":' + $removedF + ',"moved":' + $keptF + '}')
         Exit-Run 0
     }
 
@@ -1293,6 +1693,7 @@ try {
             }
         }
         Write-Log ("清理归档索引：删除 " + $nIdx + " 个文件")
+        Write-Output ('{"removed":' + $nIdx + ',"protected":0}')
         Exit-Run 0
     }
 
@@ -1313,12 +1714,15 @@ try {
         $keptA = 0
         $freedA = 0
         $filesA = @(Get-ChildItem $ArchiveImgDir -Filter '*.jpg' -File -ErrorAction SilentlyContinue | Sort-Object Name)
+        $keptFavA = 0
+        $keptPinA = 0
+        $keptCurA = 0
         foreach ($fa in $filesA) {
             $dA = ''
             if ($fa.Name -match '^(\d{8})') { $dA = $matches[1] }
-            if ($dA -and $favA.ContainsKey($dA)) { $keptA++; continue }
-            if ($dA -and $pinA.ContainsKey($dA)) { $keptA++; continue }
-            if ($curA -and $curA -eq $fa.FullName) { $keptA++; continue }
+            # 手动清理归档是用户明确操作，只保留收藏与当前壁纸；保护名单不再拦
+            if ($dA -and $favA.ContainsKey($dA)) { $keptFavA++; $keptA++; continue }
+            if ($curA -and $curA -eq $fa.FullName) { $keptCurA++; $keptA++; continue }
             $szA = $fa.Length
             if ($DryRun) {
                 Write-Log "[DryRun] 将删除归档图 $($fa.Name)"
@@ -1341,6 +1745,19 @@ try {
         }
         $modeTxt = if ($CleanMode -eq 'permanent') { '彻底删除' } else { '进回收站' }
         Write-Log ("清理历史归档（" + $modeTxt + "）：删除 " + $removedA + " 张，释放 " + [math]::Round($freedA / 1MB, 1) + " MB，保留 " + $keptA + " 张")
+        $nIdxA = 0
+        if ($WithIndex) {
+            if (Test-Path $ArchiveDir) {
+                Get-ChildItem $ArchiveDir -Filter '*.json' -File -ErrorAction SilentlyContinue | ForEach-Object {
+                    if ($_.Name -eq 'all-index.json' -or $_.Name -match '^\d{4}-\d{2}\.json$') {
+                        if ($DryRun) { Write-Log "[DryRun] 将删除归档索引 $($_.Name)"; $nIdxA++ }
+                        elseif (Remove-OneFile -Path $_.FullName -Mode $CleanMode) { $nIdxA++ }
+                    }
+                }
+                Write-Log ("同时清理归档索引：删除 " + $nIdxA + " 个文件")
+            }
+        }
+        Write-Output ('{"removed":' + $removedA + ',"keptFav":' + $keptFavA + ',"keptCur":' + $keptCurA + ',"idxRemoved":' + $nIdxA + '}')
         Exit-Run 0
     }
 

@@ -94,6 +94,13 @@ namespace BingWallpaperLite
             };
             Controls.Add(btnInstall);
 
+            CheckBox cbDesk = new CheckBox();
+            cbDesk.Text = S.SetupDeskLink;
+            cbDesk.SetBounds(16, 262, 160, 22);
+            cbDesk.Checked = false;
+            cbDesk.CheckedChanged += delegate { Program.WantDesktopShortcut = cbDesk.Checked; };
+            Controls.Add(cbDesk);
+
             Button btnPortable = new Button();
             btnPortable.Text = S.BtnPortable;
             btnPortable.SetBounds(184, 258, 96, 30);

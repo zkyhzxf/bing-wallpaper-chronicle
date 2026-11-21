@@ -134,6 +134,91 @@ namespace BingWallpaperLite
             return "";
         }
 
+        /// <summary>导出已下载壁纸：按用户勾选的目录复制到目标文件夹，同名跳过。</summary>
+        private static void DoExportDownloaded()
+        {
+            if (busy) { return; }
+            using (ExportForm f = new ExportForm())
+            {
+                if (f.ShowDialog() != DialogResult.OK) { return; }
+                List<string> srcDirs = f.SelectedDirs;
+                string dest = f.DestPath;
+                if (srcDirs == null || srcDirs.Count == 0 || string.IsNullOrEmpty(dest)) { return; }
+
+                SetBusy(true);
+                anchor.BeginInvoke((MethodInvoker)delegate
+                {
+                    int okCount = 0;
+                    int skip = 0;
+                    try
+                    {
+                        foreach (string dir in srcDirs)
+                        {
+                            string[] files;
+                            try { files = Directory.GetFiles(dir, "*.jpg"); }
+                            catch { continue; }
+                            foreach (string file in files)
+                            {
+                                string target = Path.Combine(dest, Path.GetFileName(file));
+                                if (File.Exists(target)) { skip++; continue; }
+                                try { File.Copy(file, target, false); okCount++; } catch { }
+                            }
+                        }
+                    }
+                    finally
+                    {
+                        SetBusy(false);
+                        if (!menu.Visible)
+                        {
+                            Balloon(S.IsEn ? "Export done" : "导出完成", S.ExpDone(okCount, skip));
+                        }
+                    }
+                });
+            }
+        }
+
+        /// <summary>批量下载壁纸：按日期范围调脚本，完成弹结果。</summary>
+        private static void DoDownloadRange()
+        {
+            if (busy) { return; }
+            using (DownloadForm f = new DownloadForm())
+            {
+                if (f.ShowDialog() != DialogResult.OK) { return; }
+                string from = f.FromDate;
+                string to = f.ToDate;
+                string dest = f.DestPath;
+                if (string.IsNullOrEmpty(dest)) { return; }
+
+                SetBusy(true);
+                anchor.BeginInvoke((MethodInvoker)delegate
+                {
+                    string outText = "";
+                    try
+                    {
+                        outText = RunScriptCapture("-ExportRange -RangeFrom " + from +
+                            " -RangeTo " + to + " -DestDir \"" + dest + "\"");
+                    }
+                    catch { }
+                    SetBusy(false);
+
+                    int okCount = 0;
+                    int skip = 0;
+                    int fail = 0;
+                    System.Text.RegularExpressions.Match m = System.Text.RegularExpressions.Regex.Match(
+                        outText ?? "", "\"ok\"\\s*:\\s*(\\d+)[^}]*\"skip\"\\s*:\\s*(\\d+)[^}]*\"fail\"\\s*:\\s*(\\d+)");
+                    if (m.Success)
+                    {
+                        int.TryParse(m.Groups[1].Value, out okCount);
+                        int.TryParse(m.Groups[2].Value, out skip);
+                        int.TryParse(m.Groups[3].Value, out fail);
+                    }
+                    MessageBox.Show(S.DlRangeDone(okCount, skip, fail), AppName,
+                        MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    try { OpenTarget(dest); } catch { }
+                });
+            }
+        }
+
         private static void DoPickDate()
         {
             if (busy) { return; }
@@ -246,6 +331,7 @@ namespace BingWallpaperLite
                 BuildLibPage(lib, favFiles, favIdx, currentDate, true, 0, 0);
             }
 
+
             lib.DropDownItems.Add(new ToolStripSeparator());
 
             // ---- 最近 30 天
@@ -277,21 +363,146 @@ namespace BingWallpaperLite
             lib.DropDownItems.Add(new ToolStripSeparator());
             lib.DropDownItems.Add(MakeItem(S.OpenCacheDir, delegate { OpenTarget(cacheDir); }));
             lib.DropDownItems.Add(MakeItem(S.OpenFavDir, delegate { OpenTarget(favDir); }));
+            lib.DropDownItems.Add(MakeItem(S.OpenArchiveDir, delegate { OpenTarget(archiveImgDir); }));
+            lib.DropDownItems.Add(MakeItem(S.ExportDownloaded, delegate { DoExportDownloaded(); }));
+            lib.DropDownItems.Add(MakeItem(S.DownloadRange, delegate { DoDownloadRange(); }));
+        }
 
-            // 清空收藏：走 CleanForm 二次确认，默认进回收站
-            lib.DropDownItems.Add(new ToolStripSeparator());
-            lib.DropDownItems.Add(MakeItem(S.CleanFavMenu, delegate { ConfirmCleanFavorites(); }));
+        /// <summary>归档容量上限（MB），读配置，取不到按 500。</summary>
+        internal static int ArchiveCapMB()
+        {
+            try { return GetCfgInt(ReadConfig(), "archiveMaxMB", 500); }
+            catch { return 500; }
+        }
+
+        /// <summary>state.json 里记录的当前壁纸日期；取不到返回空串。</summary>
+        internal static string CurrentStateDate()
+        {
+            try
+            {
+                Dictionary<string, object> st = ReadJson(statePath);
+                string d = GetStr(st, "date");
+                return d.Length == 8 ? d : "";
+            }
+            catch { return ""; }
+        }
+
+        private static string PinnedFilePath { get { return Path.Combine(root, "pinned.json"); } }
+        private static string PinnedLegacyFilePath { get { return Path.Combine(cacheDir, "pinned.json"); } }
+
+        /// <summary>读保护名单（新位置优先，旧版在 cache\ 下的继续兼容）。</summary>
+        internal static Dictionary<string, object> ReadPinnedMap()
+        {
+            string src = PinnedFilePath;
+            try
+            {
+                if (!File.Exists(src) && File.Exists(PinnedLegacyFilePath)) { src = PinnedLegacyFilePath; }
+            }
+            catch { }
+            Dictionary<string, object> d = ReadJson(src);
+            if (d == null) { d = new Dictionary<string, object>(); }
+            return d;
+        }
+
+        /// <summary>写保护名单到程序根目录。</summary>
+        internal static void WritePinnedMap(Dictionary<string, object> map)
+        {
+            try
+            {
+                if (map == null) { map = new Dictionary<string, object>(); }
+                string json = new System.Web.Script.Serialization.JavaScriptSerializer().Serialize(map);
+                File.WriteAllText(PinnedFilePath, json, new UTF8Encoding(false));
+            }
+            catch { }
+        }
+
+        /// <summary>找某个日期的图，返回路径；三处都没有返回 null。</summary>
+        internal static string FindImageFilePath(string date, out int where)
+        {
+            where = 0;   // 0=没有 1=收藏 2=缓存 3=归档
+            string[] dirs = new string[] { FavDirPath, CacheDirPath, ArchiveImgPath };
+            for (int i = 0; i < dirs.Length; i++)
+            {
+                try
+                {
+                    if (string.IsNullOrEmpty(dirs[i]) || !Directory.Exists(dirs[i])) { continue; }
+                    string[] hit = Directory.GetFiles(dirs[i], date + "_*.jpg");
+                    if (hit.Length > 0)
+                    {
+                        where = i + 1;
+                        return hit[0];
+                    }
+                }
+                catch { }
+            }
+            return null;
+        }
+
+        internal static string FindImageFilePath(string date)
+        {
+            int w;
+            return FindImageFilePath(date, out w);
+        }
+
+        /// <summary>查某个日期的图在哪：收藏 / 缓存 / 归档 / 没有。回填体积（字节）。</summary>
+        internal static string FindImageLocation(string date, out long bytes)
+        {
+            bytes = 0;
+            int where;
+            string file = FindImageFilePath(date, out where);
+            if (file == null) { return S.CalLocNone; }
+            try { bytes = new FileInfo(file).Length; } catch { }
+            if (where == 1) { return S.CalLocFav; }
+            if (where == 2) { return S.CalLocCache; }
+            return S.CalLocArch;
+        }
+
+        /// <summary>打开下载链接窗口（日期范围 yyyyMMdd）。</summary>
+        internal static void DoExportLinks(string from, string to)
+        {
+            try
+            {
+                using (LinkForm f = new LinkForm(from, to))
+                {
+                    f.ShowDialog(anchor);
+                }
+            }
+            catch { }
+        }
+
+        /// <summary>打开收藏管理窗口。</summary>
+        private static void DoFavManager()
+        {
+            if (busy) { return; }
+            using (FavForm f = new FavForm())
+            {
+                f.ShowDialog(anchor);
+            }
+            RefreshAll();
+        }
+
+        /// <summary>打开「自动清理保留」窗口。</summary>
+        private static void DoPinnedList()
+        {
+            if (busy) { return; }
+            using (PinnedForm f = new PinnedForm())
+            {
+                f.ShowDialog(anchor);
+            }
+            RefreshAll();
         }
 
         /// <summary>把所有 archive\*.json 的标题合并成 {date: {title}}，供壁纸库显示。</summary>
-        private static Dictionary<string, object> LoadArchiveIndex()
+        internal static Dictionary<string, object> LoadArchiveIndex()
         {
             Dictionary<string, object> all = new Dictionary<string, object>();
             try
             {
                 if (!Directory.Exists(archiveDir)) { return all; }
+                string allIdxFile = Path.Combine(archiveDir, "all-index.json");
                 foreach (string f in Directory.GetFiles(archiveDir, "*.json"))
                 {
+                    if (string.Equals(f, allIdxFile, StringComparison.OrdinalIgnoreCase)) { continue; }
                     try
                     {
                         Dictionary<string, object> m = ReadJson(f);
@@ -301,14 +512,80 @@ namespace BingWallpaperLite
                             Dictionary<string, object> e = kv.Value as Dictionary<string, object>;
                             if (e == null) { continue; }
                             string tt = GetStr(e, "t");
-                            if (tt.Length == 0) { continue; }
+                            string cc = GetStr(e, "c");
+                            if (tt.Length == 0 && cc.Length == 0) { continue; }
                             Dictionary<string, object> wrap = new Dictionary<string, object>();
                             wrap["title"] = tt;
+                            wrap["copyright"] = cc;
                             all[kv.Key] = wrap;
                         }
                     }
                     catch { }
                 }
+
+                // 缓存与收藏的索引里也带 copyright，补空缺
+                foreach (string extra in new string[] {
+                             Path.Combine(cacheDir, "index.json"),
+                             Path.Combine(favDir, "index.json") })
+                {
+                    try
+                    {
+                        Dictionary<string, object> mx = ReadJson(extra);
+                        if (mx == null) { continue; }
+                        foreach (KeyValuePair<string, object> kv in mx)
+                        {
+                            Dictionary<string, object> e = kv.Value as Dictionary<string, object>;
+                            if (e == null) { continue; }
+                            string tt = GetStr(e, "title");
+                            string cc = GetStr(e, "copyright");
+                            if (tt.Length == 0 && cc.Length == 0) { continue; }
+                            Dictionary<string, object> wrap;
+                            if (all.ContainsKey(kv.Key))
+                            {
+                                wrap = all[kv.Key] as Dictionary<string, object>;
+                                if (wrap == null) { continue; }
+                            }
+                            else
+                            {
+                                wrap = new Dictionary<string, object>();
+                                wrap["title"] = "";
+                                wrap["copyright"] = "";
+                                all[kv.Key] = wrap;
+                            }
+                            if (GetStr(wrap, "title").Length == 0 && tt.Length > 0) { wrap["title"] = tt; }
+                            if (GetStr(wrap, "copyright").Length == 0 && cc.Length > 0) { wrap["copyright"] = cc; }
+                        }
+                    }
+                    catch { }
+                }
+
+                // 全量索引兜底：数组格式（d/t），只补月份索引里没有的日期
+                try
+                {
+                    if (File.Exists(allIdxFile))
+                    {
+                        object raw = new System.Web.Script.Serialization.JavaScriptSerializer()
+                            .DeserializeObject(File.ReadAllText(allIdxFile, Encoding.UTF8));
+                        object[] arr = raw as object[];
+                        if (arr != null)
+                        {
+                            foreach (object o in arr)
+                            {
+                                Dictionary<string, object> e = o as Dictionary<string, object>;
+                                if (e == null) { continue; }
+                                string d8 = e.ContainsKey("d") ? Convert.ToString(e["d"]) : "";
+                                string t8 = e.ContainsKey("t") ? Convert.ToString(e["t"]) : "";
+                                if (d8.Length != 8 || t8.Length == 0) { continue; }
+                                if (all.ContainsKey(d8)) { continue; }
+                                Dictionary<string, object> wrap = new Dictionary<string, object>();
+                                wrap["title"] = t8;
+                                wrap["copyright"] = "";
+                                all[d8] = wrap;
+                            }
+                        }
+                    }
+                }
+                catch { }
             }
             catch { }
             return all;
@@ -626,6 +903,9 @@ namespace BingWallpaperLite
             ym.DropDownItems.Add(MakeItem(S.OpenArchiveImg, delegate { OpenTarget(archiveImgDir); }));
         }
 
+        private static int cachedIdxCount = -1;
+        private static long cachedIdxSize = -1;
+
         private static void RefreshArchiveCheck()
         {
             ToolStripMenuItem am = menu.Items["archive"] as ToolStripMenuItem;
@@ -642,19 +922,69 @@ namespace BingWallpaperLite
                 }
                 else if (x.Name == "archinfo")
                 {
-                    int months = 0;
-                    long bytes = 0;
+                    // 归档图片总量与其中受保护的数量
+                    int imgN = 0;
+                    long imgBytes = 0;
+                    int protN = 0;
+                    try
+                    {
+                        Dictionary<string, object> pins = ReadPinnedMap();
+                        if (Directory.Exists(ArchiveImgPath))
+                        {
+                            foreach (string img in Directory.GetFiles(ArchiveImgPath, "*.jpg"))
+                            {
+                                imgN++;
+                                imgBytes += new FileInfo(img).Length;
+                                string fn = Path.GetFileName(img);
+                                if (fn.Length >= 8 && pins.ContainsKey(fn.Substring(0, 8))) { protN++; }
+                            }
+                        }
+                    }
+                    catch { }
+
+                    int capMB = 500;
+                    try { capMB = GetCfgInt(c, "archiveMaxMB", 500); } catch { }
+                    x.Text = S.ArchRowArchive(imgN, Math.Round(imgBytes / 1024.0 / 1024.0, 1), capMB, protN);
+                }
+                else if (x.Name == "archidxinfo")
+                {
+                    int idxMonths = 0;
+                    long idxBytes = 0;
+                    int totalIdx = 0;
                     try
                     {
                         if (Directory.Exists(archiveDir))
                         {
-                            string[] fs = Directory.GetFiles(archiveDir, "*.json");
-                            months = fs.Length;
-                            foreach (string f in fs) { bytes += new FileInfo(f).Length; }
+                            foreach (string f in Directory.GetFiles(archiveDir, "*.json"))
+                            {
+                                string fn = Path.GetFileName(f);
+                                if (System.Text.RegularExpressions.Regex.IsMatch(fn, @"^\d{4}-\d{2}\.json$"))
+                                {
+                                    idxMonths++;
+                                    idxBytes += new FileInfo(f).Length;
+                                }
+                            }
+                        }
+
+                        string fAll = Path.Combine(archiveDir, "all-index.json");
+                        if (File.Exists(fAll))
+                        {
+                            FileInfo fiAll = new FileInfo(fAll);
+                            idxBytes += fiAll.Length;
+                            if (fiAll.Length == cachedIdxSize && cachedIdxCount >= 0) { totalIdx = cachedIdxCount; }
+                            else
+                            {
+                                object rawIdx = new System.Web.Script.Serialization.JavaScriptSerializer()
+                                    .DeserializeObject(File.ReadAllText(fAll, Encoding.UTF8));
+                                object[] arrIdx = rawIdx as object[];
+                                if (arrIdx != null) { totalIdx = arrIdx.Length; }
+                                cachedIdxCount = totalIdx;
+                                cachedIdxSize = fiAll.Length;
+                            }
                         }
                     }
                     catch { }
-                    x.Text = S.ArchInfoPrefix + S.ArchCacheInfo(months, Math.Round(bytes / 1024.0, 0)).TrimStart();
+                    x.Text = S.ArchRowIndex(idxMonths, Math.Round(idxBytes / 1024.0, 0), totalIdx);
                 }
                 else if (x.Name == "updatetime")
                 {

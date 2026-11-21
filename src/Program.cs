@@ -19,9 +19,9 @@ using Microsoft.Win32;
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyConfiguration("Release")]
 [assembly: AssemblyCulture("")]
-[assembly: AssemblyVersion("3.4.2.0")]
-[assembly: AssemblyFileVersion("3.4.2.0")]
-[assembly: AssemblyInformationalVersion("3.4.2")]
+[assembly: AssemblyVersion("3.6.9.0")]
+[assembly: AssemblyFileVersion("3.6.9.0")]
+[assembly: AssemblyInformationalVersion("3.6.9")]
 [assembly: ComVisible(false)]
 
 namespace BingWallpaperLite
@@ -31,7 +31,7 @@ namespace BingWallpaperLite
         // ---------------------------------------------------------------- 常量
 
         internal const string AppName     = "必应壁纸编年史";
-        internal const string AppVersion  = "3.4.2";
+        internal const string AppVersion  = "3.6.9";
         private const string TaskName    = "BingWallpaperChronicle";
         private const string RunValue    = "BingWallpaperChronicle";
 
@@ -405,6 +405,20 @@ namespace BingWallpaperLite
         /// 把内嵌的脚本与图标释放到程序目录；已存在则跳过（绿色模式优先用外部文件）。
         /// 返回 false 表示目录不可写且无法释放。
         /// </summary>
+        /// <summary>目标路径是否落在程序目录树内（含程序目录本身）。解析失败按不合法处理。</summary>
+        internal static bool IsInsideProgramDir(string path)
+        {
+            if (string.IsNullOrEmpty(path)) { return true; }
+            try
+            {
+                string p = Path.GetFullPath(path).TrimEnd('\\');
+                string r = Path.GetFullPath(root).TrimEnd('\\');
+                if (string.Equals(p, r, StringComparison.OrdinalIgnoreCase)) { return true; }
+                return (p + "\\").StartsWith(r + "\\", StringComparison.OrdinalIgnoreCase);
+            }
+            catch { return true; }
+        }
+
         private static bool EnsurePayload(bool force)
         {
             Assembly asm = Assembly.GetExecutingAssembly();
@@ -432,6 +446,29 @@ namespace BingWallpaperLite
                     ok = false;
                 }
             }
+
+            // 离线索引快照：archive 下没有索引时才释放，让全新安装立即能搜全部历史
+            try
+            {
+                string snap = Path.Combine(archiveDir, "all-index.json");
+                if (!File.Exists(snap))
+                {
+                    if (!Directory.Exists(archiveDir)) { Directory.CreateDirectory(archiveDir); }
+                    using (Stream ss = asm.GetManifestResourceStream("all-index.json"))
+                    {
+                        if (ss != null)
+                        {
+                            using (FileStream fs = new FileStream(snap, FileMode.Create, FileAccess.Write, FileShare.None))
+                            {
+                                byte[] buf = new byte[8192];
+                                int n;
+                                while ((n = ss.Read(buf, 0, buf.Length)) > 0) { fs.Write(buf, 0, n); }
+                            }
+                        }
+                    }
+                }
+            }
+            catch { }
 
             // config.json 只在缺失时释放，绝不覆盖用户配置
             string cfg = Path.Combine(root, "config.json");

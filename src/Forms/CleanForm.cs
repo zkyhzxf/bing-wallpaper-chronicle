@@ -18,8 +18,10 @@ namespace BingWallpaperLite
         private readonly RadioButton rbPermanent;
         private readonly Button btnStart;
         private readonly Label lblNothing;
+        private readonly CheckBox cbIndex;
 
         public bool Permanent { get; private set; }
+        public bool WithIndex { get; private set; }
 
         public CleanForm(Target target)
         {
@@ -41,38 +43,73 @@ namespace BingWallpaperLite
             ClientSize = new Size(520, hasMode ? 400 : 300);
             try { Font = new Font("Microsoft YaHei UI", 9F); } catch { }
 
-            // 统计
-            int totalN = 0, favN = 0, pinN = 0, curN = 0;
+            // 统计：清空收藏走独立口径——目录里的图都要离开收藏夹，
+            // 当前壁纸那张是"移回缓存"，不是"保留在收藏里"
+            int totalN = 0, favN = 0, curN = 0;
             long totalB = 0;
-            HashSet<string> favDates = new HashSet<string>();
-            Dictionary<string, object> pinned = null;
-            string curWp = "";
-            try
+            long actualB = 0;
+            int actualN = 0;
+
+            if (target == Target.Favorites)
             {
-                foreach (string f in Directory.GetFiles(dir, filter))
+                string curWpF = "";
+                try
                 {
-                    totalN++;
-                    long sz = 0;
-                    try { sz = new FileInfo(f).Length; } catch { }
-                    totalB += sz;
+                    curWpF = Program.CurrentWallpaperPath();
+                    foreach (string f in Directory.GetFiles(dir, filter))
+                    {
+                        totalN++;
+                        long sz = 0;
+                        try { sz = new FileInfo(f).Length; } catch { }
+                        totalB += sz;
+                        if (!string.IsNullOrEmpty(curWpF) &&
+                            string.Equals(curWpF, f, StringComparison.OrdinalIgnoreCase))
+                        {
+                            curN++;
+                        }
+                        else
+                        {
+                            actualN++;
+                            actualB += sz;
+                        }
+                    }
                 }
-                if (target != Target.ArchiveIndex)
+                catch { }
+            }
+            else if (target == Target.ArchiveIndex)
+            {
+                try
                 {
+                    foreach (string f in Directory.GetFiles(dir, filter))
+                    {
+                        totalN++;
+                        try { totalB += new FileInfo(f).Length; } catch { }
+                    }
+                }
+                catch { }
+                actualN = totalN;
+                actualB = totalB;
+            }
+            else
+            {
+                HashSet<string> favDates = new HashSet<string>();
+                string curWp = "";
+                try
+                {
+                    foreach (string f in Directory.GetFiles(dir, filter))
+                    {
+                        totalN++;
+                        try { totalB += new FileInfo(f).Length; } catch { }
+                    }
                     foreach (string f in Directory.GetFiles(Program.FavDirPath, "*.jpg"))
                     {
                         string fn = Path.GetFileName(f);
                         if (fn.Length >= 8) { favDates.Add(fn.Substring(0, 8)); }
                     }
-                    pinned = Program.ReadPinnedPublic();
                     curWp = Program.CurrentWallpaperPath();
                 }
-            }
-            catch { }
+                catch { }
 
-            long actualB = 0;
-            int actualN = 0;
-            if (target != Target.ArchiveIndex)
-            {
                 try
                 {
                     foreach (string f in Directory.GetFiles(dir, filter))
@@ -83,7 +120,6 @@ namespace BingWallpaperLite
                         if (d8.Length == 8)
                         {
                             if (favDates.Contains(d8)) { favN++; prot = true; }
-                            else if (pinned != null && pinned.ContainsKey(d8)) { pinN++; prot = true; }
                         }
                         if (!prot && !string.IsNullOrEmpty(curWp) &&
                             string.Equals(curWp, f, StringComparison.OrdinalIgnoreCase)) { curN++; prot = true; }
@@ -96,12 +132,13 @@ namespace BingWallpaperLite
                 }
                 catch { }
             }
-            else { actualN = totalN; actualB = totalB; }
 
             // 统计区
             Panel box = new Panel();
             box.BorderStyle = BorderStyle.FixedSingle;
-            box.SetBounds(18, 16, 484, hasMode ? 176 : 96);
+            int boxH = hasMode ? 176 : 96;
+            if (target == Target.Archive) { boxH = 216; }
+            box.SetBounds(18, 16, 484, boxH);
             Controls.Add(box);
 
             int yy = 10;
@@ -120,8 +157,14 @@ namespace BingWallpaperLite
                 box.Controls.Add(sep);
                 yy += 8;
                 if (favN > 0) { box.Controls.Add(MkLabel(S.CleanFavProtected, 12, yy)); box.Controls.Add(MkValue(favN + " 张", 320, yy)); yy += 22; }
-                if (pinN > 0) { box.Controls.Add(MkLabel(S.CleanPinProtected, 12, yy)); box.Controls.Add(MkValue(pinN + " 张", 320, yy)); yy += 22; }
-                if (curN > 0) { box.Controls.Add(MkLabel(S.CleanCurProtected, 12, yy)); box.Controls.Add(MkValue(curN + " 张", 320, yy)); yy += 22; }
+
+                if (curN > 0)
+                {
+                    string curLabel = (target == Target.Favorites) ? S.CleanCurMoved : S.CleanCurProtected;
+                    box.Controls.Add(MkLabel(curLabel, 12, yy));
+                    box.Controls.Add(MkValue(curN + " 张", 320, yy));
+                    yy += 22;
+                }
                 yy += 6;
                 Label l2 = MkLabel(S.CleanActual, 12, yy);
                 l2.Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Bold);
@@ -129,10 +172,42 @@ namespace BingWallpaperLite
                 Label v2 = MkValue(actualN + " 张，" + FmtSize(actualB), 320, yy);
                 v2.Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Bold);
                 box.Controls.Add(v2);
+
+                if (target == Target.Archive)
+                {
+                    Label capHint = new Label();
+                    capHint.SetBounds(12, yy + 28, 460, 54);
+                    capHint.ForeColor = SystemColors.GrayText;
+                    capHint.Text = S.CleanCapHint(Program.ArchiveCapMB());
+                    box.Controls.Add(capHint);
+                }
+            }
+
+            // 清理归档时多给一个索引开关（默认不勾：索引只有几百 KB，删了反而要重下）
+            int ny = box.Bottom + 14;
+            if (target == Target.Archive)
+            {
+                cbIndex = new CheckBox();
+                cbIndex.Text = S.CleanWithIndex;
+                cbIndex.SetBounds(18, ny, 484, 22);
+                cbIndex.Checked = false;
+                cbIndex.CheckedChanged += delegate
+                {
+                    if (btnStart != null) { btnStart.Enabled = (actualN > 0) || cbIndex.Checked; }
+                };
+                Controls.Add(cbIndex);
+
+                Label idxHint = new Label();
+                idxHint.SetBounds(40, ny + 22, 462, 18);
+                idxHint.ForeColor = SystemColors.GrayText;
+                idxHint.Text = S.CleanWithIndexHint;
+                Controls.Add(idxHint);
+                ny += 48;
+
+                ClientSize = new Size(520, 460);
             }
 
             // 删除方式
-            int ny = box.Bottom + 14;
             if (hasMode)
             {
                 Label ml = MkLabel(S.CleanModeTitle, 18, ny);
@@ -169,7 +244,7 @@ namespace BingWallpaperLite
             btnStart = new Button();
             btnStart.Text = S.CleanStart;
             btnStart.SetBounds(18, by, 120, 34);
-            btnStart.Enabled = actualN > 0;
+            btnStart.Enabled = (actualN > 0) || (cbIndex != null && cbIndex.Checked);
             btnStart.Click += delegate { Accept(); };
             Controls.Add(btnStart);
 
@@ -211,6 +286,7 @@ namespace BingWallpaperLite
         private void Accept()
         {
             Permanent = (rbPermanent != null && rbPermanent.Checked);
+            WithIndex = (cbIndex != null && cbIndex.Checked);
             DialogResult = DialogResult.OK;
             Close();
         }

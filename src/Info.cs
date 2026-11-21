@@ -171,7 +171,26 @@ namespace BingWallpaperLite
             }
         }
 
-        private static void OpenTarget(string target)
+        /// <summary>在资源管理器里定位文件；文件不在时退而打开其所在目录。</summary>
+        internal static void ShowInFolder(string path)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(path)) { return; }
+                if (File.Exists(path))
+                {
+                    Process.Start("explorer.exe", "/select,\"" + path + "\"");
+                }
+                else
+                {
+                    string dir = Path.GetDirectoryName(path);
+                    if (!string.IsNullOrEmpty(dir) && Directory.Exists(dir)) { Process.Start("explorer.exe", "\"" + dir + "\""); }
+                }
+            }
+            catch { }
+        }
+
+        internal static void OpenTarget(string target)
         {
             try
             {
