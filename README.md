@@ -172,6 +172,56 @@ AI 调用…
 * [gh-proxy.com](https://gh-proxy.com/) —— GitHub 加速，国内直连 raw 走不通时的主通道
 * Microsoft Bing —— 图片本身
 
+## 开发
+
+### 目录结构
+
+```
+src\                    源码，编译成 BingWallpaperLite.exe
+  Program.cs            文件头 + 常量 + 配置读写 + 自举 + 入口     586 行
+  Strings.cs            S 类，中英文案                            411 行
+  Menu.cs               菜单构建与刷新                            423 行
+  Tray.cs               托盘图标与点击                            172 行
+  Refresh.cs            刷新编排（三层）                          723 行
+  Script.cs             调用脚本与 JSON 解析                      234 行
+  Info.cs               这张图是哪儿                              264 行
+  Install.cs            安装/卸载/计划任务/自启                    440 行
+  Utils.cs              小工具                                     54 行
+  Forms\                8 个窗体类，各 37-219 行
+
+bing-wallpaper.ps1      核心脚本，可独立运行                      1783 行
+build.ps1               编译 + 打包
+test.ps1                回归测试（16 项断言）
+
+cache\                  最近 30 天缓存（自动清理，不入库）
+favorites\              收藏（不入库）
+archive\                历史索引与图片（不入库）
+dist\                   发布产物（不入库）
+```
+
+### 编译
+
+```powershell
+.\build.ps1                       # 编译
+.\build.ps1 -Version 3.3.0        # 改版本号并编译
+.\build.ps1 -Portable             # 顺带打绿色版 zip
+```
+
+只需要 `.NET Framework 4.x`（Windows 自带），无外部依赖。
+
+`build.ps1` 优先编译 `src\` 下所有 `.cs`；如果 `src\` 不存在，退回编译单文件 `TrayProgram.cs`。
+
+### 测试
+
+```powershell
+.\test.ps1              # 跑完整回归（含编译）
+.\test.ps1 -SkipBuild   # 跳过编译，只测功能
+```
+
+16 项断言，约 20 秒。全部走命令行，不碰界面，不依赖网络。
+
+改完功能跑一遍，就知道有没有破坏别的。
+
 ## 说明
 
 **关于 AI 参与**。这个项目从界面到脚本都有 AI 辅助。AI 擅长的是一次性铺量：把 200 多条中英文案成对写出来、把 WinForms 布局代码一次写全。不擅长的是两件事——
