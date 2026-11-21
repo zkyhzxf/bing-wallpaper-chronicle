@@ -6,6 +6,8 @@ A Bing daily wallpaper tool for Windows. Three layers — tray, script, schedule
 
 ![Tray menu](assets/screenshot-menu.jpg)
 
+See [CHANGELOG.md](CHANGELOG.md) for version history.
+
 > Repository name is `bing-wallpaper-chronicle`; the executable is still `BingWallpaperLite.exe` for continuity. Built with AI assistance — details under Notes.
 
 ## Why build another one

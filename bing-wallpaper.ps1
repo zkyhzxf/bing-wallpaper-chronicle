@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     必应每日壁纸轮换 —— 拉取官方当日图的无水印高画质原图，设置为桌面壁纸。
 
@@ -933,7 +933,7 @@ if ($Status) {
             ageDays  = $idxAgeDays
             minDate  = $ArchiveMinDate
         }
-        version = '3.1.0'
+        version = '3.2.0'
     }
     $txt = $obj | ConvertTo-Json -Depth 5
     if ($Json) {

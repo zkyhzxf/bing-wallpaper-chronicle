@@ -1,0 +1,136 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 检查 PowerShell 版本
+        shell: pwsh
+        run: |
+          Write-Host "PSVersion: $($PSVersionTable.PSVersion)"
+          Write-Host "OS: $([System.Environment]::OSVersion.VersionString)"
+
+      - name: 脚本语法检查
+        shell: pwsh
+        run: |
+          $err = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            "$PWD/bing-wallpaper.ps1", [ref]$null, [ref]$err) | Out-Null
+          if ($err -and $err.Count -gt 0) {
+            $err | Select-Object -First 5 | ForEach-Object {
+              Write-Host "行 $($_.Extent.StartLineNumber): $($_.Message)"
+            }
+            throw "bing-wallpaper.ps1 有 $($err.Count) 处语法错误"
+          }
+          Write-Host "bing-wallpaper.ps1 语法检查通过"
+
+          $err2 = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            "$PWD/build.ps1", [ref]$null, [ref]$err2) | Out-Null
+          if ($err2 -and $err2.Count -gt 0) { throw "build.ps1 语法错误" }
+          Write-Host "build.ps1 语法检查通过"
+
+      - name: 编译
+        shell: pwsh
+        run: |
+          ./build.ps1 -Portable
+          if (-not (Test-Path "./dist/BingWallpaperLite.exe")) {
+            throw "编译产物不存在"
+          }
+          $exe = Get-Item "./dist/BingWallpaperLite.exe"
+          Write-Host "编译成功：$($exe.Name)  $([math]::Round($exe.Length/1KB,1)) KB  v$($exe.VersionInfo.FileVersion)"
+
+      - name: 冒烟测试（-Status 与 -Query 空结果）
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+
+          # CI 环境没有用户数据，先造最小配置
+          if (-not (Test-Path "./config.json")) {
+            '{"mkt":"zh-CN","autoClean":true,"locked":false,"uiLanguage":"zh","wallpaperStyle":"Fill","source":"bing","theme":"auto","notify":false,"proxy":"","archiveVia":"ghproxy","keepDays":30,"archive":true,"titleLanguage":"zh","resolution":"UHD","archiveMaxMB":500}' |
+              Set-Content -Path "./config.json" -Encoding UTF8 -NoNewline
+          }
+
+          # -Status 必须能跑通并输出合法 JSON
+          $out = & pwsh -NoProfile -File ./bing-wallpaper.ps1 -Status -Json 2>&1
+          $text = ($out | ForEach-Object { [string]$_ }) -join "`n"
+          if (-not $text.Trim()) { throw "-Status -Json 无输出" }
+          try {
+            $json = $text | ConvertFrom-Json
+            Write-Host "-Status -Json 解析成功，version=$($json.version)"
+          } catch {
+            Write-Host "原始输出："
+            Write-Host $text
+            throw "-Status -Json 输出不是合法 JSON"
+          }
+
+          # -Query 无结果时应返回 5，而不是崩或换图
+          $out2 = & pwsh -NoProfile -File ./bing-wallpaper.ps1 -Query "zzzz-certainly-not-exist-zzzz" 2>&1
+          $code2 = $LASTEXITCODE
+          Write-Host "-Query 无结果退出码: $code2"
+          if ($code2 -ne 5) { throw "-Query 无结果应返回 5，实际 $code2" }
+
+      - name: 上传编译产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: BingWallpaperLite-${{ github.sha }}
+          path: |
+            dist/BingWallpaperLite.exe
+            dist/*-Setup.exe
+            dist/*-Portable.zip
+          retention-days: 7
+          if-no-files-found: warn
+
+  # 打 tag 时自动创建 Release（需在仓库设置里给 GITHUB_TOKEN 写权限）
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 编译
+        shell: pwsh
+        run: ./build.ps1 -Portable
+
+      - name: 整理附件名
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $ver = $tag.TrimStart('v')
+          Get-ChildItem dist -Filter "*-Setup.exe" | ForEach-Object {
+            Copy-Item $_.FullName "dist/BingWallpaperChronicle-$tag-Setup.exe" -Force
+          }
+          Get-ChildItem dist -Filter "*-Portable.zip" | ForEach-Object {
+            Copy-Item $_.FullName "dist/BingWallpaperChronicle-$tag-Portable.zip" -Force
+          }
+          Get-ChildItem dist | Select-Object Name, Length | Format-Table -AutoSize
+
+      - name: 创建 Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          generate_release_notes: false
+          body_path: CHANGELOG.md
+          files: |
+            dist/BingWallpaperChronicle-${{ github.ref_name }}-Setup.exe
+            dist/BingWallpaperChronicle-${{ github.ref_name }}-Portable.zip
