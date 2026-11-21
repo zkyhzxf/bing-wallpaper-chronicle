@@ -4,6 +4,8 @@
 
 Windows 上的必应每日壁纸工具。托盘 + 脚本 + 计划任务三层，历史可回溯到 **2016 年 3 月**，中英双语自适应。
 
+![托盘菜单](assets/screenshot-menu.jpg)
+
 > 项目名 `bing-wallpaper-chronicle`，可执行文件仍为 `BingWallpaperLite.exe`（沿用旧名，不影响功能）。本项目有 AI 参与，分工见文末「说明」。
 
 ## 为什么要自己写
