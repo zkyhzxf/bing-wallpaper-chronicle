@@ -185,7 +185,9 @@ namespace BingWallpaperLite
                 WriteConfig(c);
             };
             cleanMenu.DropDownItems.Add(autoCleanItem);
-            cleanMenu.DropDownItems.Add(MakeItem(S.PinMenu, delegate { DoPinnedList(); }));
+            ToolStripMenuItem pinMgrItem = MakeItem(S.PinMenu, delegate { DoPinnedList(); });
+            pinMgrItem.Name = "pinmgr";
+            cleanMenu.DropDownItems.Add(pinMgrItem);
             cleanMenu.DropDownItems.Add(new ToolStripSeparator());
 
             // 缓存

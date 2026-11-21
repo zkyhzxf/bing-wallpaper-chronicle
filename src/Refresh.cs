@@ -444,6 +444,24 @@ namespace BingWallpaperLite
             return FindImageFilePath(date, out w);
         }
 
+        /// <summary>保留清单里那些图合计占多少 MB。</summary>
+        internal static double PinnedTotalMB()
+        {
+            double mb = 0;
+            try
+            {
+                Dictionary<string, object> pins = ReadPinnedMap();
+                foreach (string d in pins.Keys)
+                {
+                    int where;
+                    string f = FindImageFilePath(d, out where);
+                    if (f != null) { try { mb += new FileInfo(f).Length / 1024.0 / 1024.0; } catch { } }
+                }
+            }
+            catch { }
+            return mb;
+        }
+
         /// <summary>查某个日期的图在哪：收藏 / 缓存 / 归档 / 没有。回填体积（字节）。</summary>
         internal static string FindImageLocation(string date, out long bytes)
         {
@@ -811,6 +829,20 @@ namespace BingWallpaperLite
                 ca.Text = n > 0 ? S.CleanArchN2(n) : S.CleanArchive;
                 ca.Enabled = n > 0;
             }
+
+            // 保留清单那项后面带上占用的体积，让用户知道有多大
+            try
+            {
+                foreach (ToolStripItem x in cm.DropDownItems)
+                {
+                    if (x.Name == "pinmgr")
+                    {
+                        x.Text = S.PinMenuMB(PinnedTotalMB());
+                        break;
+                    }
+                }
+            }
+            catch { }
         }
 
         private static void RefreshYearsMenu()

@@ -119,6 +119,7 @@ namespace BingWallpaperLite
 
         // ---------------- 自动清理保留
         public static string PinMenu      { get { return T("自动清理保留…", "Keep during auto-clean…"); } }
+        public static string PinMenuMB(double mb) { return _en ? ("Keep during auto-clean… (" + mb.ToString("0.0") + " MB)") : ("自动清理保留…（" + mb.ToString("0.0") + " MB）"); }
         public static string PinTitle     { get { return T(" · 自动清理保留", " · Kept from auto-clean"); } }
         public static string PinIntro1    { get { return T("这里记的是你用「翻页」「按日期」「搜索」取过的历史图。", "Dates recorded when you browsed, picked by date, or searched."); } }
         public static string PinIntro2    { get { return T("登记过的日期，自动清理和归档超限清理都不会动。", "Those dates are never touched by auto-clean or archive size limits."); } }
@@ -130,9 +131,11 @@ namespace BingWallpaperLite
         public static string PinRemove    { get { return T("移出名单", "Remove"); } }
         public static string PinOpenFile  { get { return T("打开文件", "Open file"); } }
         public static string PinClose     { get { return T("关闭", "Close"); } }
-        public static string PinHintMore  { get { return T("这些天在自动清理时被跳过，可在「清理 → 自动清理保留」里移出。", "Skipped during auto-clean; manage them under Cleanup → Keep during auto-clean."); } }
-        public static string PinNote      { get { return T("这里列出你在翻页、按日期、搜索时取过的历史图。自动清理缓存（30 天规则）会跳过这些日期。手动的「清空缓存」和「清理归档图片」不看这份清单，只保留收藏和当前壁纸。", "Dates you browsed, picked, or searched. The 30-day auto-clean skips them. Manual \"clear cache\" and \"clean archived images\" ignore this list and keep only favorites and the current wallpaper."); } }
-        public static string PinSum(int n, double mb) { return _en ? (n + " days · about " + mb.ToString("0.0") + " MB") : ("共 " + n + " 天 · 约 " + mb.ToString("0.0") + " MB"); }
+        public static string PinHintMore  { get { return T("这些日期在自动清理时被跳过，可在「清理 → 自动清理保留」里移出。", "Skipped during auto-clean; manage them under Cleanup → Keep during auto-clean."); } }
+        public static string PinNote      { get { return T("自动清理缓存（30 天规则）会跳过这些日期。手动的「清空缓存」「清理归档图片」不看这份清单，只保留收藏和当前壁纸。归档满了会分两轮清：先删名单外的，空间还不够才动名单里的。", "The 30-day auto-clean skips these dates. Manual \"clear cache\" and \"clean archived images\" ignore this list and keep only favorites and the current wallpaper. When the archive fills up it clears in two passes: unlisted images first, only then the ones on this list."); } }
+        public static string PinSum(int n, double mb) { return _en ? (n + " entries · " + mb.ToString("0.0") + " MB") : ("共 " + n + " 项 · " + mb.ToString("0.0") + " MB"); }
+        public static string FavSumFiltered(int hit, int total, double mb) { return _en ? (hit + " of " + total + " · " + mb.ToString("0.0") + " MB") : ("匹配 " + hit + " / 共 " + total + " 项 · " + mb.ToString("0.0") + " MB"); }
+        public static string FavSearchHint { get { return T("搜索标题/版权/日期", "search title/copyright/date"); } }
         public static string PinConfirm(int n) { return _en ? ("These " + n + " dates will no longer be skipped by auto-clean and may be removed next time it runs. Nothing is moved out now. Continue?") : ("这 " + n + " 天将不再被自动清理跳过，下次清理可能删掉它们。本次操作不移出任何文件。确定吗？"); }
         public static string PinPurgeDead(int n) { return _en ? ("Purge missing (" + n + ")") : ("清理失效项（" + n + "）"); }
         public static string PinFav        { get { return T("加入收藏", "Add to favorites"); } }
@@ -146,7 +149,9 @@ namespace BingWallpaperLite
         }
         public static string FavManager    { get { return T("收藏管理…", "Manage favorites…"); } }
         public static string FavTitle      { get { return T(" · 收藏管理", " · Manage favorites"); } }
-        public static string FavIntro      { get { return T("勾选多张后点「移出收藏」，可以一次移出。文件只是退回缓存，本窗口不删除任何文件；之后进入 30 天清理规则。", "Tick several rows, then click Remove to move them all at once. Files only go back to cache — this window deletes nothing; they fall under the 30-day rule afterwards."); } }
+        public static string FavIntro      { get { return T("双击任意一张可直接设为桌面壁纸。勾选多张后点「移出收藏」，可以一次移出；文件只是退回缓存，本窗口不删除任何文件，之后进入 30 天清理规则。", "Double-click any row to set it as the desktop wallpaper. Tick several rows, then click Remove to move them all at once — files only go back to cache, nothing is deleted here, and they fall under the 30-day rule afterwards."); } }
+        public static string FavSetWall    { get { return T("设置壁纸", "Set as wallpaper"); } }
+        public static string FavOpenFolder { get { return T("打开文件夹", "Show in folder"); } }
         public static string FavInvert     { get { return T("反选", "Invert"); } }
         public static string FavSum(int n, double mb) { return _en ? (n + " items · " + mb.ToString("0.0") + " MB") : ("收藏 " + n + " 张 · " + mb.ToString("0.0") + " MB"); }
         public static string FavRemove     { get { return T("移出收藏", "Remove"); } }
@@ -257,6 +262,7 @@ namespace BingWallpaperLite
         public static string CalLocCache      { get { return T("● 已在本地 · 缓存", "● Local · cache"); } }
         public static string CalLocArch       { get { return T("● 已在本地 · 归档", "● Local · archive"); } }
         public static string CalLocNone       { get { return T("○ 本地没有 · 需联网", "○ Not local · needs network"); } }
+        public static string CalBoldHint      { get { return T("粗体：本地已有这张图", "Bold: already local"); } }
         public static string BtnOK            { get { return T("确定", "OK"); } }
 
         // ---------------- 对话框

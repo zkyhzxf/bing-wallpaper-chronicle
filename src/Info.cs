@@ -188,6 +188,20 @@ namespace BingWallpaperLite
         }
 
         /// <summary>在资源管理器里定位文件；文件不在时退而打开其所在目录。</summary>
+        [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+        private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, string lParam);
+
+        /// <summary>给 TextBox 设灰色占位提示（系统 cue banner，不影响 Text 值）。</summary>
+        internal static void SetCueBanner(TextBox box, string hint)
+        {
+            try
+            {
+                const int EM_SETCUEBANNER = 0x1501;
+                SendMessage(box.Handle, EM_SETCUEBANNER, (IntPtr)1, hint);
+            }
+            catch { }
+        }
+
         internal static void ShowInFolder(string path)
         {
             try

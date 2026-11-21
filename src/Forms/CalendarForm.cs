@@ -98,9 +98,11 @@ namespace BingWallpaperLite
 
             hint = new Label();
             hint.AutoSize = false;
-            hint.SetBounds(12, 262, 240, 44);
+            hint.SetBounds(12, 262, 240, 62);
             hint.ForeColor = SystemColors.GrayText;
-            hint.Text = S.IsEn ? "Last 8 days: official original\r\nSince Mar 2016: archive original (online)" : "最近 8 天：官方原图\r\n2016-03 起：归档原图（需联网）";
+            hint.Text = S.IsEn
+                ? "Last 8 days: official original\r\nSince Mar 2016: archive original (online)\r\n" + S.CalBoldHint
+                : "最近 8 天：官方原图\r\n2016-03 起：归档原图（需联网）\r\n" + S.CalBoldHint;
             Controls.Add(hint);
 
             btnToday = new Button();
@@ -129,7 +131,38 @@ namespace BingWallpaperLite
             CancelButton = cancel;
 
             try { idxCache = Program.LoadArchiveIndex(); } catch { }
+            try { cal.BoldedDates = LocalDates().ToArray(); } catch { }
             RefreshInfo();
+        }
+
+        /// <summary>本地已有的日期（收藏 / 缓存 / 归档），供日历加粗。</summary>
+        private List<DateTime> LocalDates()
+        {
+            List<DateTime> list = new List<DateTime>();
+            HashSet<string> seen = new HashSet<string>();
+            string[] dirs = new string[] { Program.FavDirPath, Program.CacheDirPath, Program.ArchiveImgPath };
+            foreach (string dir in dirs)
+            {
+                try
+                {
+                    if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) { continue; }
+                    foreach (string f in Directory.GetFiles(dir, "*.jpg"))
+                    {
+                        string fn = Path.GetFileName(f);
+                        if (fn.Length < 8) { continue; }
+                        string d8 = fn.Substring(0, 8);
+                        if (!seen.Add(d8)) { continue; }
+                        DateTime d;
+                        if (DateTime.TryParseExact(d8, "yyyyMMdd", null,
+                                System.Globalization.DateTimeStyles.None, out d))
+                        {
+                            if (d >= cal.MinDate && d <= cal.MaxDate) { list.Add(d); }
+                        }
+                    }
+                }
+                catch { }
+            }
+            return list;
         }
 
         private static Bitmap MakeThumb(string file, int w, int h)

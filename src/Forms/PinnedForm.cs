@@ -18,6 +18,10 @@ namespace BingWallpaperLite
         private readonly Button btnFav;
         private readonly Button btnPurge;
 
+        private readonly TextBox txtSearch;
+        private int sortCol = 0;
+        private bool sortAsc = true;
+        private int totalRows = 0;
         private readonly List<string> dates = new List<string>();
         private readonly List<string> files = new List<string>();
 
@@ -29,7 +33,7 @@ namespace BingWallpaperLite
             MaximizeBox = false;
             MinimizeBox = false;
             ShowInTaskbar = true;
-            ClientSize = new Size(620, 562);
+            ClientSize = new Size(620, 556);
             try { Font = new Font("Microsoft YaHei UI", 9F); } catch { }
 
             Label l1 = new Label();
@@ -37,31 +41,43 @@ namespace BingWallpaperLite
             l1.Text = S.PinIntro1;
             Controls.Add(l1);
 
-            Label l2 = new Label();
-            l2.SetBounds(16, 34, 588, 20);
-            l2.ForeColor = SystemColors.GrayText;
-            l2.Text = S.PinIntro2;
-            Controls.Add(l2);
 
             lblSum = new Label();
-            lblSum.SetBounds(16, 60, 390, 20);
+            lblSum.SetBounds(16, 38, 176, 20);
             lblSum.AutoSize = false;
             Controls.Add(lblSum);
 
+            Label lblSearch = new Label();
+            lblSearch.Text = S.IsEn ? "Find" : "搜索";
+            lblSearch.SetBounds(198, 40, 34, 18);
+            Controls.Add(lblSearch);
+
+            txtSearch = new TextBox();
+            txtSearch.SetBounds(232, 36, 120, 24);
+            txtSearch.TextChanged += delegate { LoadList(); };
+            Program.SetCueBanner(txtSearch, S.FavSearchHint);
+            Controls.Add(txtSearch);
+
             Button btnAll = new Button();
             btnAll.Text = S.IsEn ? "All" : "全选";
-            btnAll.SetBounds(420, 58, 70, 24);
+            btnAll.SetBounds(364, 36, 58, 24);
             btnAll.Click += delegate { CheckAll(true); };
             Controls.Add(btnAll);
 
+            Button btnInvert = new Button();
+            btnInvert.Text = S.FavInvert;
+            btnInvert.SetBounds(428, 36, 58, 24);
+            btnInvert.Click += delegate { InvertAll(); };
+            Controls.Add(btnInvert);
+
             Button btnNone = new Button();
             btnNone.Text = S.IsEn ? "None" : "全不选";
-            btnNone.SetBounds(496, 58, 70, 24);
+            btnNone.SetBounds(492, 36, 78, 24);
             btnNone.Click += delegate { CheckAll(false); };
             Controls.Add(btnNone);
 
             lst = new ListView();
-            lst.SetBounds(16, 90, 588, 230);
+            lst.SetBounds(16, 66, 588, 226);
             lst.View = View.Details;
             lst.CheckBoxes = true;
             lst.FullRowSelect = true;
@@ -73,55 +89,56 @@ namespace BingWallpaperLite
             lst.ItemChecked += delegate { RefreshSum(); };
             lst.SelectedIndexChanged += delegate { OnSelectionChanged(); };
             lst.DoubleClick += delegate { OpenSelected(); };
+            lst.ColumnClick += delegate(object s, ColumnClickEventArgs e) { SortBy(e.Column); };
             Controls.Add(lst);
 
             pic = new PictureBox();
-            pic.SetBounds(16, 330, 240, 135);
+            pic.SetBounds(16, 302, 240, 135);
             pic.BorderStyle = BorderStyle.FixedSingle;
             pic.SizeMode = PictureBoxSizeMode.Zoom;
             pic.Visible = false;
             Controls.Add(pic);
 
             lblInfo = new Label();
-            lblInfo.SetBounds(268, 330, 336, 135);
+            lblInfo.SetBounds(268, 302, 336, 135);
             lblInfo.AutoSize = false;
             lblInfo.ForeColor = SystemColors.GrayText;
             lblInfo.TextAlign = ContentAlignment.MiddleCenter;
             Controls.Add(lblInfo);
 
             Label note = new Label();
-            note.SetBounds(16, 474, 588, 36);
+            note.SetBounds(16, 446, 588, 56);
             note.AutoSize = false;
             note.ForeColor = SystemColors.GrayText;
             note.Text = S.PinNote;
             Controls.Add(note);
 
             btnPurge = new Button();
-            btnPurge.SetBounds(16, 518, 140, 30);
+            btnPurge.SetBounds(16, 512, 140, 30);
             btnPurge.Visible = false;
             btnPurge.Click += delegate { PurgeDead(); };
             Controls.Add(btnPurge);
 
             btnFav = new Button();
             btnFav.Text = S.PinFav;
-            btnFav.SetBounds(164, 518, 96, 30);
+            btnFav.SetBounds(164, 512, 96, 30);
             btnFav.Click += delegate { AddToFavorites(); };
             Controls.Add(btnFav);
 
             btnRemove = new Button();
-            btnRemove.SetBounds(268, 518, 104, 30);
+            btnRemove.SetBounds(268, 512, 104, 30);
             btnRemove.Click += delegate { RemoveChecked(); };
             Controls.Add(btnRemove);
 
             btnOpen = new Button();
             btnOpen.Text = S.PinOpenFile;
-            btnOpen.SetBounds(380, 518, 96, 30);
+            btnOpen.SetBounds(380, 512, 96, 30);
             btnOpen.Click += delegate { OpenSelected(); };
             Controls.Add(btnOpen);
 
             Button btnClose = new Button();
             btnClose.Text = S.PinClose;
-            btnClose.SetBounds(484, 518, 80, 30);
+            btnClose.SetBounds(484, 512, 80, 30);
             btnClose.DialogResult = DialogResult.Cancel;
             Controls.Add(btnClose);
             CancelButton = btnClose;
@@ -147,23 +164,63 @@ namespace BingWallpaperLite
             foreach (string k in pins.Keys) { keys.Add(k); }
             keys.Sort();
 
+            // ① 采集
+            List<string[]> rows = new List<string[]>();
             foreach (string d in keys)
             {
                 string file = FindFileOfDate(d);
                 string title = TitleOf(d, titles);
                 double mb = -1;
                 try { if (file != null) { mb = new FileInfo(file).Length / 1024.0 / 1024.0; } } catch { }
+                string cpr = "";
+                if (titles != null && titles.ContainsKey(d))
+                {
+                    Dictionary<string, object> e = titles[d] as Dictionary<string, object>;
+                    if (e != null && e.ContainsKey("copyright") && e["copyright"] != null) { cpr = e["copyright"].ToString(); }
+                }
+                rows.Add(new string[] { d, title, mb.ToString("0.0"), file == null ? "" : file, cpr });
+            }
+            totalRows = rows.Count;
 
-                ListViewItem it = new ListViewItem(d);
-                it.SubItems.Add(title);
-                if (file == null) { it.SubItems.Add(S.PinGone); }
-                else { it.SubItems.Add(mb.ToString("0.0") + " MB"); }
-                it.Tag = d;
-                if (file == null) { it.ForeColor = SystemColors.GrayText; }
+            // ② 过滤
+            string kw = (txtSearch == null ? "" : txtSearch.Text.Trim());
+            if (kw.Length > 0)
+            {
+                rows = rows.FindAll(delegate(string[] r)
+                {
+                    if (r[0].IndexOf(kw, StringComparison.OrdinalIgnoreCase) >= 0) { return true; }
+                    if (r[1].IndexOf(kw, StringComparison.OrdinalIgnoreCase) >= 0) { return true; }
+                    return r[4].IndexOf(kw, StringComparison.OrdinalIgnoreCase) >= 0;
+                });
+            }
 
+            // ③ 排序
+            rows.Sort(delegate(string[] a, string[] b)
+            {
+                int cmp;
+                if (sortCol == 0) { cmp = string.Compare(a[0], b[0], StringComparison.Ordinal); }
+                else if (sortCol == 1) { cmp = string.Compare(a[1], b[1], StringComparison.CurrentCulture); }
+                else
+                {
+                    double ma = -1, mbb = -1;
+                    double.TryParse(a[2], out ma);
+                    double.TryParse(b[2], out mbb);
+                    cmp = ma.CompareTo(mbb);
+                }
+                return sortAsc ? cmp : -cmp;
+            });
+
+            // ④ 渲染
+            foreach (string[] r in rows)
+            {
+                ListViewItem it = new ListViewItem(r[0]);
+                it.SubItems.Add(r[1]);
+                if (r[3].Length == 0) { it.SubItems.Add(S.PinGone); it.ForeColor = SystemColors.GrayText; }
+                else { it.SubItems.Add(r[2] + " MB"); }
+                it.Tag = r[0];
                 lst.Items.Add(it);
-                dates.Add(d);
-                files.Add(file);
+                dates.Add(r[0]);
+                files.Add(r[3].Length == 0 ? null : r[3]);
             }
 
             RefreshSum();
@@ -334,6 +391,20 @@ namespace BingWallpaperLite
 
         // ---------------------------------------------------------------- 操作
 
+        private void SortBy(int col)
+        {
+            if (col < 0 || col > 2) { return; }
+            if (sortCol == col) { sortAsc = !sortAsc; }
+            else { sortCol = col; sortAsc = true; }
+            LoadList();
+        }
+
+        private void InvertAll()
+        {
+            foreach (ListViewItem it in lst.Items) { it.Checked = !it.Checked; }
+            RefreshSum();
+        }
+
         private void CheckAll(bool on)
         {
             foreach (ListViewItem it in lst.Items) { it.Checked = on; }
@@ -355,7 +426,11 @@ namespace BingWallpaperLite
                     try { mb += new FileInfo(files[i]).Length / 1024.0 / 1024.0; } catch { }
                 }
             }
-            lblSum.Text = S.PinSum(lst.Items.Count, mb);
+            if (totalRows > 0 && lst.Items.Count != totalRows) {
+                lblSum.Text = S.FavSumFiltered(lst.Items.Count, totalRows, mb);
+            } else {
+                lblSum.Text = S.PinSum(lst.Items.Count, mb);
+            }
             btnRemove.Text = S.PinRemove;
             btnRemove.Enabled = CheckedCount() > 0;
             btnPurge.Text = S.PinPurgeDead(dead);
