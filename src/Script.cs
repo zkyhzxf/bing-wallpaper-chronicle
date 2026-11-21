@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -36,9 +36,15 @@ namespace BingWallpaperLite
                 try { psi.StandardOutputEncoding = Encoding.UTF8; psi.StandardErrorEncoding = Encoding.UTF8; } catch { }
                 using (Process p = Process.Start(psi))
                 {
-                    string outText = p.StandardOutput.ReadToEnd();
-                    string errText = p.StandardError.ReadToEnd();
+                    // 同 RunScriptEx：两个流必须并发读，顺序读会在 stderr 写满时死锁
+                    System.Threading.Tasks.Task<string> tOut = p.StandardOutput.ReadToEndAsync();
+                    System.Threading.Tasks.Task<string> tErr = p.StandardError.ReadToEndAsync();
                     if (!p.WaitForExit(120000)) { try { p.Kill(); } catch { } }
+
+                    string outText = "";
+                    string errText = "";
+                    try { outText = tOut.Result; } catch { }
+                    try { errText = tErr.Result; } catch { }
 
                     if (!string.IsNullOrEmpty(outText)) { return outText; }
                     try
@@ -125,8 +131,11 @@ namespace BingWallpaperLite
 
                     using (Process p = Process.Start(psi))
                     {
-                        try { p.StandardOutput.ReadToEnd(); }
-                        catch { }
+                        // 两个流必须同时读：只读 stdout 时，若脚本往 stderr 写满管道缓冲区（默认 4 KB），
+                        // 脚本会阻塞在写 stderr，ReadToEnd 永远等 stdout 关闭 → 死锁 → busy 卡在 true
+                        System.Threading.Tasks.Task<string> tOut = p.StandardOutput.ReadToEndAsync();
+                        System.Threading.Tasks.Task<string> tErr = p.StandardError.ReadToEndAsync();
+
                         if (!p.WaitForExit(240000))
                         {
                             try { p.Kill(); } catch { }
@@ -134,6 +143,8 @@ namespace BingWallpaperLite
                         }
                         else
                         {
+                            try { tOut.Wait(3000); } catch { }
+                            try { tErr.Wait(3000); } catch { }
                             code = p.ExitCode;
                         }
                     }

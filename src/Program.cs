@@ -19,9 +19,9 @@ using Microsoft.Win32;
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyConfiguration("Release")]
 [assembly: AssemblyCulture("")]
-[assembly: AssemblyVersion("3.2.2.0")]
-[assembly: AssemblyFileVersion("3.2.2.0")]
-[assembly: AssemblyInformationalVersion("3.2.2")]
+[assembly: AssemblyVersion("3.2.3.0")]
+[assembly: AssemblyFileVersion("3.2.3.0")]
+[assembly: AssemblyInformationalVersion("3.2.3")]
 [assembly: ComVisible(false)]
 
 namespace BingWallpaperLite
@@ -31,7 +31,7 @@ namespace BingWallpaperLite
         // ---------------------------------------------------------------- 常量
 
         internal const string AppName     = "必应壁纸编年史";
-        internal const string AppVersion  = "3.2.2";
+        internal const string AppVersion  = "3.2.3";
         private const string TaskName    = "BingWallpaperChronicle";
         private const string RunValue    = "BingWallpaperChronicle";
         private const string RunKeyPath  = @"Software\Microsoft\Windows\CurrentVersion\Run";
@@ -87,6 +87,7 @@ namespace BingWallpaperLite
         private static Icon iconBusy;
         private static Form anchor;
         private static volatile bool busy;
+        private static DateTime busySince = DateTime.MinValue;
         private static string lastSyncedActual = "";
         private static bool refreshing = false;
         private static bool keepMenuOpenAfterClick = false;
@@ -545,7 +546,25 @@ namespace BingWallpaperLite
                     {
                         try
                         {
-                bool running = File.Exists(lockPath);
+                            bool running = File.Exists(lockPath);
+
+                            // 兜底：busy 卡超过 6 分钟强制复位
+                            // （正常脚本最长 4 分钟会被 RunScriptEx 的 WaitForExit 杀掉）
+                            if (busy && busySince != DateTime.MinValue &&
+                                (DateTime.Now - busySince).TotalMinutes > 6)
+                            {
+                                try
+                                {
+                                    System.IO.File.AppendAllText(
+                                        Path.Combine(Path.GetTempPath(), "BingWallpaperLite.log"),
+                                        DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") +
+                                        "  [WARN]  busy 卡住超过 6 分钟，强制复位" + Environment.NewLine);
+                                }
+                                catch { }
+                                SetBusy(false);
+                                running = false;
+                            }
+
                             if (busy != running) { SetBusy(running); }
                         }
                         catch { }

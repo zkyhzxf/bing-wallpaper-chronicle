@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -697,6 +697,7 @@ namespace BingWallpaperLite
         {
             bool changed = (busy != on);
             busy = on;
+            busySince = on ? DateTime.Now : DateTime.MinValue;
             if (tray == null) { return; }
 
             if (changed)

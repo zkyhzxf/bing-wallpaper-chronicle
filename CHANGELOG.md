@@ -6,6 +6,19 @@
 
 ---
 
+## [3.2.3] - 2026-11-21
+
+### 修复
+
+- **托盘界面卡死：菜单能打开但点什么都没反应**
+  - 根因：`RunScriptEx` 里 `RedirectStandardError = true` 但**从不读 stderr**。脚本一旦往 stderr 写满管道缓冲区（默认 4 KB），脚本阻塞在写，`StandardOutput.ReadToEnd()` 永远等进程结束 → 死锁 → `busy` 卡在 true → 所有菜单项点击被 `if (busy) { return; }` 静默挡住
+  - 修法：stdout 与 stderr 改用 `ReadToEndAsync()` **并发读**，`WaitForExit` 后各自等 3 秒收尾
+  - `RunScriptCapture` 有同样问题，一并修
+  - 实测：往 stderr 写 51 KB，0.3 秒完成，不再死锁
+- **`busy` 卡住时无兜底** —— 加 6 分钟超时强制复位，并在日志写 `[WARN] busy 卡住超过 6 分钟，强制复位`
+
+---
+
 ## [3.2.2] - 2026-11-21
 
 ### 修复
