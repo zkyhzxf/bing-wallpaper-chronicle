@@ -26,6 +26,11 @@ namespace BingWallpaperLite
 
         private static System.Windows.Forms.Timer menuWatch;
 
+        // 菜单空闲兜底：鼠标连续 N 分钟不动就自动收起
+        private const int MenuIdleMinutes = 3;
+        private static DateTime menuIdleSince = DateTime.MinValue;
+        private static Point menuIdlePos = Point.Empty;
+
         /// <summary>左键、右键都弹菜单；内容在弹出前刷新。</summary>
         private static void TrayMouseUp(object sender, MouseEventArgs e)
         {
@@ -36,6 +41,8 @@ namespace BingWallpaperLite
                 RefreshAll();
                 if (menu.Visible) { menu.Close(); return; }
                 menu.Show(Cursor.Position);
+                menuIdleSince = DateTime.Now;
+                menuIdlePos = Cursor.Position;
                 StartMenuWatch();
             }
             catch { }
@@ -58,6 +65,21 @@ namespace BingWallpaperLite
             try
             {
                 if (!menu.Visible) { menuWatch.Stop(); return; }
+
+                // 空闲兜底：鼠标连续 MenuIdleMinutes 分钟不动就关掉菜单
+                Point now = Cursor.Position;
+                if (now != menuIdlePos)
+                {
+                    menuIdlePos = now;
+                    menuIdleSince = DateTime.Now;
+                }
+                else if (menuIdleSince != DateTime.MinValue &&
+                         (DateTime.Now - menuIdleSince).TotalMinutes >= MenuIdleMinutes)
+                {
+                    menu.Close();
+                    return;
+                }
+
                 if ((GetAsyncKeyState(0x01) & 0x8000) == 0) { return; }
                 if (IsInsideAnyOpenMenu(Cursor.Position)) { return; }
                 menu.Close();

@@ -185,6 +185,10 @@ namespace BingWallpaperLite
                             Balloon(S.BFavUndo, S.FavUndoHint);
                             RefreshAll();
                         }
+                        else if (opMode == "index")
+                        {
+                            Balloon(S.BIndexOk, S.IndexOkHint);
+                        }
                         else if (GetCfgBool(ReadConfig(), "notify", false))
                         {
                             Dictionary<string, object> st = ReadJson(statePath);

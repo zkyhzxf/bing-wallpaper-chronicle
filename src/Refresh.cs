@@ -119,6 +119,21 @@ namespace BingWallpaperLite
             RefreshThemeCheck();
         }
 
+        /// <summary>按日期查标题：只读索引，不下载不换图。查不到返回空串。</summary>
+        internal static string LookupDateTitle(string date)
+        {
+            try
+            {
+                string outText = RunScriptCapture("-DateInfo " + date);
+                if (string.IsNullOrEmpty(outText)) { return ""; }
+                System.Text.RegularExpressions.Match m =
+                    System.Text.RegularExpressions.Regex.Match(outText, "\"title\"\\s*:\\s*\"([^\"]*)\"");
+                if (m.Success) { return m.Groups[1].Value; }
+            }
+            catch { }
+            return "";
+        }
+
         private static void DoPickDate()
         {
             if (busy) { return; }
@@ -127,6 +142,7 @@ namespace BingWallpaperLite
                 if (f.ShowDialog() != DialogResult.OK) { return; }
                 string d = f.SelectedDate;
                 if (string.IsNullOrEmpty(d)) { return; }
+                // 确认已在 CalendarForm.AcceptPick 里做过，这里直接换图
                 anchor.BeginInvoke((MethodInvoker)delegate { RunScriptEx("-Date " + d, "date"); });
             }
         }

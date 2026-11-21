@@ -54,6 +54,9 @@ namespace BingWallpaperLite
         public static string ArchiveOff       { get { return T("☐ 启用第三方归档", "☐ Enable third-party archive"); } }
         public static string OpenArchiveDir   { get { return T("打开归档目录", "Open archive folder"); } }
         public static string ClearArchiveIdx  { get { return T("清除归档索引缓存", "Clear archive index cache"); } }
+        public static string UpdateIndex      { get { return T("更新索引（联网）", "Update index (online)"); } }
+        public static string BIndexOk         { get { return T("索引已更新", "Index updated"); } }
+        public static string IndexOkHint      { get { return T("关键词搜索会用到最新数据", "Keyword search now uses the latest data"); } }
         public static string UpdateTimeMenu   { get { return T("更新时间", "Update time"); } }
         public static string SearchMenu       { get { return T("按关键词找…", "Search by keyword…"); } }
         public static string AiMenu           { get { return T("AI 调用…", "AI access…"); } }

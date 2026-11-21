@@ -53,11 +53,12 @@ namespace BingWallpaperLite
             ok.Text = S.BtnApply;
             ok.Size = new Size(88, 30);
             ok.DialogResult = DialogResult.OK;
-            ok.Click += delegate
-            {
-                SelectedDate = cal.SelectionStart.ToString("yyyyMMdd");
-            };
+            ok.Click += delegate { AcceptPick(); };
             Controls.Add(ok);
+
+            // 双击某天 = 选中并直接确认，省掉再点一次「换这张」
+            cal.DoubleClick += delegate { AcceptPick(); };
+            cal.MouseDoubleClick += delegate { AcceptPick(); };
 
             cancel = new Button();
             cancel.Text = S.BtnCancel;
@@ -97,6 +98,34 @@ namespace BingWallpaperLite
                 ClientSize = new Size(ClientSize.Width, btnY + ok.Height + 14);
             }
             catch { }
+        }
+
+        /// <summary>选中当前日期 → 确认 → 关窗；取消则留在本窗口继续挑。</summary>
+        private void AcceptPick()
+        {
+            string d = cal.SelectionStart.ToString("yyyyMMdd");
+            if (string.IsNullOrEmpty(d)) { return; }
+
+            Cursor prev = Cursor;
+            try
+            {
+                Cursor = Cursors.WaitCursor;
+                string title = Program.LookupDateTitle(d);
+                string q = S.SrchConfirm + "\r\n\r\n" + d + "  " + title;
+                if (MessageBox.Show(q, Program.AppName + S.SrchConfirmTtl,
+                        MessageBoxButtons.OKCancel, MessageBoxIcon.Question) != DialogResult.OK)
+                {
+                    return;
+                }
+            }
+            finally
+            {
+                Cursor = prev;
+            }
+
+            SelectedDate = d;
+            DialogResult = DialogResult.OK;
+            Close();
         }
     }
     // -------------------------------------------------------------------- 卸载确认

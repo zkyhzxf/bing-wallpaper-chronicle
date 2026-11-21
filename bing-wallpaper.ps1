@@ -60,6 +60,8 @@ param(
     [switch]$CleanFavorites,
     [string]$Query = '',
     [int]$PickRandom = 0,
+    [string]$DateInfo = '',
+    [switch]$UpdateIndex,
     [string]$KwFile = '',
     [string]$Search = '',
     [switch]$Json,
@@ -554,8 +556,10 @@ $AllIndexPath = Join-Path $ArchiveDir 'all-index.json'
 $AllIndexUrl  = 'https://gh-proxy.com/https://raw.githubusercontent.com/Zhu-junwei/bing-wallpaper-archive/master/Bing_zh-CN_all.json'
 
 function Get-FullIndex {
-    # 本地缓存 7 天内直接用
-    if (Test-Path $AllIndexPath) {
+    param([switch]$Force)
+
+    # 本地缓存 7 天内直接用（-Force 时跳过这段，强制联网）
+    if ((-not $Force) -and (Test-Path $AllIndexPath)) {
         try {
             $age = (Get-Date) - (Get-Item $AllIndexPath).LastWriteTime
             if ($age.TotalDays -lt 7) {
@@ -579,7 +583,15 @@ function Get-FullIndex {
             $resp = $null
         }
     }
-    if (-not $resp) { throw '全量索引下载失败' }
+    if (-not $resp) {
+        # 降级：有旧索引就用旧的，不阻断搜索
+        if (Test-Path $AllIndexPath) {
+            $oldAge = [math]::Round(((Get-Date) - (Get-Item $AllIndexPath).LastWriteTime).TotalDays, 1)
+            Write-Log ('索引下载失败，改用本地旧索引（' + $oldAge + ' 天前）') 'WARN'
+            try { return @(Get-Content $AllIndexPath -Raw -Encoding UTF8 | ConvertFrom-Json) } catch { }
+        }
+        throw '全量索引下载失败，且本地没有可用索引'
+    }
 
     $txt = $resp.Content
     if ($txt -is [byte[]]) { $txt = [System.Text.Encoding]::UTF8.GetString($txt) }
@@ -987,6 +999,37 @@ if ($PickRandom -gt 0) {
     Write-Log ("随机抽取 " + $n + " 条")
     Write-Output $jsonText
     exit 0
+}
+
+if ($DateInfo) {
+    # 按日期查标题：只读索引，不下载不换图
+    $d8 = ([string]$DateInfo) -replace '[^0-9]', ''
+    if ($d8.Length -ne 8) { Write-Output '{}'; Exit-Run 1 }
+
+    $idx = @()
+    try { $idx = @(Get-FullIndex) } catch { }
+    $hit = @($idx | Where-Object { [string]$_.d -eq $d8 }) | Select-Object -First 1
+    if (-not $hit) { Write-Output '{}'; Exit-Run 5 }
+
+    $t = ([string]$hit.t) -replace '\\', '\\\\' -replace '"', '\"'
+    $c = ([string]$hit.c) -replace '\\', '\\\\' -replace '"', '\"'
+    Write-Output ('{"date":"' + $d8 + '","title":"' + $t + '","copyright":"' + $c + '"}')
+    exit 0
+}
+
+if ($UpdateIndex) {
+    # 强制刷新全量索引，供「归档 → 更新索引」菜单调用
+    try {
+        $idx = @(Get-FullIndex -Force)
+        $n = $idx.Count
+        Write-Log ("索引已更新，共 " + $n + " 条")
+        Write-Output ('{"ok":true,"entries":' + $n + '}')
+        exit 0
+    } catch {
+        Write-Log ("索引更新失败：" + $_.Exception.Message) 'ERROR'
+        Write-Output ('{"ok":false,"error":"' + (($_.Exception.Message) -replace '"', '\"') + '"}')
+        Exit-Run 7
+    }
 }
 
     if ($PSBoundParameters.ContainsKey('Query') -or $PSBoundParameters.ContainsKey('Search') -or $KwFile) {
