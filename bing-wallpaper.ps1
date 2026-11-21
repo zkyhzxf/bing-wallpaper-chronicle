@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     必应每日壁纸轮换 —— 拉取官方当日图的无水印高画质原图，设置为桌面壁纸。
 
@@ -933,7 +933,7 @@ if ($Status) {
             ageDays  = $idxAgeDays
             minDate  = $ArchiveMinDate
         }
-        version = '2.5.0'
+        version = '3.1.0'
     }
     $txt = $obj | ConvertTo-Json -Depth 5
     if ($Json) {
@@ -943,7 +943,8 @@ if ($Status) {
         Write-Output ('收藏 ' + $favCount + ' / 缓存 ' + $cacheCount + ' / 归档 ' + $archCount)
         Write-Output ('索引 ' + $idxCount + ' 条，' + $idxAgeDays + ' 天前')
     }
-    Exit-Run 0
+    # -Status 自己已输出结果，直接退出，不走 Exit-Run（否则 -Json 会再输出一段）
+    exit 0
 }
 
 $locked = $false
