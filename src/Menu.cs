@@ -84,6 +84,8 @@ namespace BingWallpaperLite
 
             m.Items.Add(new ToolStripSeparator());
             m.Items.Add(MakeItem(S.PickDate, delegate { DoPickDate(); }));
+            m.Items.Add(MakeItem(S.SearchMenu, delegate { DoSearch(); }));
+            m.Items.Add(MakeItem(S.AiMenu, delegate { DoAi(); }));
 
 
 

@@ -17,6 +17,9 @@ namespace BingWallpaperLite
         private readonly Label lblStatus;
         private readonly Button btnSearch;
         private readonly Button btnApply;
+        private readonly Button btnRandom;
+        private static readonly Random rnd = new Random();
+        private const int RandomGroupSize = 20;
 
         public string PickedDate { get; private set; }
 
@@ -44,9 +47,15 @@ namespace BingWallpaperLite
 
             btnSearch = new Button();
             btnSearch.Text = S.SrchBtn;
-            btnSearch.SetBounds(456, 37, 78, 26);
+            btnSearch.SetBounds(456, 37, 70, 26);
             btnSearch.Click += delegate { DoSearch(); };
             Controls.Add(btnSearch);
+
+            btnRandom = new Button();
+            btnRandom.Text = S.SrchBtnRandom;
+            btnRandom.SetBounds(532, 37, 70, 26);
+            btnRandom.Click += delegate { DoRandom(); };
+            Controls.Add(btnRandom);
 
             lst = new ListBox();
             lst.SetBounds(16, 74, 584, 316);
@@ -77,10 +86,75 @@ namespace BingWallpaperLite
             CancelButton = btnCancel;
         }
 
+        private void DoRandom()
+        {
+            // 列表里已经有结果 → 随机挑其中一张，走与手动选择完全相同的 Accept()
+            if (results.Count > 0)
+            {
+                lst.SelectedIndex = rnd.Next(results.Count);
+                Accept();
+                return;
+            }
+            HandleEmptyAction();
+        }
+
+        private void HandleEmptyAction()
+        {
+            string kw = txtKw.Text.Trim();
+
+            if (kw.Length > 0)
+            {
+                MessageBox.Show(S.SrchNeedSearch, Program.AppName,
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                txtKw.Focus();
+                return;
+            }
+
+            if (MessageBox.Show(S.SrchEmptyAsk, Program.AppName + S.SrchEmptyTtl,
+                    MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+            {
+                txtKw.Focus();
+                return;
+            }
+            PickRandomGroup();
+        }
+
+        private void PickRandomGroup()
+        {
+            btnRandom.Enabled = false;
+            btnSearch.Enabled = false;
+            lblStatus.Text = S.SrchSearching;
+            lst.Items.Clear();
+            results.Clear();
+            btnApply.Enabled = false;
+            Application.DoEvents();
+
+            try
+            {
+                string outText = Program.RunScriptCapture("-PickRandom " + RandomGroupSize);
+                ParseResults(outText);
+            }
+            catch (Exception ex)
+            {
+                lblStatus.Text = ex.Message;
+            }
+
+            btnRandom.Enabled = true;
+            btnSearch.Enabled = true;
+
+            if (lst.Items.Count == 0)
+            {
+                lblStatus.Text = S.SrchLibEmpty;
+                return;
+            }
+            lblStatus.Text = S.SrchCount + lst.Items.Count + S.SrchCountTail;
+            lst.SelectedIndex = 0;
+        }
+
         private void DoSearch()
         {
             string kw = txtKw.Text.Trim();
-            if (kw.Length == 0) { return; }
+            if (kw.Length == 0) { HandleEmptyAction(); return; }
 
             btnSearch.Enabled = false;
             lblStatus.Text = S.SrchSearching;
@@ -91,17 +165,6 @@ namespace BingWallpaperLite
             try
             {
                 string outText = Program.RunScriptCapture("-Query \"" + kw.Replace("\"", "") + "\"");
-                try
-                {
-                    string dbg = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "bwl-search-debug.log");
-                    System.IO.File.AppendAllText(dbg, DateTime.Now.ToString("HH:mm:ss") + "  kw=" + kw + "  len=" + (outText == null ? -1 : outText.Length) + Environment.NewLine);
-                    if (!string.IsNullOrEmpty(outText))
-                    {
-                        string head = outText.Length > 300 ? outText.Substring(0, 300) : outText;
-                        System.IO.File.AppendAllText(dbg, "  head=" + head.Replace(Environment.NewLine, "|") + Environment.NewLine);
-                    }
-                }
-                catch { }
                 ParseResults(outText);
             }
             catch (Exception ex)

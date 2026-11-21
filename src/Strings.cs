@@ -65,6 +65,11 @@ namespace BingWallpaperLite
         public static string SrchRefresh      { get { return T("刷新索引", "Refresh index"); } }
         public static string SrchHint         { get { return T("索引覆盖 2016-03 至今；7 天自动更新一次。", "Index covers Mar 2016 onward; refreshed every 7 days."); } }
         public static string SrchSearching    { get { return T("搜索中…", "Searching…"); } }
+        public static string SrchBtnRandom    { get { return T("随机", "Random"); } }
+        public static string SrchEmptyAsk     { get { return T("没有填写关键词。\r\n要从图库里随机抽一组搜索结果吗？", "No keyword entered.\r\nPick a random batch of results from the library?"); } }
+        public static string SrchEmptyTtl     { get { return T("  没有关键词", "  No keyword"); } }
+        public static string SrchLibEmpty     { get { return T("图库里抽不出结果（索引为空）。", "Nothing to pick (index is empty)."); } }
+        public static string SrchNeedSearch   { get { return T("还没有搜索结果，先点「搜索」。", "No results yet — click Search first."); } }
         public static string SrchNone         { get { return T("没有匹配的壁纸，换个词试试", "No matches — try different keywords"); } }
         public static string SrchCount        { get { return T("找到 ", "Found "); } }
         public static string SrchCountTail    { get { return _en ? " results" : " 张"; } }
@@ -307,6 +312,7 @@ namespace BingWallpaperLite
         public static string SetupNote2   { get { return T("同时在「设置 → 应用」里登记卸载条目。\r\n\r\n", "and add an uninstall entry under Settings → Apps.\r\n\r\n"); } }
         public static string SetupNote3   { get { return T("壁纸缓存固定放在安装目录下的 cache 子文件夹，日志在 %TEMP%。\r\n\r\n", "Wallpaper cache lives in the cache subfolder; logs go to %TEMP%.\r\n\r\n"); } }
         public static string SetupNote4   { get { return T("「绿色运行」= 不安装，直接在当前文件夹展开使用。", "Run portable = no install; unpack and use in place."); } }
+        public static string SetupBackupWarn { get { return T("安装前会先把你当前的桌面壁纸备份一份到桌面（同名只备一次）。\r\n安装后立即把桌面壁纸换成今天的必应图。", "Your current wallpaper is copied to the Desktop first (once per image),\r\nthen replaced with today's Bing image."); } }
         public static string WarnNoPath   { get { return T("请填写安装路径。", "Please enter an install path."); } }
         public static string WarnBadDir   { get { return T("目录不可用：", "Folder unavailable: "); } }
         public static string BtnInstallTx { get { return T("安装", "Install"); } }
@@ -327,6 +333,19 @@ namespace BingWallpaperLite
         public static string AboutTaskLbl    { get { return T("· 计划任务  ", "· Task        "); } }
         public static string AboutStartupLbl { get { return T("· 开机自启  ", "· Startup     "); } }
         public static string AboutAutoLbl    { get { return T("· 自动换图  ", "· Auto-change "); } }
+
+        // ---------------- 关于窗口 / 检查更新
+        public static string AboutBtnReleases { get { return T("打开项目页", "Open project page"); } }
+        public static string AboutBtnRecheck  { get { return T("重新检查", "Check again"); } }
+        public static string AboutBtnClose    { get { return T("关闭", "Close"); } }
+        public static string UpdChecking      { get { return T("检查更新…", "Checking for updates…"); } }
+        public static string UpdFailedPrefix  { get { return T("检查失败：", "Check failed: "); } }
+        public static string UpdLatest(string v) { return _en ? ("Already latest v" + v) : ("已是最新 v" + v); }
+        public static string UpdNewer(string a, string b) { return _en ? ("New version v" + a + " (current v" + b + ")") : ("发现新版本 v" + a + "（当前 v" + b + "）"); }
+
+        // ---------------- 覆盖安装
+        public static string SetupFound(string v) { return _en ? ("Existing install v" + v + " found; will upgrade in place, keeping config and library.") : ("检测到已有安装 v" + v + "，将覆盖升级；配置与图库会保留"); }
+        public static string SetupNotFound { get { return T("未检测到已有安装，将全新安装", "No existing install found; a fresh install will be performed"); } }
         public static string AboutFooter     { get { return T("卸载走菜单「关于与卸载 → 卸载」，可选保留收藏。", "Uninstall via About & uninstall → Uninstall; you may keep favorites."); } }
         public static string AboutProgramDir { get { return T("程序  ", "Program  "); } }
         public static string AboutLogDir     { get { return T("日志  ", "Log      "); } }

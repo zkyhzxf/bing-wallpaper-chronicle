@@ -4,7 +4,7 @@
 
 A Bing daily wallpaper tool for Windows. Three layers — tray, script, scheduled task — with history going back to **March 2016**. Bilingual UI that follows your system language.
 
-![Tray menu](assets/screenshot-menu.jpg)
+![Overview](assets/screenshot-desktop.jpg)
 
 See [CHANGELOG.md](CHANGELOG.md) for version history.
 
@@ -44,6 +44,8 @@ So I wrote my own: only Bing's public APIs, all behaviour in local code, nothing
 * Auto-clean cache (30 days by default, roughly 105 MB)
 * Dark/light appearance follows the system, or can be forced
 * Bilingual UI, switches with the system language
+* **Random batch** — with the keyword blank, pull 20 random results from the index, or pick one at random from current results
+* **Update check** — the About window queries the latest release and shows your version and update status
 
 **Reliability**
 
@@ -54,7 +56,7 @@ So I wrote my own: only Bing's public APIs, all behaviour in local code, nothing
 
 ## Installation
 
-Download `Setup.exe` from [Releases](../../releases), run it, pick a folder.
+Download `Setup.exe` from [Releases](../../releases), run it, pick a folder. Your current wallpaper is backed up to the Desktop before installing.
 
 It will then:
 

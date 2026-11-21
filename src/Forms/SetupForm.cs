@@ -17,7 +17,7 @@ namespace BingWallpaperLite
         public string SelectedPath { get { return txtPath.Text.Trim(); } }
         public bool PortableMode { get; private set; }
 
-        public SetupForm(string defaultPath)
+        public SetupForm(string defaultPath, string existingPath, string existingVersion)
         {
             Text = Program.AppName + (S.IsEn ? " · Setup" : " · 安装");
             FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -25,17 +25,15 @@ namespace BingWallpaperLite
             MaximizeBox = false;
             MinimizeBox = false;
             ShowInTaskbar = true;
-            ClientSize = new Size(540, 296);
+            ClientSize = new Size(540, 302);
             try { Font = new Font("Microsoft YaHei UI", 9F); }
             catch { }
 
             Label pre = new Label();
-            pre.SetBounds(16, 76, 500, 40);
+            pre.SetBounds(16, 72, 500, 40);
             pre.AutoSize = false;
             pre.ForeColor = Color.FromArgb(198, 92, 0);
-            pre.Text = S.IsEn
-                ? "Your desktop wallpaper will change to today's Bing image right after install."
-                : "安装后会立即把桌面壁纸换成今天的必应图。";
+            pre.Text = S.SetupBackupWarn;
             Controls.Add(pre);
 
             Label lbl = new Label();
@@ -44,9 +42,18 @@ namespace BingWallpaperLite
             Controls.Add(lbl);
 
             txtPath = new TextBox();
-            txtPath.Text = defaultPath;
+            txtPath.Text = string.IsNullOrEmpty(existingPath) ? defaultPath : existingPath;
             txtPath.SetBounds(16, 40, 424, 23);
             Controls.Add(txtPath);
+
+            Label lblExisting = new Label();
+            lblExisting.SetBounds(16, 230, 508, 20);
+            lblExisting.AutoSize = false;
+            lblExisting.ForeColor = Color.FromArgb(198, 92, 0);
+            lblExisting.Text = string.IsNullOrEmpty(existingPath)
+                ? S.SetupNotFound
+                : S.SetupFound(string.IsNullOrEmpty(existingVersion) ? "?" : existingVersion);
+            Controls.Add(lblExisting);
 
             Button btnBrowse = new Button();
             btnBrowse.Text = S.BtnBrowse;
@@ -64,14 +71,14 @@ namespace BingWallpaperLite
             Controls.Add(btnBrowse);
 
             Label hint = new Label();
-            hint.SetBounds(16, 74, 508, 108);
+            hint.SetBounds(16, 118, 508, 108);
             hint.Text =
                 S.SetupNote1 + S.SetupNote2 + S.SetupNote3 + S.SetupNote4;
             Controls.Add(hint);
 
             Button btnInstall = new Button();
             btnInstall.Text = S.BtnInstallTx;
-            btnInstall.SetBounds(288, 214, 88, 30);
+            btnInstall.SetBounds(288, 258, 88, 30);
             btnInstall.Click += delegate
             {
                 string p = SelectedPath;
@@ -89,7 +96,7 @@ namespace BingWallpaperLite
 
             Button btnPortable = new Button();
             btnPortable.Text = S.BtnPortable;
-            btnPortable.SetBounds(184, 214, 96, 30);
+            btnPortable.SetBounds(184, 258, 96, 30);
             btnPortable.Click += delegate
             {
                 PortableMode = true;
@@ -100,7 +107,7 @@ namespace BingWallpaperLite
 
             Button btnCancel = new Button();
             btnCancel.Text = S.BtnCancel;
-            btnCancel.SetBounds(384, 214, 88, 30);
+            btnCancel.SetBounds(384, 258, 88, 30);
             btnCancel.DialogResult = DialogResult.Cancel;
             Controls.Add(btnCancel);
 

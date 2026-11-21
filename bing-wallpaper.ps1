@@ -59,6 +59,7 @@ param(
     [switch]$CleanArchiveIndex,
     [switch]$CleanFavorites,
     [string]$Query = '',
+    [int]$PickRandom = 0,
     [string]$KwFile = '',
     [string]$Search = '',
     [switch]$Json,
@@ -963,6 +964,30 @@ if ($Status) {
 
 $locked = $false
 
+
+if ($PickRandom -gt 0) {
+    # 从全量索引里随机抽 N 条，输出格式与 -Query 完全一致
+    $idx = @()
+    try { $idx = @(Get-FullIndex) } catch { }
+    if ($idx.Count -eq 0) {
+        Write-Log '索引为空，无法随机抽取' 'WARN'
+        Write-Output '[]'
+        Exit-Run 5
+    }
+    $n = [Math]::Min($PickRandom, $idx.Count)
+    $picked = @($idx | Get-Random -Count $n)
+
+    $parts = New-Object System.Collections.ArrayList
+    foreach ($h in $picked) {
+        $t = ([string]$h.t) -replace '\\', '\\\\' -replace '"', '\"'
+        $c = ([string]$h.c) -replace '\\', '\\\\' -replace '"', '\"'
+        [void]$parts.Add('  {"date":"' + ([string]$h.d) + '","title":"' + $t + '","copyright":"' + $c + '","matched":[]}')
+    }
+    $jsonText = "[" + [Environment]::NewLine + ($parts -join ("," + [Environment]::NewLine)) + [Environment]::NewLine + "]"
+    Write-Log ("随机抽取 " + $n + " 条")
+    Write-Output $jsonText
+    exit 0
+}
 
     if ($PSBoundParameters.ContainsKey('Query') -or $PSBoundParameters.ContainsKey('Search') -or $KwFile) {
     # ---- 关键词搜索

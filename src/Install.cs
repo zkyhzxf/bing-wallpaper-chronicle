@@ -102,6 +102,27 @@ namespace BingWallpaperLite
             try { Registry.CurrentUser.DeleteSubKeyTree(UninstKeyPath, false); } catch { }
         }
 
+        /// <summary>安装 / 覆盖安装前，无条件把当前桌面壁纸备份一份到桌面；同名已存在则跳过。</summary>
+        private static void BackupCurrentWallpaperOnce()
+        {
+            try
+            {
+                string actual = Registry.GetValue(
+                    @"HKEY_CURRENT_USER\Control Panel\Desktop", "Wallpaper", "") as string;
+                if (string.IsNullOrEmpty(actual) || !File.Exists(actual)) { return; }
+
+                string name = Path.GetFileName(actual);
+                if (string.IsNullOrEmpty(name)) { return; }
+
+                string desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+                string dest = Path.Combine(desktop, "壁纸备份_" + name);
+                if (File.Exists(dest)) { return; }
+
+                File.Copy(actual, dest, false);
+            }
+            catch { }
+        }
+
         private static void DoInstall(bool interactive)
         {
             EnsureRegistered(true);

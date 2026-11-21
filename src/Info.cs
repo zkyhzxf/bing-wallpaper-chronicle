@@ -165,10 +165,10 @@ namespace BingWallpaperLite
             sb.AppendLine(S.AboutEngineLbl + PowerShellExe);
             sb.AppendLine();
             sb.AppendLine(S.AboutFooter);
-            DialogResult r = MessageBox.Show(sb.ToString(), S.AboutItem.Trim() + " " + AppName,
-                MessageBoxButtons.OK, MessageBoxIcon.Information);
-
-            if (r == DialogResult.OK) { }
+            using (AboutForm f = new AboutForm(sb.ToString()))
+            {
+                f.ShowDialog();
+            }
         }
 
         private static void OpenTarget(string target)
@@ -210,6 +210,25 @@ namespace BingWallpaperLite
             catch { }
         }
 
+        /// <summary>壁纸是否落在本程序管理的目录里（cache / favorites / archive\images）。</summary>
+        private static bool IsManagedWallpaper(string path)
+        {
+            string p;
+            try { p = Path.GetFullPath(path); }
+            catch { return false; }
+
+            string[] dirs = new string[] { cacheDir, favDir, archiveImgDir };
+            foreach (string d in dirs)
+            {
+                if (string.IsNullOrEmpty(d)) { continue; }
+                string dd;
+                try { dd = Path.GetFullPath(d).TrimEnd('\\') + "\\"; }
+                catch { continue; }
+                if (p.StartsWith(dd, StringComparison.OrdinalIgnoreCase)) { return true; }
+            }
+            return false;
+        }
+
         /// <summary>检测桌面壁纸是否被外部改动；若是，把原先管理的那张备份到桌面并提示。</summary>
         private static void SyncExternalWallpaper()
         {
@@ -222,10 +241,19 @@ namespace BingWallpaperLite
                 if (string.Equals(actual, lastSyncedActual, StringComparison.OrdinalIgnoreCase)) { return; }
                 lastSyncedActual = actual;
 
-                Dictionary<string, object> st = ReadJson(statePath);
-                string expected = GetStr(st, "file");
-                if (string.IsNullOrEmpty(expected)) { return; }
-                if (string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase)) { return; }
+                // 本程序管理的三处目录里的图，一律视为自己换的，不备份
+                if (IsManagedWallpaper(actual)) { return; }
+
+                // 系统转码副本（TranscodedWallpaper）没有备份价值
+                try
+                {
+                    string themes = Path.Combine(
+                        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                        "Microsoft", "Windows", "Themes");
+                    string td = Path.GetFullPath(themes).TrimEnd('\\') + "\\";
+                    if (Path.GetFullPath(actual).StartsWith(td, StringComparison.OrdinalIgnoreCase)) { return; }
+                }
+                catch { }
 
                 string desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
                 string name = Path.GetFileName(actual);

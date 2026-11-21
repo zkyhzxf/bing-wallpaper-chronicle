@@ -6,139 +6,80 @@
 
 ---
 
-## [3.2.5] - 2026-11-21
+## [3.4.0] - 2026-11-21
+
+首个正式对外发布版本。此前的 3.1.0 – 3.3.1 均为开发期迭代，对应的 Release 已合并到本版。
+
+### 新增
+
+**历史与检索**
+
+- **关键词搜索** —— 全量索引 3915 条（2016-03 至今），匹配标题与版权，按命中词数排序，覆盖全部历史、不等接口
+- **随机抽一组** —— 关键词留空时从索引里随机抽 20 条任选；已有结果时可从中随机挑一张，走与手动选择相同的二次确认
+- **AI 调用页** —— 命令行接口可被任何 AI 助手驱动，`-Json` 返回结构化结果，`-Status` 查当前状态
+
+**关于与更新**
+
+- 关于窗口改为独立窗体，显示版本、数据源、组件状态与占用
+- **检查更新** —— 打开时自动查 GitHub 最新 Release，四种状态各有配色：检查中 / 已是最新 / 发现新版本 / 检查失败原因
+
+**安装**
+
+- 安装与覆盖安装前，**无条件**把当前桌面壁纸备份一份到桌面（同名只备一次，不随升级堆积）
+- 覆盖安装自动探测已有安装位置，预填路径并保留 `config.json`、缓存、收藏、归档
+
+**工程**
+
+- `test.ps1` 回归测试，21 项断言，约 20 秒跑完，不碰界面不依赖网络
+- GitHub Actions：push / PR 自动编译 + 语法检查 + 冒烟测试，打 tag 自动建 Release
 
 ### 修复
 
-- **`-Date` 参数带分隔符时被误判为越界** —— `Get-ArchiveRecord` 用 PowerShell 字符串字典序比较日期，`'2016-03-05' -lt '20160305'` 结果为 `True`
-  - 归一化点加在两处：`-Date` 参数入口（`ParseExact` 之前）与 `Get-ArchiveRecord` 内部
-  - 现在接受 `2016-03-05`、`2016/03/05` 等写法；非 8 位数字直接拒绝
-  - GUI 侧只传 `yyyyMMdd`，所以此前仅在命令行手动传参时发作
-- **位数不足的日期静默返回空** —— 现在明确拒绝，不再无声无息
+**托盘卡死**
+
+- `RunScriptEx` / `RunScriptCapture` / `RunScriptBlocking` 三处都设了 `RedirectStandardError = true` 却从不读 stderr，脚本写满 4 KB 管道缓冲区后阻塞，主线程 `ReadToEnd()` 死等 → `busy` 卡在 true → 所有菜单点击被 `if (busy) { return; }` 静默挡住。表现为「菜单能开、点什么都没反应」
+  - 改为 stdout / stderr 并发 `ReadToEndAsync()`，`WaitForExit` 后各自收尾
+  - 另加 6 分钟 `busy` 强制复位兜底，触发时写 `[WARN]` 日志
+  - 实测：往 stderr 灌 51 KB，0.3 秒完成，不再死锁
+
+**本程序自己的图被备份到桌面**
+
+- `SyncExternalWallpaper` 只比较「注册表当前壁纸 == `state.json` 里的 file」，而换图流程是「先改注册表、后写 state」，中间有窗口期。刷新正好落进去，刚换上的图就被当成外部壁纸复制到桌面
+  - 判据改为按目录：`cache`、`favorites`、`archive\images` 三处管理目录里的图一律不备份
+  - 额外排除 `%APPDATA%\Microsoft\Windows\Themes\`（系统转码副本 `TranscodedWallpaper`）
+
+**检查更新 TLS 失败**
+
+- `csc` 编出的 exe 默认 `ServicePointManager.SecurityProtocol` 是 `Ssl3 | Tls`，不含 TLS 1.2，而 GitHub 只收 1.2 以上，报「未能创建 SSL/TLS 安全通道」
+  - PowerShell 宿主会把默认值提升到 `SystemDefault`，所以脚本里访问 GitHub 一直正常，托盘的 exe 却握手失败，问题被掩盖很久
+  - `CheckLatestRelease()` 里显式 `|= SecurityProtocolType.Tls12`
+
+**数据正确性**
+
+- `-Query ""` 意外换图 —— 外层条件把空字符串挡掉了，走不到内层报错；改用 `$PSBoundParameters.ContainsKey('Query')` 判断「传了没」，现在返回退出码 1 且不碰壁纸
+- `-Date 2016-03-05` 被误判为越界 —— PowerShell 字符串字典序比较所致，`-Date` 参数入口与 `Get-ArchiveRecord` 内各加一次归一化，非 8 位数字直接拒绝
+- 三处写空标题 —— 取消收藏、CDN 降级、本地图路径分别补上兜底查询
+- `-Status -Json` 输出两段 JSON，`version` 字段长期停在旧值
+
+**功能入口**
+
+- 「按关键词找…」与「AI 调用…」两个菜单项**从未挂上** —— 窗体与文案一直都在，`BuildMenu` 里漏了对应项。`git log -S` 在整个提交历史里零命中，说明不是某次重构弄丢的
+- 安装界面的橙色提示被说明文字压住，一直没显示出来
 
 ### 变更
 
-- 归档下界 `2016-03-05` 在 C# 侧收口为 `Program.ArchiveMinDateValue` 单一定义
-  - 原先散落在 `Refresh.cs`（年份循环起点、日期比较）与 `CalendarForm.cs`（`MinDate`）三处
-  - 脚本侧对应 `$ArchiveMinDate`，两份常量靠回归断言与注释对齐
-
-### 验证
-
-- 回归断言从 18 条增至 21 条：下界前一天拒绝、`index.minDate` 一致性、位数不足拒绝
-- 手工验证 `-Date 2016-03-05` 退出码 0 且 `state.json` 变为 `20160305`
-
----
-## [3.2.4] - 2026-11-21
-
-### 修复
-
-- **`--run` 模式（计划任务入口）有同样的 stderr 死锁** —— 3.2.3 只修了 `RunScriptEx` 和 `RunScriptCapture`，漏了 `RunScriptBlocking`
-  - 这个更隐蔽：计划任务调 `--run` 时如果死锁，任务会一直挂着，托盘也会一直显示「处理中」
-  - 三个调用点现已全部改为 `ReadToEndAsync()` 并发读
-
----
-
-## [3.2.3] - 2026-11-21
-
-### 修复
-
-- **托盘界面卡死：菜单能打开但点什么都没反应**
-  - 根因：`RunScriptEx` 里 `RedirectStandardError = true` 但**从不读 stderr**。脚本一旦往 stderr 写满管道缓冲区（默认 4 KB），脚本阻塞在写，`StandardOutput.ReadToEnd()` 永远等进程结束 → 死锁 → `busy` 卡在 true → 所有菜单项点击被 `if (busy) { return; }` 静默挡住
-  - 修法：stdout 与 stderr 改用 `ReadToEndAsync()` **并发读**，`WaitForExit` 后各自等 3 秒收尾
-  - `RunScriptCapture` 有同样问题，一并修
-  - 实测：往 stderr 写 51 KB，0.3 秒完成，不再死锁
-- **`busy` 卡住时无兜底** —— 加 6 分钟超时强制复位，并在日志写 `[WARN] busy 卡住超过 6 分钟，强制复位`
-
----
-
-## [3.2.2] - 2026-11-21
-
-### 修复
-
-- **`-Query ""` 会意外换图** —— 空关键词本该报错，实际走了换图路径
-  - 根因：外层条件 `if ($Query -or ...)` 把空字符串挡掉了，走不到内层的 `throw`
-  - 修法：改用 `$PSBoundParameters.ContainsKey('Query')` 判断「传了没」而不是「是不是空」
-  - 顺带修掉 `if (-not $kw) { $kw = '''' }` —— 这行把空关键词变成了两个单引号字符，导致意外匹配到含 `'` 的版权信息
-  - 现在 `-Query ""` 返回退出码 1，不碰壁纸
-- **`-Status` 的 `version` 与 exe 版本不同步** —— 两处独立维护，改一处忘另一处
-  - 修法：脚本从 `BingWallpaperLite.exe` 的 `FileVersion` 读，exe 不在时才用兜底值
-
-### 新增
-
-- `test.ps1` 加 2 项断言（共 18 项）
-  - `-Query ""` 应返回退出码 1 且不换图
-  - `-Status -Json` 的 version 应与 exe 的 FileVersion 一致
-
----
-
-## [3.2.1] - 2026-11-21
-
-**验证 GitHub Actions 自动发布流程。无功能改动。**
-
-### 新增
-
-- `.github/workflows/build.yml`
-  - push / PR 时自动编译 + 语法检查 + 冒烟测试（`-Status` / `-Query` 无结果）
-  - 打 `v*` tag 时自动创建 Release，从 CHANGELOG 提取对应版本段落作为正文
-  - 编译产物作为 artifact 保留 7 天
-- `CHANGELOG.md`（本文件）
-
-### 修复
-
-- 脚本 `-Status` 输出的 `version` 字段从 `3.1.0` 同步到 `3.2.0`
-
----
-
-## [3.2.0] - 2026-11-21
-
-**技术债清理版。功能与 3.1.0 完全一致，没有任何新功能。**
-
-### 新增
-
-- `test.ps1` 回归测试脚本，16 项断言，约 20 秒跑完
-  - 语法与编译、状态查询、关键词搜索、换图翻页、数据完整性、清理保护
-  - 全部走命令行，不碰界面，不依赖网络
-
-### 变更
-
-- `TrayProgram.cs`（4050 行单文件）拆成 `src/` 下 17 个文件，最大 723 行
-  - `Program` 类改为 `partial`，按功能分区
-  - `build.ps1` 支持 `src/` 多文件编译，没有 `src/` 时退回单文件
-- `RefreshAll` 从 60 行（干 11 件事）拆成三层
-  - 入口编排 → 状态取数 → 各部件独立更新
-- README 增加「开发」章节（目录结构、编译、测试）
-- README 顶部加托盘菜单截图
+- `TrayProgram.cs`（4050 行单文件）拆成 `src/` 下 19 个文件，`Program` 改为 `partial`
+- `RefreshAll` 从 60 行干 11 件事拆成三层：入口编排 → 状态取数 → 各部件独立更新
+- 归档下界 `2016-03-05` 在 C# 侧收口为 `Program.ArchiveMinDateValue`，原先散落三处
+- 覆盖安装改为「先结束旧实例、再复制 exe」，复制失败等 600 ms 重试一次（原来先复制后杀进程，旧托盘占用文件导致必然失败）
+- 安装界面提示改为两行：先讲备份、再讲换图
 
 ### 移除
 
-- `使用说明.md`（199 行）、`打包与分发说明.md`（194 行）、`托盘程序说明.md`（134 行）
-  - 内容已被 README 覆盖，且提到旧文件名 `BingWallpaperTray.exe`
-  - Git 历史里仍可找回
-
-### 修复
-
-- `-Status -Json` 输出两段 JSON（分支末尾用了 `Exit-Run 0`，它在 `$Json` 时会再输出一次）
-- 状态 JSON 的 `version` 字段停在 `2.5.0`
+- 三份旧说明文档（`使用说明.md`、`打包与分发说明.md`、`托盘程序说明.md`）—— 内容已被 README 覆盖，Git 历史里仍可找回
+- `SearchForm` 里往 `%TEMP%\bwl-search-debug.log` 无限追加的调试日志
 
 ---
-
-## [3.1.0] - 2026-11-21
-
-### 新增
-
-- **清空收藏** —— 壁纸库菜单最后一项，二次确认，当前壁纸若是收藏会自动移回缓存
-- README 重写（从 159 行扩到 245 行）
-
-### 修复
-
-- **三处写空标题**
-  - 取消收藏：先从 `favorites/index.json` 取标题，再从 state 兜底
-  - 降级 CDN 压缩版：用已取到的 `$archTtl`，空则查归档索引
-  - `-Use` 本地图：查缓存索引，再查归档索引
-- 托盘悬停提示标题为空时显示日期，而不是笼统的「就绪」
-
----
-
 ## [3.0.0] - 2026-11-21
 
 ### 修复

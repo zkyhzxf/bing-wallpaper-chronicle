@@ -19,9 +19,9 @@ using Microsoft.Win32;
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyConfiguration("Release")]
 [assembly: AssemblyCulture("")]
-[assembly: AssemblyVersion("3.2.5.0")]
-[assembly: AssemblyFileVersion("3.2.5.0")]
-[assembly: AssemblyInformationalVersion("3.2.5")]
+[assembly: AssemblyVersion("3.4.0.0")]
+[assembly: AssemblyFileVersion("3.4.0.0")]
+[assembly: AssemblyInformationalVersion("3.4.0")]
 [assembly: ComVisible(false)]
 
 namespace BingWallpaperLite
@@ -31,7 +31,7 @@ namespace BingWallpaperLite
         // ---------------------------------------------------------------- 常量
 
         internal const string AppName     = "必应壁纸编年史";
-        internal const string AppVersion  = "3.2.5";
+        internal const string AppVersion  = "3.4.0";
         private const string TaskName    = "BingWallpaperChronicle";
         private const string RunValue    = "BingWallpaperChronicle";
 
@@ -252,6 +252,42 @@ namespace BingWallpaperLite
             }
         }
 
+        /// <summary>探测已有安装；返回安装目录（无安装返回 null），ver 带出版本号。</summary>
+        private static string DetectExistingInstall(out string ver)
+        {
+            ver = "";
+            try
+            {
+                using (Microsoft.Win32.RegistryKey k =
+                    Microsoft.Win32.Registry.CurrentUser.OpenSubKey(UninstKeyPath, false))
+                {
+                    if (k != null)
+                    {
+                        string loc = k.GetValue("InstallLocation") as string;
+                        if (!string.IsNullOrEmpty(loc))
+                        {
+                            string e = Path.Combine(loc, Path.GetFileName(Application.ExecutablePath));
+                            if (File.Exists(e))
+                            {
+                                ver = (k.GetValue("DisplayVersion") as string) ?? "";
+                                return loc;
+                            }
+                        }
+                    }
+                }
+            }
+            catch { }
+
+            string def = InstallTarget;
+            string de = Path.Combine(def, Path.GetFileName(Application.ExecutablePath));
+            if (File.Exists(de))
+            {
+                try { ver = System.Diagnostics.FileVersionInfo.GetVersionInfo(de).FileVersion; } catch { }
+                return def;
+            }
+            return null;
+        }
+
         /// <summary>目录里已经有脚本 → 绿色版布局，直接跑。</summary>
         private static bool IsPortableLayout()
         {
@@ -264,7 +300,9 @@ namespace BingWallpaperLite
         /// </summary>
         private static bool RunSetup()
         {
-            using (SetupForm f = new SetupForm(InstallTarget))
+            string tv = "";
+            string tp = DetectExistingInstall(out tv);
+            using (SetupForm f = new SetupForm(InstallTarget, tp, tv))
             {
                 if (f.ShowDialog() != DialogResult.OK) { return false; }
 
@@ -296,16 +334,38 @@ namespace BingWallpaperLite
                 return false;
             }
 
-            string destExe = Path.Combine(target, Path.GetFileName(Application.ExecutablePath));
+            // 安装前先说声再见：把用户此刻正在用的壁纸留一份到桌面
+            BackupCurrentWallpaperOnce();
+
+            // 覆盖安装：先把正在运行的旧实例结束，否则 exe 被占用，复制必然失败
+            int me = Process.GetCurrentProcess().Id;
             try
             {
-                File.Copy(Application.ExecutablePath, destExe, true);
+                foreach (Process other in Process.GetProcessesByName("BingWallpaperLite"))
+                {
+                    if (other.Id == me) { continue; }
+                    try { other.Kill(); other.WaitForExit(3000); } catch { }
+                }
             }
-            catch (Exception ex)
+            catch { }
+            Thread.Sleep(500);
+
+            string destExe = Path.Combine(target, Path.GetFileName(Application.ExecutablePath));
+            bool copied = false;
+            for (int attempt = 0; attempt < 2 && !copied; attempt++)
             {
-                MessageBox.Show(S.WarnCopyExe + ex.Message + "\r\n\r\n" + S.WarnCopyHint,
-                    AppName, MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return false;
+                try
+                {
+                    File.Copy(Application.ExecutablePath, destExe, true);
+                    copied = true;
+                }
+                catch (Exception ex)
+                {
+                    if (attempt == 0) { Thread.Sleep(600); continue; }
+                    MessageBox.Show(S.WarnCopyExe + ex.Message + "\r\n\r\n" + S.WarnCopyHint,
+                        AppName, MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return false;
+                }
             }
 
             string saved = root;
@@ -319,19 +379,6 @@ namespace BingWallpaperLite
                     MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return false;
             }
-
-            // 结束可能存在的旧实例，避免单实例互斥把新装的挡在门外
-            int me = Process.GetCurrentProcess().Id;
-            try
-            {
-                foreach (Process other in Process.GetProcessesByName("BingWallpaperLite"))
-                {
-                    if (other.Id == me) { continue; }
-                    try { other.Kill(); other.WaitForExit(3000); } catch { }
-                }
-            }
-            catch { }
-            Thread.Sleep(800);
 
             try { Process.Start(destExe); }
             catch (Exception ex)

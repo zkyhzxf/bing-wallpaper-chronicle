@@ -131,6 +131,24 @@ namespace BingWallpaperLite
             }
         }
 
+        private static void DoSearch()
+        {
+            if (busy) { return; }
+            using (SearchForm f = new SearchForm())
+            {
+                if (f.ShowDialog() != DialogResult.OK) { return; }
+                string d = f.PickedDate;
+                if (string.IsNullOrEmpty(d)) { return; }
+                anchor.BeginInvoke((MethodInvoker)delegate { RunScriptEx("-Date " + d, "search"); });
+            }
+        }
+
+        private static void DoAi()
+        {
+            if (busy) { return; }
+            using (AiForm f = new AiForm()) { f.ShowDialog(); }
+        }
+
         private static Dictionary<string, object> ReadPinnedSet()
         {
             Dictionary<string, object> d = ReadJson(Path.Combine(cacheDir, "pinned.json"));
