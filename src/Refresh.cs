@@ -517,6 +517,7 @@ namespace BingWallpaperLite
                             Dictionary<string, object> wrap = new Dictionary<string, object>();
                             wrap["title"] = tt;
                             wrap["copyright"] = cc;
+                            wrap["link"] = "";
                             all[kv.Key] = wrap;
                         }
                     }
@@ -575,11 +576,14 @@ namespace BingWallpaperLite
                                 if (e == null) { continue; }
                                 string d8 = e.ContainsKey("d") ? Convert.ToString(e["d"]) : "";
                                 string t8 = e.ContainsKey("t") ? Convert.ToString(e["t"]) : "";
-                                if (d8.Length != 8 || t8.Length == 0) { continue; }
+                                string c8 = e.ContainsKey("c") ? Convert.ToString(e["c"]) : "";
+                                string l8 = e.ContainsKey("l") ? Convert.ToString(e["l"]) : "";
+                                if (d8.Length != 8 || (t8.Length == 0 && c8.Length == 0)) { continue; }
                                 if (all.ContainsKey(d8)) { continue; }
                                 Dictionary<string, object> wrap = new Dictionary<string, object>();
                                 wrap["title"] = t8;
-                                wrap["copyright"] = "";
+                                wrap["copyright"] = c8;
+                                wrap["link"] = l8;
                                 all[d8] = wrap;
                             }
                         }

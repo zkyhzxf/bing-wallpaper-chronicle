@@ -33,30 +33,37 @@ namespace BingWallpaperLite
             try { Font = new Font("Microsoft YaHei UI", 9F); } catch { }
 
             Label l1 = new Label();
-            l1.SetBounds(16, 12, 588, 20);
+            l1.SetBounds(16, 10, 588, 40);
+            l1.AutoSize = false;
             l1.ForeColor = SystemColors.GrayText;
             l1.Text = S.FavIntro;
             Controls.Add(l1);
 
             lblSum = new Label();
-            lblSum.SetBounds(16, 38, 390, 20);
+            lblSum.SetBounds(16, 54, 340, 20);
             lblSum.AutoSize = false;
             Controls.Add(lblSum);
 
             Button btnAll = new Button();
             btnAll.Text = S.IsEn ? "All" : "全选";
-            btnAll.SetBounds(420, 36, 70, 24);
+            btnAll.SetBounds(366, 52, 60, 24);
             btnAll.Click += delegate { CheckAll(true); };
             Controls.Add(btnAll);
 
+            Button btnInvert = new Button();
+            btnInvert.Text = S.FavInvert;
+            btnInvert.SetBounds(432, 52, 60, 24);
+            btnInvert.Click += delegate { InvertAll(); };
+            Controls.Add(btnInvert);
+
             Button btnNone = new Button();
             btnNone.Text = S.IsEn ? "None" : "全不选";
-            btnNone.SetBounds(496, 36, 70, 24);
+            btnNone.SetBounds(498, 52, 74, 24);
             btnNone.Click += delegate { CheckAll(false); };
             Controls.Add(btnNone);
 
             lst = new ListView();
-            lst.SetBounds(16, 66, 588, 200);
+            lst.SetBounds(16, 80, 588, 190);
             lst.View = View.Details;
             lst.CheckBoxes = true;
             lst.FullRowSelect = true;
@@ -71,21 +78,21 @@ namespace BingWallpaperLite
             Controls.Add(lst);
 
             pic = new PictureBox();
-            pic.SetBounds(16, 276, 240, 135);
+            pic.SetBounds(16, 278, 240, 135);
             pic.BorderStyle = BorderStyle.FixedSingle;
             pic.SizeMode = PictureBoxSizeMode.Zoom;
             pic.Visible = false;
             Controls.Add(pic);
 
             lblInfo = new Label();
-            lblInfo.SetBounds(268, 276, 336, 90);
+            lblInfo.SetBounds(268, 278, 336, 90);
             lblInfo.AutoSize = false;
             lblInfo.ForeColor = SystemColors.GrayText;
             lblInfo.TextAlign = ContentAlignment.MiddleCenter;
             Controls.Add(lblInfo);
 
             lblCopy = new Label();
-            lblCopy.SetBounds(268, 372, 336, 40);
+            lblCopy.SetBounds(268, 374, 336, 40);
             lblCopy.AutoSize = false;
             lblCopy.ForeColor = SystemColors.GrayText;
             lblCopy.TextAlign = ContentAlignment.TopLeft;
@@ -271,6 +278,13 @@ namespace BingWallpaperLite
             int idx = lst.SelectedItems.Count > 0 ? lst.SelectedItems[0].Index : -1;
             ShowPreview(idx);
             btnOpen.Enabled = idx >= 0 && idx < files.Count;
+            btnRemove.Enabled = CheckedCount() > 0;
+        }
+
+        private void InvertAll()
+        {
+            foreach (ListViewItem it in lst.Items) { it.Checked = !it.Checked; }
+            RefreshSum();
             btnRemove.Enabled = CheckedCount() > 0;
         }
 

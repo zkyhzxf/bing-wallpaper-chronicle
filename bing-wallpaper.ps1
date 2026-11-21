@@ -616,6 +616,7 @@ function Get-FullIndex {
             d = ([string]$im.enddate) -replace '-', ''
             t = [string]$im.title
             c = [string]$im.copyright
+            l = [string]$im.copyrightlink
             i = $id
         }
     }

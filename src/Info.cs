@@ -92,7 +92,23 @@ namespace BingWallpaperLite
             }
             catch { }
 
-            using (InfoForm f = new InfoForm(date, title, copyright, file, sizeText, BuildSearchUrl(state)))
+            string learnUrl = BuildSearchUrl(state);
+            try
+            {
+                Dictionary<string, object> full = LoadArchiveIndex();
+                if (full != null && full.ContainsKey(date))
+                {
+                    Dictionary<string, object> fe = full[date] as Dictionary<string, object>;
+                    if (fe != null && fe.ContainsKey("link"))
+                    {
+                        string lk = fe["link"] == null ? "" : fe["link"].ToString();
+                        if (lk.Length > 0) { learnUrl = lk; }
+                    }
+                }
+            }
+            catch { }
+
+            using (InfoForm f = new InfoForm(date, title, copyright, file, sizeText, learnUrl))
             {
                 f.ShowDialog(anchor);
             }

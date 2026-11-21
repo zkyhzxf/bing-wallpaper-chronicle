@@ -146,7 +146,8 @@ namespace BingWallpaperLite
         }
         public static string FavManager    { get { return T("收藏管理…", "Manage favorites…"); } }
         public static string FavTitle      { get { return T(" · 收藏管理", " · Manage favorites"); } }
-        public static string FavIntro      { get { return T("这里列出收藏夹里的全部图片。移出收藏只是把文件退回缓存，本窗口不删除任何文件；之后它会进入 30 天清理规则，和普通缓存一样。", "All images in your favorites. Removing one only moves the file back to cache — this window deletes nothing; it then falls under the 30-day cache rule like any other cache file."); } }
+        public static string FavIntro      { get { return T("勾选多张后点「移出收藏」，可以一次移出。文件只是退回缓存，本窗口不删除任何文件；之后进入 30 天清理规则。", "Tick several rows, then click Remove to move them all at once. Files only go back to cache — this window deletes nothing; they fall under the 30-day rule afterwards."); } }
+        public static string FavInvert     { get { return T("反选", "Invert"); } }
         public static string FavSum(int n, double mb) { return _en ? (n + " items · " + mb.ToString("0.0") + " MB") : ("收藏 " + n + " 张 · " + mb.ToString("0.0") + " MB"); }
         public static string FavRemove     { get { return T("移出收藏", "Remove"); } }
         public static string FavConfirm(int n) { return _en ? ("Move these " + n + " images back to cache? Nothing is deleted now, but they lose the favorites exemption and may be auto-cleaned after 30 days.") : ("把这 " + n + " 张移出收藏？文件会退回缓存，本次不删除；之后不再享受收藏的免清理，30 天后可能被自动清掉。"); }
@@ -234,7 +235,7 @@ namespace BingWallpaperLite
         public static string BtnUninstall     { get { return T("卸载", "Uninstall"); } }
         public static string BtnCancel        { get { return T("取消", "Cancel"); } }
         public static string BtnInstall       { get { return T("安装", "Install"); } }
-        public static string BtnRunPortable   { get { return T("绿色运行", "Run portable"); } }
+
         public static string BtnBrowse        { get { return T("浏览…", "Browse…"); } }
         public static string BtnApply         { get { return T("换这张", "Use this"); } }
         public static string BtnToday         { get { return T("今天", "Today"); } }
