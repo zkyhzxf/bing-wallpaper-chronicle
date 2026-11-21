@@ -129,6 +129,29 @@ jobs:
           }
           Get-ChildItem dist | Select-Object Name, Length | Format-Table -AutoSize
 
+      - name: 从 CHANGELOG 提取当前版本段落
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $ver = $tag.TrimStart('v')
+          $log = Get-Content CHANGELOG.md -Raw -Encoding UTF8
+
+          # 匹配 "## [x.y.z] ..." 到下一个 "## [" 之前
+          $pattern = "(?ms)^## \[$([regex]::Escape($ver))\][^\r\n]*\r?\n(.*?)(?=^## \[|\z)"
+          $m = [regex]::Match($log, $pattern)
+
+          if ($m.Success) {
+            $body = "## $tag`n`n" + $m.Groups[1].Value.Trim() + "`n`n---`n`n完整变更见 [CHANGELOG.md](../blob/main/CHANGELOG.md)。"
+            Write-Host "从 CHANGELOG 提取到 $ver 的段落（$($body.Length) 字符）"
+          } else {
+            $body = "## $tag`n`n本版本的详细说明见 [CHANGELOG.md](../blob/main/CHANGELOG.md)。"
+            Write-Host "CHANGELOG 里没有 [$ver] 段落，使用通用说明"
+          }
+
+          Set-Content -Path release-body.md -Value $body -Encoding UTF8 -NoNewline
+          Write-Host "--- release-body.md ---"
+          Get-Content release-body.md
+
       - name: 创建 Release
         uses: softprops/action-gh-release@v2
         with:
@@ -136,7 +159,7 @@ jobs:
           draft: false
           prerelease: false
           generate_release_notes: false
-          body_path: CHANGELOG.md
+          body_path: release-body.md
           files: |
             dist/BingWallpaperChronicle-${{ github.ref_name }}-Setup.exe
             dist/BingWallpaperChronicle-${{ github.ref_name }}-Portable.zip
