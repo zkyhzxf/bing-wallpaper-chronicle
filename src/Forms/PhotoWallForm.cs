@@ -36,6 +36,7 @@ namespace BingWallpaperLite
         private readonly CheckBox chkLocal;
         private readonly System.Windows.Forms.Timer ticker;
         private string selected = "";
+        private readonly string openWallpaper = "";
         private bool working = false;
         private int localCount = 0;
 
@@ -175,6 +176,7 @@ namespace BingWallpaperLite
             // Dock 按 Z 序从高到低分配空间：把 Fill 的 host 放到最底层，顶部/底部才不会被它压住
             Controls.SetChildIndex(host, Controls.Count - 1);
 
+            try { openWallpaper = Program.CurrentWallpaperPath(); } catch { }
             try { Program.TrimThumbs(); } catch { }
             LoadData();
         }
@@ -663,6 +665,19 @@ namespace BingWallpaperLite
                 }
                 else
                 {
+                    // 桌面壁纸如果正指向临时目录里的文件，先换回打开照片墙前那张，再销毁
+                    try
+                    {
+                        string curWp = Program.CurrentWallpaperPath();
+                        if (!string.IsNullOrEmpty(curWp)
+                            && curWp.StartsWith(Program.WallDirPath, StringComparison.OrdinalIgnoreCase)
+                            && !string.IsNullOrEmpty(openWallpaper)
+                            && File.Exists(openWallpaper))
+                        {
+                            Program.RunScriptExit("-Use \"" + openWallpaper + "\"");
+                        }
+                    }
+                    catch { }
                     Program.RunScriptExit("-WallDrop");
                     foreach (string t in usedThumbs)
                     {
