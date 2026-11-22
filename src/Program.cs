@@ -19,8 +19,8 @@ using Microsoft.Win32;
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyConfiguration("Release")]
 [assembly: AssemblyCulture("")]
-[assembly: AssemblyVersion("3.6.33.0")]
-[assembly: AssemblyFileVersion("3.6.33.0")]
+[assembly: AssemblyVersion("3.6.34.0")]
+[assembly: AssemblyFileVersion("3.6.34.0")]
 [assembly: AssemblyInformationalVersion("3.6.25")]
 [assembly: ComVisible(false)]
 
@@ -31,7 +31,7 @@ namespace BingWallpaperLite
         // ---------------------------------------------------------------- 常量
 
         internal const string AppName     = "必应壁纸编年史";
-        internal const string AppVersion  = "3.6.33";
+        internal const string AppVersion  = "3.6.34";
         private const string TaskName    = "BingWallpaperChronicle";
         private const string RunValue    = "BingWallpaperChronicle";
 
@@ -68,6 +68,56 @@ namespace BingWallpaperLite
         /// <summary>预取中转目录：只用于翻页加速，退出/启动时清空。</summary>
         internal static string PrefetchDirPath { get { return Path.Combine(cacheDir, "prefetch"); } }
         internal static string WallDirPath { get { return Path.Combine(cacheDir, "wall"); } }
+        internal static string TakeoverDirPath { get { return Path.Combine(root, "takeover"); } }
+        internal static string TakeoverCfgPath { get { return Path.Combine(TakeoverDirPath, "config.json"); } }
+
+        /// <summary>接管目录（外部图片仓库）；没接管返回空串。</summary>
+        internal static string CurrentTakeoverRoot()
+        {
+            try
+            {
+                if (!File.Exists(TakeoverCfgPath)) { return ""; }
+                Dictionary<string, object> c = ReadJson(TakeoverCfgPath);
+                return GetStr(c, "root");
+            }
+            catch { return ""; }
+        }
+
+        /// <summary>接管生效中：配置存在且目录还在。</summary>
+        internal static bool TakeoverActive()
+        {
+            string r = CurrentTakeoverRoot();
+            return !string.IsNullOrEmpty(r) && Directory.Exists(r);
+        }
+
+        /// <summary>退出接管：删掉整个 takeover 沙盒（走回收站）。keepFav=false 时连收藏一起没。</summary>
+        internal static void ExitTakeover(bool askKeepFav)
+        {
+            string dir = TakeoverDirPath;
+            if (!Directory.Exists(dir)) { return; }
+            try
+            {
+                if (askKeepFav)
+                {
+                    Microsoft.VisualBasic.FileIO.FileSystem.DeleteDirectory(
+                        dir,
+                        Microsoft.VisualBasic.FileIO.UIOption.OnlyErrorDialogs,
+                        Microsoft.VisualBasic.FileIO.RecycleOption.SendToRecycleBin,
+                        Microsoft.VisualBasic.FileIO.UICancelOption.DoNothing);
+                }
+                else
+                {
+                    Directory.Delete(dir, true);
+                }
+            }
+            catch { }
+        }
+
+        /// <summary>接管状态变了之后刷新托盘菜单与状态。</summary>
+        internal static void RefreshAfterTakeover()
+        {
+            try { Program.RefreshAllPublic(); } catch { }
+        }
         internal static string ThumbsDirPath { get { return Path.Combine(cacheDir, "thumbs"); } }
 
         /// <summary>读一个字符串配置；没有就返回 dflt。</summary>

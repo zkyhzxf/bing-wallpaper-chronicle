@@ -378,6 +378,53 @@ namespace BingWallpaperLite
         public static string WallSortNew      { get { return T("新 → 旧", "New → Old"); } }
         public static string WallSortOld      { get { return T("旧 → 新", "Old → New"); } }
         public static string WallFilterLocal  { get { return T("只看本地有", "Local only"); } }
+
+        // ---------------- 接管目录
+        public static string TkMenu       { get { return T("接管目录…", "Takeover folder…"); } }
+        public static string TkTitle      { get { return T("接管目录", "Takeover folder"); } }
+        public static string TkHeader     { get { return T("接管 = 换一个图片仓库", "Takeover = switch the image store"); } }
+        public static string TkTip
+        {
+            get { return T("接管后只读这个目录：不清理、不移动、不改名。新下载的图也存进去。\r\n退出接管会删掉 takeover 目录，软件回到接管前的样子，原来的配置一点都没动。", "While taken over, this folder is read-only for the app: nothing is cleaned, moved or renamed.\r\nLeaving takeover deletes the takeover folder and returns to the previous state."); }
+        }
+        public static string TkOff        { get { return T("当前：未接管（用安装目录里的缓存与归档）", "Current: not taken over (using the install folder)"); } }
+        public static string TkOn         { get { return T("当前：接管中（只读这个目录）", "Current: taken over (read-only)"); } }
+        public static string TkOnBody(string root, int n)
+        {
+            string tpl = _en ? "Folder: {0}\r\n{1} images found; new downloads go here; cleaning and moving are disabled."
+                             : "目录：{0}\r\n找到 {1} 张图；新下载的图存这里；清理与移动已禁用。";
+            return string.Format(tpl, root, n);
+        }
+        public static string TkBrokenState { get { return T("当前：接管目录不见了（已自动回到原模式）", "Current: takeover folder missing (reverted)"); } }
+        public static string TkBrokenBody(string root)
+        {
+            string tpl = _en ? "Folder not found: {0}" : "找不到目录：{0}";
+            return string.Format(tpl, root);
+        }
+        public static string TkBrokenTitle { get { return T("接管目录不可用", "Takeover folder unavailable"); } }
+        public static string TkBrokenBody2 { get { return T("已自动回到安装目录的模式", "Reverted to the install folder"); } }
+        public static string TkPick       { get { return T("选择目录并接管", "Choose folder"); } }
+        public static string TkChange     { get { return T("换一个目录", "Change folder"); } }
+        public static string TkExit       { get { return T("退出接管", "Leave takeover"); } }
+        public static string TkChoose     { get { return T("选一个放着壁纸的目录", "Pick a folder that already holds wallpapers"); } }
+        public static string TkEmptyWarn  { get { return T("这个目录里没有 .jpg 文件，确定要用它吗？", "This folder has no .jpg files. Use it anyway?"); } }
+        public static string TkEntered(string root)
+        {
+            string tpl = _en ? "Taken over: {0}" : "已接管：{0}";
+            return string.Format(tpl, root);
+        }
+        public static string TkExitConfirm
+        {
+            get { return T("退出接管会删掉 takeover 目录（进回收站），软件回到接管前的样子。继续吗？", "Leaving takeover deletes the takeover folder (to the Recycle Bin) and returns to the previous state. Continue?"); }
+        }
+        public static string TkExitConfirmFav(int n)
+        {
+            string tpl = _en ? "Leaving takeover deletes the takeover folder, including {0} favorited images. Continue?"
+                             : "退出接管会删掉 takeover 目录，里面 {0} 张收藏的图也会一起没掉。继续吗？";
+            return string.Format(tpl, n);
+        }
+        public static string TkExited     { get { return T("已退出接管，回到安装目录", "Left takeover; back to the install folder"); } }
+        public static string TkFail       { get { return T("操作失败：", "Operation failed:"); } }
         public static string WallZoomHint     { get { return T("Ctrl + 滚轮 缩放", "Ctrl + wheel to zoom"); } }
         public static string WallSetAs        { get { return T("设为桌面壁纸", "Set as wallpaper"); } }
         public static string WallBtnSet       { get { return T("换这张", "Use this"); } }

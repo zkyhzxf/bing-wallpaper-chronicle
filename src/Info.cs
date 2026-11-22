@@ -345,7 +345,7 @@ namespace BingWallpaperLite
 
             // archive\old 是 2009-2016 的老存档，cache\gallery 是画廊模式；
             // 漏掉它们会让「设了老图再重启」被误判成外部换图，弹提示还往桌面塞备份
-            string[] dirs = new string[] { cacheDir, favDir, archiveImgDir, OldDirPath, GalleryDirPath };
+            string[] dirs = new string[] { cacheDir, favDir, archiveImgDir, OldDirPath, GalleryDirPath, CurrentTakeoverRoot() };
             foreach (string d in dirs)
             {
                 if (string.IsNullOrEmpty(d)) { continue; }

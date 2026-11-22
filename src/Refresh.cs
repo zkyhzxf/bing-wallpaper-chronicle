@@ -28,6 +28,17 @@ namespace BingWallpaperLite
         private static SearchForm searchForm;
         private static PhotoWallForm wallForm;
 
+        private static TakeoverForm takeoverForm;
+
+        /// <summary>接管目录窗口。</summary>
+        private static void DoTakeover()
+        {
+            if (takeoverForm != null && !takeoverForm.IsDisposed) { takeoverForm.Activate(); return; }
+            takeoverForm = new TakeoverForm();
+            takeoverForm.FormClosed += delegate { takeoverForm = null; RefreshAll(); };
+            takeoverForm.Show();
+        }
+
         /// <summary>照片墙：把历年同一天的图一次摆出来。</summary>
         private static void DoPhotoWall()
         {
@@ -38,12 +49,34 @@ namespace BingWallpaperLite
         }
         private static CalendarForm calForm;
 
+        internal static void RefreshAllPublic() { RefreshAll(); }
+
+        private static bool takeoverChecked = false;
+
+        /// <summary>接管目录消失时自动回退：删掉 config.json，回到安装目录的样子。</summary>
+        private static void EnsureTakeoverValid()
+        {
+            if (takeoverChecked) { return; }
+            takeoverChecked = true;
+            try
+            {
+                string r = CurrentTakeoverRoot();
+                if (!string.IsNullOrEmpty(r) && !Directory.Exists(r))
+                {
+                    if (File.Exists(TakeoverCfgPath)) { File.Delete(TakeoverCfgPath); }
+                    Notify(S.TkBrokenTitle, S.TkBrokenBody(r));
+                }
+            }
+            catch { }
+        }
+
         private static void RefreshAll()
         {
             if (refreshing) { return; }
             refreshing = true;
             try
             {
+                EnsureTakeoverValid();
                 bool running = File.Exists(lockPath);
                 SetBusy(running);
 
@@ -373,6 +406,7 @@ namespace BingWallpaperLite
             lib.DropDownItems.Add(MakeItem(S.OpenFavDir, delegate { OpenTarget(favDir); }));
             lib.DropDownItems.Add(MakeItem(S.OpenArchiveDir, delegate { OpenTarget(archiveImgDir); }));
             lib.DropDownItems.Add(MakeItem(S.ReloadIndex, delegate { InvalidateArchiveIndex(); RefreshAll(); }));
+            lib.DropDownItems.Add(MakeItem(S.TkMenu, delegate { DoTakeover(); }));
             lib.DropDownItems.Add(MakeItem(S.ExportDownloaded, delegate { DoExportDownloaded(); }));
             lib.DropDownItems.Add(MakeItem(S.DownloadRange, delegate { DoDownloadRange(); }));
         }

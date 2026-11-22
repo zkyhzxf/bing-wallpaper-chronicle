@@ -164,7 +164,48 @@ $GalleryDir    = Join-Path $CacheDir 'gallery'
 $PinnedPath = Join-Path $Root 'pinned.json'
 $PinnedLegacyPath = Join-Path $Root 'cache\pinned.json'
 
+# ---------------------------------------------------------------- 接管模式（沙盒）
+# 有 takeover\config.json 且 root 可用时，只读写 takeover\ 与 root：
+# 安装目录的 cache / favorites / state / pinned / config 一律不碰，退出时整目录删掉即可回退。
+$TakeoverDir     = Join-Path $Root 'takeover'
+$TakeoverCfg     = Join-Path $TakeoverDir 'config.json'
+$script:Takeover = $false
+$script:TakeoverRoot = ''
+$script:TakeoverBroken = ''
+if (Test-Path $TakeoverCfg) {
+    try {
+        $tc = Get-Content $TakeoverCfg -Raw -Encoding UTF8 | ConvertFrom-Json
+        $tr = [string]$tc.root
+        if ($tr -and (Test-Path -LiteralPath $tr)) {
+            $script:Takeover = $true
+            $script:TakeoverRoot = (Resolve-Path -LiteralPath $tr).Path
+        } else {
+            $script:TakeoverBroken = $tr
+        }
+    } catch {
+        $script:TakeoverBroken = '配置损坏'
+    }
+}
+if ($script:Takeover) {
+    $CacheDir      = Join-Path $TakeoverDir 'cache'
+    $IndexPath     = Join-Path $TakeoverDir 'cache-index.json'
+    $LockPath      = Join-Path $CacheDir '.running'
+    $FavDir        = Join-Path $TakeoverDir 'favorites'
+    $FavIndex      = Join-Path $FavDir 'index.json'
+    $StatePath     = Join-Path $TakeoverDir 'state.json'
+    $PrefetchDir   = Join-Path $CacheDir 'prefetch'
+    $GalleryDir    = Join-Path $CacheDir 'gallery'
+    $WallDir       = Join-Path $CacheDir 'wall'
+    $ArchiveImgDir = $script:TakeoverRoot
+    $PinnedPath    = Join-Path $TakeoverDir 'pinned.json'
+    $PinnedLegacyPath = $PinnedPath
+    foreach ($dT in @($TakeoverDir, $CacheDir, $FavDir)) {
+        if (-not (Test-Path $dT)) { try { New-Item -ItemType Directory -Path $dT -Force | Out-Null } catch { } }
+    }
+}
+
 if (-not (Test-Path $CacheDir)) { New-Item -ItemType Directory -Path $CacheDir -Force | Out-Null }
+
 
 # 画廊模式：下载落点改到 cache\gallery，退出时整个清掉，不登记保护名单
 # 下载落点统一解析：预取 -> cache\prefetch，画廊 -> cache\gallery，其余 -> cache 根
@@ -172,6 +213,7 @@ function Get-DownloadDir {
     if ($script:WallMode) { $d = $WallDir }
     elseif ($script:NoApply) { $d = $PrefetchDir }
     elseif ($Gallery) { $d = $GalleryDir }
+    elseif ($script:Takeover) { $d = $script:TakeoverRoot }
     else { $d = $CacheDir }
     if ($d -and -not (Test-Path $d)) { try { New-Item -ItemType Directory -Path $d -Force | Out-Null } catch { } }
     return $d
@@ -242,6 +284,21 @@ function Write-Log {
             [System.IO.File]::WriteAllText($LogPath, $tail, (New-Object System.Text.UTF8Encoding($false)))
         }
     } catch { }
+}
+
+# 接管模式：只读。清理、移动这类会改动 root 内容的指令一律拒绝（DryRun 放行，只打印计划）
+if ($script:Takeover -and -not $DryRun) {
+    $roBlocked = @()
+    if ($Clean) { $roBlocked += '-Clean' }
+    if ($CleanAll) { $roBlocked += '-CleanAll' }
+    if ($CleanArchive) { $roBlocked += '-CleanArchive' }
+    if ($CleanArchiveIndex) { $roBlocked += '-CleanArchiveIndex' }
+    if ($CleanFavorites) { $roBlocked += '-CleanFavorites' }
+    if ($WallKeep) { $roBlocked += '-WallKeep' }
+    if ($roBlocked.Count -gt 0) {
+        Write-Log ("接管模式只读，拒绝执行：" + ($roBlocked -join ' / ')) 'ERROR'
+        exit 10
+    }
 }
 
 # ---------------------------------------------------------------- 并发锁
@@ -2081,8 +2138,10 @@ try {
         $dateKey = ($name -split '_')[0]
 
         if ($Favorite) {
-            # 移动而非复制：一份文件，缓存清理碰不到收藏
-            Move-Item -LiteralPath $cur -Destination $dest -Force
+            # 正常模式移动而非复制：一份文件，缓存清理碰不到收藏
+            # 接管模式只复制：root 里的原图一根手指都不能动
+            if ($script:Takeover) { Copy-Item -LiteralPath $cur -Destination $dest -Force }
+            else { Move-Item -LiteralPath $cur -Destination $dest -Force }
             # 从缓存索引捞元信息
             $meta = $null
             if (Test-Path $IndexPath) {
