@@ -156,6 +156,7 @@ namespace BingWallpaperLite
             sb.AppendLine(S.AboutCanDo);
             sb.AppendLine(S.AboutFeat1);
             sb.AppendLine(S.AboutFeat2);
+            sb.AppendLine(S.AboutFeat2b);
             sb.AppendLine(S.AboutFeat3);
             sb.AppendLine(S.AboutFeat4);
             sb.AppendLine();

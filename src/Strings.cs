@@ -217,7 +217,7 @@ namespace BingWallpaperLite
         public static string BFailed          { get { return T("操作失败", "Failed"); } }
         public static string BDegraded        { get { return T("已切换（压缩版）", "Switched (compressed)"); } }
         public static string BLatest          { get { return T("已是最新", "Already latest"); } }
-        public static string BOldest          { get { return T("已到 8 天边界", "Reached 8-day limit"); } }
+        public static string BOldest          { get { return T("没有更早的照片了", "No older images"); } }
         public static string BEdge            { get { return T("到边界了", "At the limit"); } }
         public static string BNoImage         { get { return T("该日期没有壁纸", "No wallpaper for that date"); } }
         public static string BNeedArch        { get { return T("需要增强数据源", "Needs Data sources"); } }
@@ -309,7 +309,7 @@ namespace BingWallpaperLite
         public static string NeedArchHint      { get { return T("2025-03 之前的日期要开启「增强数据源 ▸ 启用第三方归档」才能取到", "Dates before Mar 2025 need Data sources → Enable third-party archive"); } }
         public static string ArchDownHint      { get { return T("检查网络或代理，或在「增强数据源」里临时关闭后重试", "Check network or proxy, or disable Data sources and retry"); } }
         public static string LatestHint        { get { return T("当前就是最新的一张；更早的可用「选日期」", "This is already the newest; use Pick a date for older ones"); } }
-        public static string OldestHint        { get { return T("接口只提供最近 8 天，更早的请用「选日期」", "The API only covers 8 days; use Pick a date for older ones"); } }
+        public static string OldestHint        { get { return T("已到能取到的最早一天（2016-03-05），可在「按日期搜索」里跳转", "Reached the earliest available day (2016-03-05); use Search by date to jump"); } }
         public static string EdgeHint          { get { return T("换个方向，或用「选日期」指定", "Try the other direction, or pick a date"); } }
         public static string NoFavHint         { get { return T("只有缓存目录里的壁纸才能收藏", "Only wallpapers in the cache folder can be favorited"); } }
         public static string DegradedHint      { get { return T("归档原图取不到，这张用的是微软 CDN 的 3840×2400", "Archive original unavailable; using Microsoft CDN 3840×2400"); } }
@@ -386,7 +386,8 @@ namespace BingWallpaperLite
 
         // ---------------- 关于正文
         public static string AboutFeat1      { get { return T("· 每天 00:10 自动换当天的图，8:30 / 12:00 补查", "· Switches to today's image at 00:10, with retries at 08:30 / 12:00"); } }
-        public static string AboutFeat2      { get { return T("· 往回翻最近 8 天，或用日历跳到 2016-03 以来的任意一天", "· Browse the last 8 days, or jump to any day since Mar 2016"); } }
+        public static string AboutFeat2      { get { return T("· 往回翻：最近 8 天直接取，更早的自动接续归档，可一路翻到 2016-03", "· Browse back: last 8 days from the API, older ones continue from the archive, all the way to Mar 2016"); } }
+        public static string AboutFeat2b     { get { return T("· 日历跳到 2016-03 以来的任意一天", "· Jump to any day since Mar 2016 from the calendar"); } }
         public static string AboutFeat3      { get { return T("· 收藏喜欢的图，收藏与缓存清理互不影响", "· Favorite images; favorites survive cache cleanup"); } }
         public static string AboutFeat4      { get { return T("· 关掉托盘也照常换图（计划任务直接调脚本）", "· Keeps working with the tray closed (the task runs the script)"); } }
         public static string AboutCanDo      { get { return T("【能做什么】", "[What it does]"); } }
