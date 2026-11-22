@@ -175,6 +175,8 @@ AI 调用…
 .\bing-wallpaper.ps1 -ExportRange -RangeFrom 20090713 -RangeTo 20261121 -DestDir D:\BingWall-全量
 .\bing-wallpaper.ps1 -ExportRange -RangeFrom 20090713 -RangeTo 20261121 -DestDir D:\x -Source anerg
                                         # 批量下载，文件名 {日期}_{slug}.jpg，可断点续跑
+                                        # 目标目录已有同名文件时会检查画质：2019 年后、体积偏小且
+                                        # 宽度不足 3000 的会重下覆盖；加 -KeepExisting 则一律跳过
 
 .\bing-wallpaper.ps1 -Clean -Keep 7     # 清理 7 天前的缓存
 .\bing-wallpaper.ps1 -CleanAll          # 清空缓存（保留当前壁纸）

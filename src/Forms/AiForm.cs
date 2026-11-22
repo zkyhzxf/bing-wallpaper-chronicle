@@ -104,6 +104,7 @@ namespace BingWallpaperLite
             sb.AppendLine(@"                      只导出下载直链（JSON），不下载图片");
             sb.AppendLine(@"  -ExportRange -RangeFrom 20261101 -RangeTo 20261121 -DestDir 目录");
             sb.AppendLine(@"                      按日期范围批量下载到指定目录");
+            sb.AppendLine(@"  -KeepExisting       批量下载时目标已有同名文件就直接跳过（默认会检查画质并升级）");
             sb.AppendLine();
             sb.AppendLine(@"  【照片墙与预取】");
             sb.AppendLine(@"  -WallDate YYYYMMDD  取该日期的图到 cache\wall（不设壁纸、不写状态）");

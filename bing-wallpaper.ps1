@@ -72,6 +72,7 @@ param(
     [string]$Source = 'auto',
     [ValidateSet('uhd','fhd','hd')]
     [string]$MaxRes = 'uhd',
+    [switch]$KeepExisting,
     [string]$FavDate = '',
     [switch]$ExportLinks,
     [string]$UnfavDate = '',
@@ -1778,7 +1779,7 @@ if ($WallKeep) {
             # 预览档先进归档（原目录随即变空，不涉及删除）
             Move-Item -LiteralPath $f.FullName -Destination $destW -Force
             # 墙里放的多半是 1080p 预览档：归档时补一张 UHD 覆盖过去，补不到就留着预览档
-            if ($mW.Success -and $f.Length -lt 2500KB -and (Get-Date) -lt $upDeadline) {
+            if ($mW.Success -and (Get-Date) -lt $upDeadline -and $f.Length -lt 3MB -and (Test-LowResImage -Path $f.FullName)) {
                 $d8W = $mW.Groups[1].Value
                 try {
                     $recW = Get-ArchiveRecord -Date $d8W
@@ -2650,6 +2651,7 @@ if ($ExportRange) {
     $okN = 0
     $skipN = 0
     $failN = 0
+    $upN = 0
     $firstErr = ''
     $failList = New-Object System.Collections.ArrayList
     $resLog = @{}
@@ -2661,7 +2663,16 @@ if ($ExportRange) {
         $day = $day.AddDays(1)
 
         $had = @(Get-ChildItem $DestDir -Filter "${cur}_*.jpg" -File -ErrorAction SilentlyContinue) | Select-Object -First 1
-        if ($had) { $skipN++; continue }
+        $upRange = $false
+        if ($had) {
+            # 已有同名文件。默认还要看画质：只有 2019 年起的日子才可能有 UHD，体积偏小的才去读宽度，
+            # 确认不是 UHD 就重下覆盖这一份。-KeepExisting 恢复旧的「有就跳过」行为。
+            if (-not $KeepExisting -and $MaxRes -eq 'uhd' -and $cur -ge '20190101' -and $had.Length -lt 3MB) {
+                if (Test-LowResImage -Path $had.FullName) { $upRange = $true }
+            }
+            if (-not $upRange) { $skipN++; continue }
+            $upN++
+        }
 
         $oldRec = $oldMap[$cur]
         $newRec = $byDate[$cur]
@@ -2687,6 +2698,7 @@ if ($ExportRange) {
         else { if ($cur -ge '20180901') { $order = @('cdn', 'anerg') } else { $order = @('anerg', 'cdn') } }
 
         $destFile = Join-Path $DestDir "${cur}_$short.jpg"
+        if ($upRange -and $had) { $destFile = $had.FullName }
         $saved = $false
         $lastMsg = ''
         foreach ($src in $order) {
@@ -2744,7 +2756,7 @@ if ($ExportRange) {
         try { Remove-Item -LiteralPath $failPath -Force -ErrorAction SilentlyContinue } catch { }
     }
 
-    Write-Log ("批量下载完成：成功 $okN，跳过 $skipN，失败 $failN（源：$Source）")
+    Write-Log ("批量下载完成：成功 $okN（其中画质升级 $upN），跳过 $skipN，失败 $failN（源：$Source）")
     Write-Output ('{"ok":' + $okN + ',"skip":' + $skipN + ',"fail":' + $failN + ',"error":"' + $firstErr + '"}')
     exit 0
 }
