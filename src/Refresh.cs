@@ -749,6 +749,8 @@ namespace BingWallpaperLite
                 {
                     t = GetStr(idx[fileDate] as Dictionary<string, object>, "title");
                 }
+                // 收藏/缓存索引里 title 为空时，回落到全量索引与老索引（20100720 就是这种情况）
+                if (t.Length == 0) { t = ArchiveTitleOf(LoadArchiveIndex(), fileDate); }
                 string label = fileDate + "  " + (t.Length > 0 ? t : S.NoTitle);
 
                 label = (fileDate == currentDate) ? ("● " + label) : ("　 " + label);

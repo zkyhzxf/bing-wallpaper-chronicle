@@ -430,6 +430,8 @@ namespace BingWallpaperLite
         public static string WallSetAs        { get { return T("设为桌面壁纸", "Set as wallpaper"); } }
         public static string WallBtnSet       { get { return T("换这张", "Use this"); } }
         public static string WallBtnFav       { get { return T("收藏这张", "Favorite"); } }
+        public static string WallBtnUnfav     { get { return T("取消收藏", "Unfavorite"); } }
+        public static string WallUnfavDone    { get { return T("已取消收藏", "Removed from favorites"); } }
         public static string WallBtnOpen      { get { return T("打开位置", "Open folder"); } }
         public static string WallFavDone      { get { return T("已收藏", "Favorited"); } }
         public static string WallFavFail      { get { return T("收藏失败，这张可能不在缓存里", "Favorite failed; the file may not be in the cache"); } }

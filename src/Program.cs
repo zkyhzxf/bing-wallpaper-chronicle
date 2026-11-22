@@ -19,8 +19,8 @@ using Microsoft.Win32;
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyConfiguration("Release")]
 [assembly: AssemblyCulture("")]
-[assembly: AssemblyVersion("3.6.35.0")]
-[assembly: AssemblyFileVersion("3.6.35.0")]
+[assembly: AssemblyVersion("3.6.36.0")]
+[assembly: AssemblyFileVersion("3.6.36.0")]
 [assembly: AssemblyInformationalVersion("3.6.25")]
 [assembly: ComVisible(false)]
 
@@ -31,7 +31,7 @@ namespace BingWallpaperLite
         // ---------------------------------------------------------------- 常量
 
         internal const string AppName     = "必应壁纸编年史";
-        internal const string AppVersion  = "3.6.35";
+        internal const string AppVersion  = "3.6.36";
         private const string TaskName    = "BingWallpaperChronicle";
         private const string RunValue    = "BingWallpaperChronicle";
 
@@ -102,6 +102,23 @@ namespace BingWallpaperLite
         /// <summary>预取中转目录：只用于翻页加速，退出/启动时清空。</summary>
         internal static string PrefetchDirPath { get { return Path.Combine(ActiveCacheDir, "prefetch"); } }
         internal static string WallDirPath { get { return Path.Combine(ActiveCacheDir, "wall"); } }
+        /// <summary>某一天的图是否在收藏里（按文件名前缀判断，不依赖索引）。</summary>
+        internal static bool IsDateFavorited(string d8)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(d8) || d8.Length != 8) { return false; }
+                string[] dirs = new string[] { ActiveFavDirPath };
+                foreach (string dir in dirs)
+                {
+                    if (!Directory.Exists(dir)) { continue; }
+                    if (Directory.GetFiles(dir, d8 + "_*.jpg").Length > 0) { return true; }
+                }
+            }
+            catch { }
+            return false;
+        }
+
         internal static string TakeoverDirPath { get { return Path.Combine(root, "takeover"); } }
         internal static string TakeoverCfgPath { get { return Path.Combine(TakeoverDirPath, "config.json"); } }
 

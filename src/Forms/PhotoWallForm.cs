@@ -34,7 +34,7 @@ namespace BingWallpaperLite
         private readonly Button btnFav;
         private readonly Button btnOpen;
         private readonly CheckBox chkLocal;
-        private readonly CheckBox chkArchive;
+
         private readonly System.Windows.Forms.Timer ticker;
         private string selected = "";
         private readonly string openWallpaper = "";
@@ -111,11 +111,6 @@ namespace BingWallpaperLite
             chkLocal.CheckedChanged += delegate { LoadData(); };
             top.Controls.Add(chkLocal);
 
-            chkArchive = new CheckBox();
-            chkArchive.Text = S.WallToArchive;
-            chkArchive.SetBounds(320, 12, 190, 22);
-            chkArchive.ForeColor = WallTheme.Text;
-            top.Controls.Add(chkArchive);
 
 
 
@@ -126,43 +121,60 @@ namespace BingWallpaperLite
             bottom.BackColor = WallTheme.Bg;
             Controls.Add(bottom);
 
-            lblStatus = new Label();
-            lblStatus.SetBounds(14, 18, 620, 22);
-            lblStatus.ForeColor = WallTheme.TextDim;
-            bottom.Controls.Add(lblStatus);
-
-            btnFetch = new Button();
-            btnFetch.Text = S.WallFetchMissing;
-            btnFetch.SetBounds(660, 13, 130, 30);
-            btnFetch.Click += delegate { FetchAll(); };
-            bottom.Controls.Add(btnFetch);
+            // 右侧按钮组用 FlowLayoutPanel 从右往左排，窗口变窄也不会互相压住
+            FlowLayoutPanel bar = new FlowLayoutPanel();
+            bar.Dock = DockStyle.Right;
+            bar.FlowDirection = FlowDirection.LeftToRight;
+            bar.WrapContents = false;
+            bar.AutoSize = true;
+            bar.Padding = new Padding(0, 12, 10, 0);
+            bottom.Controls.Add(bar);
 
             btnSetWall = new Button();
             btnSetWall.Text = S.WallBtnSet;
-            btnSetWall.SetBounds(600, 13, 110, 30);
+            btnSetWall.Size = new Size(96, 30);
+            btnSetWall.Margin = new Padding(4, 0, 4, 0);
             btnSetWall.Enabled = false;
             btnSetWall.Click += delegate { ApplySelected(); };
-            bottom.Controls.Add(btnSetWall);
+            bar.Controls.Add(btnSetWall);
 
             btnFav = new Button();
             btnFav.Text = S.WallBtnFav;
-            btnFav.SetBounds(716, 13, 96, 30);
+            btnFav.Size = new Size(110, 30);
+            btnFav.Margin = new Padding(4, 0, 4, 0);
             btnFav.Enabled = false;
             btnFav.Click += delegate { FavSelected(); };
-            bottom.Controls.Add(btnFav);
+            bar.Controls.Add(btnFav);
 
             btnOpen = new Button();
             btnOpen.Text = S.WallBtnOpen;
-            btnOpen.SetBounds(818, 13, 96, 30);
+            btnOpen.Size = new Size(96, 30);
+            btnOpen.Margin = new Padding(4, 0, 4, 0);
             btnOpen.Enabled = false;
             btnOpen.Click += delegate { OpenSelected(); };
-            bottom.Controls.Add(btnOpen);
+            bar.Controls.Add(btnOpen);
+
+            btnFetch = new Button();
+            btnFetch.Text = S.WallFetchMissing;
+            btnFetch.Size = new Size(112, 30);
+            btnFetch.Margin = new Padding(4, 0, 4, 0);
+            btnFetch.Click += delegate { FetchAll(); };
+            bar.Controls.Add(btnFetch);
 
             Button btnClose = new Button();
             btnClose.Text = S.BtnClose;
-            btnClose.SetBounds(920, 13, 86, 30);
+            btnClose.Size = new Size(80, 30);
+            btnClose.Margin = new Padding(4, 0, 0, 0);
             btnClose.Click += delegate { Close(); };
-            bottom.Controls.Add(btnClose);
+            bar.Controls.Add(btnClose);
+
+            lblStatus = new Label();
+            lblStatus.Dock = DockStyle.Fill;
+            lblStatus.TextAlign = ContentAlignment.MiddleLeft;
+            lblStatus.Padding = new Padding(14, 0, 0, 0);
+            lblStatus.ForeColor = WallTheme.TextDim;
+            bottom.Controls.Add(lblStatus);
+            lblStatus.BringToFront();
 
             // ---------------------------------------------------------------- 卡片区
             host = new Panel();
@@ -390,7 +402,13 @@ namespace BingWallpaperLite
                     }
                 }
                 if (btnSetWall != null) { btnSetWall.Enabled = hasSel && !working; }
-                if (btnFav != null) { btnFav.Enabled = hasSel && !working; }
+                if (btnFav != null)
+                {
+                    btnFav.Enabled = hasSel && !working;
+                    bool fav = false;
+                    if (hasSel) { try { fav = Program.IsDateFavorited(selected); } catch { } }
+                    btnFav.Text = fav ? S.WallBtnUnfav : S.WallBtnFav;
+                }
                 if (btnOpen != null) { btnOpen.Enabled = hasSel && !working; }
             }
             catch { }
@@ -466,6 +484,8 @@ namespace BingWallpaperLite
             if (c == null) { return; }
             string src = c.Tag as string;
             if (string.IsNullOrEmpty(src)) { return; }
+            bool wasFav = false;
+            try { wasFav = Program.IsDateFavorited(c.Date8); } catch { }
             working = true;
             UpdateStatus();
             try
@@ -476,9 +496,10 @@ namespace BingWallpaperLite
                     MessageBox.Show(S.WallFavFail, Program.AppName, MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     return;
                 }
-                int code2 = Program.RunScriptExit("-Favorite");
-                MessageBox.Show(code2 == 0 ? S.WallFavDone : S.WallFavFail, Program.AppName,
-                    MessageBoxButtons.OK, code2 == 0 ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+                int code2 = Program.RunScriptExit(wasFav ? "-Unfavorite" : "-Favorite");
+                MessageBox.Show(code2 == 0 ? (wasFav ? S.WallUnfavDone : S.WallFavDone) : S.WallFavFail,
+                    Program.AppName, MessageBoxButtons.OK,
+                    code2 == 0 ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
             }
             finally
             {
@@ -533,7 +554,7 @@ namespace BingWallpaperLite
             btnFetch.Enabled = false;
             ThreadPool.QueueUserWorkItem(delegate
             {
-                Program.RunScriptExit("-WallDate " + d8 + (chkArchive.Checked ? " -WallArchive" : ""));
+                Program.RunScriptExit("-WallDate " + d8);
                 try
                 {
                     BeginInvoke((MethodInvoker)delegate
@@ -571,7 +592,7 @@ namespace BingWallpaperLite
                         });
                     }
                     catch { }
-                    int code = Program.RunScriptExit("-WallDate " + d8 + (chkArchive.Checked ? " -WallArchive" : ""));
+                    int code = Program.RunScriptExit("-WallDate " + d8);
                     if (code == 0 || code == 4 || code == 8) { ok++; }
                 }
                 try
