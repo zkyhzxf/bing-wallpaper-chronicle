@@ -161,6 +161,7 @@ namespace BingWallpaperLite
             RefreshStartupCheck();
             RefreshLockCheck();
             RefreshCleanCheck();
+            RefreshTakeoverState();
             RefreshNotifyCheck();
             RefreshThemeCheck();
         }
@@ -324,16 +325,45 @@ namespace BingWallpaperLite
             return "";
         }
 
+        private static readonly Dictionary<string, string[]> scanCache = new Dictionary<string, string[]>();
+        private static readonly Dictionary<string, long> scanStamp = new Dictionary<string, long>();
+
+        /// <summary>接管模式下 clean 整个子菜单置灰：只读，点下去也只会被脚本拒绝。</summary>
+        private static void RefreshTakeoverState()
+        {
+            try
+            {
+                bool tk = TakeoverActive();
+                ToolStripMenuItem cm = menu.Items["clean"] as ToolStripMenuItem;
+                if (cm != null)
+                {
+                    cm.Enabled = !tk;
+                    cm.ToolTipText = tk ? S.TkReadOnlyHint : "";
+                }
+            }
+            catch { }
+        }
+
         private static string[] SafeGetFiles(string dir)
         {
             try
             {
                 if (!Directory.Exists(dir)) { return new string[0]; }
+                // 接管模式下 root 里可能有几万张：按目录修改时间缓存一次扫描结果
+                long stamp = 0;
+                try { stamp = Directory.GetLastWriteTimeUtc(dir).Ticks; } catch { }
+                string[] cached;
+                if (stamp != 0 && scanCache.TryGetValue(dir, out cached))
+                {
+                    long old;
+                    if (scanStamp.TryGetValue(dir, out old) && old == stamp) { return cached; }
+                }
                 string[] f = Directory.GetFiles(dir, "*.jpg");
                 Array.Sort(f, delegate(string a, string b)
                 {
                     return string.Compare(Path.GetFileName(b), Path.GetFileName(a), StringComparison.Ordinal);
                 });
+                if (stamp != 0) { scanCache[dir] = f; scanStamp[dir] = stamp; }
                 return f;
             }
             catch { return new string[0]; }

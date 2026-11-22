@@ -19,8 +19,8 @@ using Microsoft.Win32;
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyConfiguration("Release")]
 [assembly: AssemblyCulture("")]
-[assembly: AssemblyVersion("3.6.36.0")]
-[assembly: AssemblyFileVersion("3.6.36.0")]
+[assembly: AssemblyVersion("3.6.37.0")]
+[assembly: AssemblyFileVersion("3.6.37.0")]
 [assembly: AssemblyInformationalVersion("3.6.25")]
 [assembly: ComVisible(false)]
 
@@ -31,7 +31,7 @@ namespace BingWallpaperLite
         // ---------------------------------------------------------------- 常量
 
         internal const string AppName     = "必应壁纸编年史";
-        internal const string AppVersion  = "3.6.36";
+        internal const string AppVersion  = "3.6.37";
         private const string TaskName    = "BingWallpaperChronicle";
         private const string RunValue    = "BingWallpaperChronicle";
 
@@ -139,6 +139,56 @@ namespace BingWallpaperLite
         {
             string r = CurrentTakeoverRoot();
             return !string.IsNullOrEmpty(r) && Directory.Exists(r);
+        }
+
+        /// <summary>把 takeover 沙盒整个复制到 backup\takeover-时间戳\，返回目标路径。</summary>
+        internal static string BackupTakeover()
+        {
+            string src = TakeoverDirPath;
+            if (!Directory.Exists(src)) { return ""; }
+            string dst = Path.Combine(root, "backup", "takeover-" + DateTime.Now.ToString("yyyyMMdd-HHmm"));
+            try
+            {
+                CopyDirTree(src, dst);
+                return dst;
+            }
+            catch { return ""; }
+        }
+
+        /// <summary>从备份目录恢复接管沙盒（先清掉现有沙盒，走回收站）。</summary>
+        internal static bool ImportTakeover(string backupDir)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(backupDir) || !Directory.Exists(backupDir)) { return false; }
+                string cfg = Path.Combine(backupDir, "config.json");
+                if (!File.Exists(cfg)) { return false; }
+                string dst = TakeoverDirPath;
+                if (Directory.Exists(dst))
+                {
+                    Microsoft.VisualBasic.FileIO.FileSystem.DeleteDirectory(
+                        dst,
+                        Microsoft.VisualBasic.FileIO.UIOption.OnlyErrorDialogs,
+                        Microsoft.VisualBasic.FileIO.RecycleOption.SendToRecycleBin,
+                        Microsoft.VisualBasic.FileIO.UICancelOption.DoNothing);
+                }
+                CopyDirTree(backupDir, dst);
+                return Directory.Exists(dst);
+            }
+            catch { return false; }
+        }
+
+        private static void CopyDirTree(string src, string dst)
+        {
+            Directory.CreateDirectory(dst);
+            foreach (string f in Directory.GetFiles(src))
+            {
+                try { File.Copy(f, Path.Combine(dst, Path.GetFileName(f)), true); } catch { }
+            }
+            foreach (string d in Directory.GetDirectories(src))
+            {
+                CopyDirTree(d, Path.Combine(dst, Path.GetFileName(d)));
+            }
         }
 
         /// <summary>退出接管：删掉整个 takeover 沙盒（走回收站）。keepFav=false 时连收藏一起没。</summary>

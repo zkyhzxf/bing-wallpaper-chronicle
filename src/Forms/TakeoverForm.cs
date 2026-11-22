@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Drawing;
 using System.IO;
 using System.Windows.Forms;
@@ -57,15 +57,15 @@ namespace BingWallpaperLite
             btnExit.Click += delegate { DoExit(); };
             Controls.Add(btnExit);
 
-            Button btnOpen = new Button();
-            btnOpen.Text = S.WallBtnOpen;
-            btnOpen.SetBounds(362, 210, 130, 34);
-            btnOpen.Click += delegate { OpenRoot(); };
-            Controls.Add(btnOpen);
+            Button btnImport = new Button();
+            btnImport.Text = S.TkImport;
+            btnImport.SetBounds(362, 210, 150, 34);
+            btnImport.Click += delegate { DoImport(); };
+            Controls.Add(btnImport);
 
             Button btnClose = new Button();
             btnClose.Text = S.BtnClose;
-            btnClose.SetBounds(504, 210, 90, 34);
+            btnClose.SetBounds(524, 210, 90, 34);
             btnClose.Click += delegate { Close(); };
             Controls.Add(btnClose);
             AcceptButton = btnClose;
@@ -154,11 +154,16 @@ namespace BingWallpaperLite
                 if (Directory.Exists(fd)) { favs = Directory.GetFiles(fd, "*.jpg").Length; }
             }
             catch { }
-            string q = favs > 0 ? S.TkExitConfirmFav(favs) : S.TkExitConfirm;
-            if (MessageBox.Show(q, Program.AppName, MessageBoxButtons.OKCancel,
-                    MessageBoxIcon.Warning) != DialogResult.OK) { return; }
+            string q = (favs > 0 ? S.TkExitConfirmFav(favs) : S.TkExitConfirm) + "\r\n\r\n" + S.TkBackupAsk;
+            DialogResult r = MessageBox.Show(q, Program.AppName, MessageBoxButtons.YesNoCancel, MessageBoxIcon.Warning);
+            if (r == DialogResult.Cancel) { return; }
             try
             {
+                if (r == DialogResult.Yes)
+                {
+                    string bdir = Program.BackupTakeover();
+                    if (!string.IsNullOrEmpty(bdir)) { MessageBox.Show(S.TkBackedUp(bdir), Program.AppName, MessageBoxButtons.OK, MessageBoxIcon.Information); }
+                }
                 Program.ExitTakeover(true);
                 MessageBox.Show(S.TkExited, Program.AppName, MessageBoxButtons.OK, MessageBoxIcon.Information);
                 RefreshState();
@@ -168,6 +173,24 @@ namespace BingWallpaperLite
             {
                 MessageBox.Show(S.TkFail + "\r\n" + ex.Message, Program.AppName,
                     MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void DoImport()
+        {
+            using (FolderBrowserDialog d = new FolderBrowserDialog())
+            {
+                d.Description = S.TkImportPick;
+                d.ShowNewFolderButton = false;
+                if (d.ShowDialog(this) != DialogResult.OK) { return; }
+                if (!Program.ImportTakeover(d.SelectedPath))
+                {
+                    MessageBox.Show(S.TkImportFail, Program.AppName, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+                MessageBox.Show(S.TkImported, Program.AppName, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                RefreshState();
+                Program.RefreshAfterTakeover();
             }
         }
 

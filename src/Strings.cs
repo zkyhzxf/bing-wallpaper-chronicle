@@ -407,6 +407,20 @@ namespace BingWallpaperLite
         public static string TkPick       { get { return T("选择目录并接管", "Choose folder"); } }
         public static string TkChange     { get { return T("换一个目录", "Change folder"); } }
         public static string TkExit       { get { return T("退出接管", "Leave takeover"); } }
+        public static string TkImport     { get { return T("从备份接管…", "Take over from backup…"); } }
+        public static string TkBackupAsk
+        {
+            get { return T("退出接管前要不要先备份？\r\n\r\n是 = 备份到 backup 目录再退出\r\n否 = 直接退出，沙盒删掉\r\n取消 = 留在接管模式", "Back up before leaving?\r\n\r\nYes = copy to backup\\ then leave\r\nNo = leave and delete the sandbox\r\nCancel = stay"); }
+        }
+        public static string TkBackedUp(string dir)
+        {
+            string tpl = _en ? "Backed up to {0}" : "已备份到 {0}";
+            return string.Format(tpl, dir);
+        }
+        public static string TkImportPick  { get { return T("选一个备份目录（里面要有 config.json）", "Pick a backup folder that contains config.json"); } }
+        public static string TkImported    { get { return T("已从备份恢复接管状态", "Takeover state restored from backup"); } }
+        public static string TkImportFail  { get { return T("这个目录不是有效的接管备份", "That folder is not a takeover backup"); } }
+        public static string TkReadOnlyHint { get { return T("接管模式只读：清理会改动接管目录，已禁用", "Read-only takeover: cleanup would modify the takeover folder"); } }
         public static string TkChoose     { get { return T("选一个放着壁纸的目录", "Pick a folder that already holds wallpapers"); } }
         public static string TkEmptyWarn  { get { return T("这个目录里没有 .jpg 文件，确定要用它吗？", "This folder has no .jpg files. Use it anyway?"); } }
         public static string TkEntered(string root)

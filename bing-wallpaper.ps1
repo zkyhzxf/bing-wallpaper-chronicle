@@ -89,7 +89,9 @@ param(
     [string]$WallDate = '',
     [switch]$WallKeep,
     [switch]$WallDrop,
-    [switch]$WallArchive
+    [switch]$WallArchive,
+    [switch]$AuditOld,
+    [switch]$FixLegacyFav
 )
 
 $ErrorActionPreference = 'Stop'
@@ -1757,6 +1759,95 @@ if ($AuditDates) {
 }
 
 
+# ---------------------------------------------------------------- 老索引体检
+
+if ($AuditOld) {
+    $oo = @()
+    try {
+        $tmpO = Get-Content (Join-Path $ArchiveDir 'old-index.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+        $oo = @($tmpO)
+    } catch { }
+    if ($oo.Count -eq 0) { Write-Host '老索引读不出来'; exit 1 }
+    $ds = @()
+    $nm = @{}
+    $emptyT = 0
+    $outOfRange = 0
+    foreach ($e in $oo) {
+        $d = [string]$e.d
+        if ($d.Length -ne 8) { continue }
+        $ds += $d
+        if ($d -lt $ArchiveMinDate -or $d -gt '20160304') { $outOfRange++ }
+        $t8 = [string]$e.t
+        if (-not $t8) { $emptyT++ }
+        $n8 = [string]$e.n
+        if ($n8) {
+            if ($nm.ContainsKey($n8)) { $nm[$n8] = $nm[$n8] + ',' + $d } else { $nm[$n8] = $d }
+        }
+    }
+    $dsSorted = $ds | Sort-Object -Unique
+    Write-Host ('老索引 {0} 条，范围 {1} ~ {2}' -f $dsSorted.Count, $dsSorted[0], $dsSorted[-1])
+    $startD = [datetime]::ParseExact('20090713', 'yyyyMMdd', $null)
+    $endD = [datetime]::ParseExact('20160304', 'yyyyMMdd', $null)
+    $need = [int]($endD - $startD).TotalDays + 1
+    Write-Host ('应有 {0} 天，缺 {1} 天' -f $need, ($need - $dsSorted.Count))
+    Write-Host ('标题为空 {0} 条；日期越界 {1} 条' -f $emptyT, $outOfRange)
+    $dups = @()
+    foreach ($k in $nm.Keys) { if ($nm[$k] -match ',') { $dups += ($k + ' → ' + $nm[$k]) } }
+    Write-Host ('同一张图标了多个日期：{0} 组' -f $dups.Count)
+    foreach ($x in ($dups | Select-Object -First 8)) { Write-Host ('  ' + $x) }
+    Write-Host '体检完成（只读）'
+    exit 0
+}
+
+# ---------------------------------------------------------------- 修历史收藏的日期
+
+if ($FixLegacyFav) {
+    $oo2 = @()
+    try {
+        $tmpO2 = Get-Content (Join-Path $ArchiveDir 'old-index.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+        $oo2 = @($tmpO2)
+    } catch { }
+    $slugMap = @{}
+    foreach ($e in $oo2) {
+        $n8 = [string]$e.n
+        if (-not $n8) { continue }
+        $key = $n8 -replace '\.jpg$', ''
+        if ($key -and -not $slugMap.ContainsKey($key)) { $slugMap[$key] = [string]$e.d }
+    }
+    $fixed = 0
+    $scanned = 0
+    foreach ($dir in @($FavDir, $CacheDir)) {
+        if (-not (Test-Path $dir)) { continue }
+        foreach ($f in @(Get-ChildItem $dir -Filter '*.jpg' -File -ErrorAction SilentlyContinue)) {
+            $scanned++
+            $m2 = [regex]::Match($f.Name, '^(\d{8})_(.+)\.jpg$')
+            if (-not $m2.Success) { continue }
+            $curD = $m2.Groups[1].Value
+            $slug = $m2.Groups[2].Value
+            if (-not $slugMap.ContainsKey($slug)) { continue }
+            $rightD = [string]$slugMap[$slug]
+            if ($rightD.Length -ne 8 -or $rightD -eq $curD) { continue }
+            $newName = $rightD + '_' + $slug + '.jpg'
+            $newPath = Join-Path $dir $newName
+            if (Test-Path -LiteralPath $newPath) { continue }
+            if ($DryRun) {
+                Write-Log ("[DryRun] 将改名：" + $f.Name + " → " + $newName)
+            } else {
+                try {
+                    Move-Item -LiteralPath $f.FullName -Destination $newPath -Force
+                    Write-Log ("改名：" + $f.Name + " → " + $newName)
+                } catch {
+                    Write-Log ("改名失败：" + $f.Name + " " + $_.Exception.Message) 'WARN'
+                    continue
+                }
+            }
+            $fixed++
+        }
+    }
+    Write-Host ("扫描 $scanned 个文件，修正 $fixed 个日期（旧索引纠正：索引 vs 文件名）")
+    exit 0
+}
+
 # ---------------------------------------------------------------- 状态查询
 
 if ($Status) {
