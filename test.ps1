@@ -821,6 +821,31 @@ Check '关键失败路径有留痕日志' {
     return $true
 }
 
+# ---------------------------------------------------------------- [11] 文案校准
+Write-Host ''
+Write-Host '[11] 文案校准'
+
+Check 'AI 调用窗口的参数与脚本对齐' {
+    $t = Get-Content (Join-Path $Root 'src\Forms\AiForm.cs') -Raw
+    if ($t -match '2016-03-05 至今') { return 'AI 窗口仍写 2016-03-05 边界' }
+    foreach ($k in @('-MigrateOld', '-WallFull', '-WallKeep', '-PrefetchDate', '-Festivals', '-CleanFavorites', '-KwFile', '-Unfavorite')) {
+        if ($t.IndexOf($k) -lt 0) { return ('AI 窗口缺参数：' + $k) }
+    }
+    return $true
+}
+
+Check '三处分辨率口径一致' {
+    $s = Get-Content (Join-Path $Root 'src\Strings.cs') -Raw
+    if ($s -match '2016 年 3 月之后才是') { return '帮助仍写「2016 年 3 月之后才是 UHD」' }
+    if ($s -match '2016-03 至今') { return 'SrchHint 仍写索引从 2016-03 起' }
+    if ($s -notmatch '2019 年起才是') { return '帮助没写「2019 年起才是 UHD」' }
+    $r = Get-Content (Join-Path $Root 'README.md') -Raw
+    if ($r -match '2016 年 3 月之后才是') { return 'README 仍写「2016 年 3 月之后才是 UHD」' }
+    if ($r.IndexOf('| 11 |') -lt 0) { return 'README 退出码表缺 11' }
+    if ($r.IndexOf('| 12 |') -lt 0) { return 'README 退出码表缺 12' }
+    return $true
+}
+
 # ---------------------------------------------------------------- 汇总
 Write-Host ''
 Write-Host ('-' * 50) -ForegroundColor DarkGray

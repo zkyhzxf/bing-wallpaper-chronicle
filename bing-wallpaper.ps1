@@ -126,6 +126,9 @@ $EXIT = @{
 
 $ErrorActionPreference = 'Stop'
 
+# 命中本地但画质不足时，记下要被覆盖的那份文件（-Date 分支用）
+$script:UpgradeDest = ''
+
 # 临时件的删除方式：画廊图、预取图、故事缓存、两处索引、清空缓存 —— 都是可重建/可重抓的东西，
 # 默认直接删，不进回收站（回收站有配额，塞满之后照样变永久删，等于假装安全）。
 # 用户显式给 -CleanMode 时一律按用户说的来。
@@ -1427,6 +1430,41 @@ function Add-Pinned {
     try {
         [System.IO.File]::WriteAllText($PinnedPath, ($set | ConvertTo-Json -Depth 3), (New-Object System.Text.UTF8Encoding($false)))
     } catch { Write-Log ('保护名单写入失败：' + $_.Exception.Message) 'WARN' }
+}
+
+# ---------------------------------------------------------------- 无 UHD 名单
+
+# 2019 年起 Bing 一般都有 UHD，但个别日期实测拿不到（_UHD 地址返回的是 1080p 内容）。
+# 升级尝试失败后记下这一天，下次不再白等一次下载。
+function Get-NoUhdSet {
+    $p = Join-Path $CacheDir 'no-uhd.json'
+    $set = @{}
+    if (Test-Path $p) {
+        try {
+            $old = Get-Content $p -Raw -Encoding UTF8 | ConvertFrom-Json
+            foreach ($k in @($old)) { $kk = [string]$k; if ($kk.Length -eq 8) { $set[$kk] = $true } }
+        } catch { Write-Log ('无 UHD 名单读取失败：' + $_.Exception.Message) 'WARN' }
+    }
+    return $set
+}
+
+function Test-NoUhd {
+    param([string]$Date8)
+    if (-not $Date8) { return $false }
+    $set = Get-NoUhdSet
+    return $set.ContainsKey($Date8)
+}
+
+function Note-NoUhd {
+    param([string]$Date8)
+    if (-not $Date8 -or $Date8.Length -ne 8) { return }
+    $set = Get-NoUhdSet
+    if ($set.ContainsKey($Date8)) { return }
+    $set[$Date8] = $true
+    $p = Join-Path $CacheDir 'no-uhd.json'
+    try {
+        [System.IO.File]::WriteAllText($p, (@($set.Keys) | ConvertTo-Json), (New-Object System.Text.UTF8Encoding($false)))
+    } catch { Write-Log ('无 UHD 名单写入失败：' + $_.Exception.Message) 'WARN' }
 }
 
 # ---------------------------------------------------------------- 缓存清理
@@ -3208,6 +3246,20 @@ try {
         if (-not $hit -and $script:WallMode -and -not $WallFull -and (Test-Path $WallDir)) {
             $hit = Get-ChildItem $WallDir -Filter "${Date}_*.jpg" -File -ErrorAction SilentlyContinue | Select-Object -First 1
         }
+        # 命中本地不等于命中最高画质。2019 年起 Bing 才提供 UHD，本地这份如果明显偏小，
+        # 说明是当年只拿到 1080p 的预览档或旧镜像。现在能连上就重取一次，原地覆盖：
+        # 文件名不变，收藏、索引、state 都不用动。收藏里的也照样升 —— 收藏存的是「这一天」，
+        # 不是「当时那个画质」。
+        if ($hit -and $Date -ge '20190101' -and -not (Test-NoUhd -Date8 $Date)) {
+            $upLen = 0
+            $fiUp = Get-Item -LiteralPath $hit.FullName -ErrorAction SilentlyContinue
+            if ($fiUp) { $upLen = $fiUp.Length }
+            if ($upLen -gt 0 -and $upLen -lt 2MB) {
+                Write-Log ("命中本地但只有 " + [math]::Round($upLen / 1KB) + " KB（预览档或旧镜像），重取原图并覆盖")
+                $script:UpgradeDest = $hit.FullName
+                $hit = $null
+            }
+        }
         if ($hit) {
             if ($DryRun) {
                 Write-Log ("[DryRun] 命中本地，将设为壁纸：" + $hit.FullName)
@@ -3338,6 +3390,8 @@ try {
                     if ($script:WallMode -and $script:WallArchive) { $dest = Join-Path $ArchiveImgDir $fileName }
                     elseif ($script:WallMode) { $dest = Join-Path $WallDir $fileName }
                     elseif ($script:NoApply) { $dest = Join-Path $PrefetchDir $fileName }
+                    # 本地那份是低画质的话，直接覆盖它，避免同一日期存两份
+                    if ($script:UpgradeDest) { $dest = $script:UpgradeDest }
                     # 候选顺序：照片墙默认先拿 1080p —— 预览只有 320 宽，没必要为它下 5 MB 原图；
                     # 其余场景（常规换图 / 预取 / 照片墙暂存）仍然 UHD 优先。
                     $cand = @()
@@ -3381,6 +3435,15 @@ try {
                         if ($archTtl.Length -gt 60) { $archTtl = $archTtl.Substring(0, 60) }
                         Add-Pinned -Date $Date
                         Write-State -Date $Date -File $dest -Title $archTtl -Copyright $archCpr -SearchUrl ([string]$rec.searchUrl) -ImageId $archId -AppliedDate $Date
+                        if ($script:UpgradeDest) {
+                            $szUp = 0
+                            $fiSz = Get-Item -LiteralPath $dest -ErrorAction SilentlyContinue
+                            if ($fiSz) { $szUp = $fiSz.Length }
+                            if ($szUp -gt 0 -and $szUp -lt 2MB) {
+                                Note-NoUhd -Date8 $Date
+                                Write-Log ("这天拿不到 UHD（" + [math]::Round($szUp / 1KB) + " KB），记入名单，下次不再白试")
+                            }
+                        }
                         Write-Log '--- 完成 ---'
         if ([bool]$config['autoClean']) {
             $capMB2 = 0
@@ -3397,6 +3460,7 @@ try {
             # 4) 兜底：微软 CDN 按日期直取，再不行用 wilii
             $fileName = "${Date}_CDN.jpg"
             $dest = Join-Path $DownDir $fileName
+            if ($script:UpgradeDest) { $dest = $script:UpgradeDest }
             if ($DryRun) {
                 Write-Log ("[DryRun] 将兜底下载（微软 CDN / wilii）→ " + $dest + "（不下载、不设壁纸）")
                 Exit-Run 0
@@ -3449,6 +3513,15 @@ try {
                 } catch { }
             }
             Write-State -Date $Date -File $dest -Title $cdTtl -Copyright $cdCpr -ImageId $cdId -AppliedDate $Date
+            if ($script:UpgradeDest) {
+                $szUp2 = 0
+                $fiSz2 = Get-Item -LiteralPath $dest -ErrorAction SilentlyContinue
+                if ($fiSz2) { $szUp2 = $fiSz2.Length }
+                if ($szUp2 -gt 0 -and $szUp2 -lt 2MB) {
+                    Note-NoUhd -Date8 $Date
+                    Write-Log ("这天拿不到 UHD（" + [math]::Round($szUp2 / 1KB) + " KB），记入名单，下次不再白试")
+                }
+            }
             if ($archTried) {
                 Write-Log '--- 完成（降级 CDN 压缩版）---'
                 Exit-Run 8

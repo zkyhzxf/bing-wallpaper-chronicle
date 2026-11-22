@@ -66,7 +66,7 @@ namespace BingWallpaperLite
         public static string SrchBtn          { get { return T("搜索", "Search"); } }
         public static string SrchApply        { get { return T("换这张", "Use this"); } }
         public static string SrchRefresh      { get { return T("刷新索引", "Refresh index"); } }
-        public static string SrchHint         { get { return T("索引覆盖 2016-03 至今；最近 8 天实时补齐。", "Index covers Mar 2016 onward; the latest 8 days are always fetched live."); } }
+        public static string SrchHint         { get { return T("索引覆盖 2009-07 至今（6339 天）；最近 8 天实时补齐。", "Index covers Jul 2009 onward (6339 days); the latest 8 days are always fetched live."); } }
         public static string SrchSearching    { get { return T("搜索中…", "Searching…"); } }
         public static string SrchBtnRandom    { get { return T("随机", "Random"); } }
         public static string SrchEmptyAsk     { get { return T("没有填写关键词。\r\n要从图库里随机抽一组搜索结果吗？", "No keyword entered.\r\nPick a random batch of results from the library?"); } }
@@ -675,9 +675,10 @@ namespace BingWallpaperLite
     In the photo wall (first item under ""This day in past years""), ""Use this"" moves the image into the archive.
 
 6. Why some images look soft
-    Originals from 2009-2013 are 958x512, 2014 to early 2016 are 1366x768 or 1080p,
-    and only from March 2016 onwards are they 3840x2160. That was Bing''s publishing
-    standard at the time, not a download error.
+    UHD only from 2019 onward; 2016-03 to 2018 tops out at 1080p. Before that,
+    Bing's original uploads were purged, so only third-party mirrors remain at
+    958x512 or 1366x768. That was Bing's publishing standard at the time, not a
+    download error.
 
 7. Data sources and troubleshooting
     Primary index Zhu-junwei, fallback bing.wilii.cn, legacy archive anerg,
@@ -762,8 +763,9 @@ namespace BingWallpaperLite
     照片墙（往年的今天 → 第一项）里点「换这张」，图会自动存进历史归档，之后归归档上限管。
 
 六、为什么有些图比较糊
-    2009 至 2013 年的原图就是 958×512，2014 年到 2016 年初是 1366×768 或 1080p，
-    2016 年 3 月之后才是 3840×2160。这是当年必应的发布标准，不是下载出错。
+    2019 年起才是 3840×2160；2016 年 3 月到 2018 年是 1080p；
+    再往前（2009 到 2016 初）Bing 的原始上传已被清理，只能从第三方镜像拿到
+    958×512 或 1366×768。这是当年必应的发布标准，不是下载出错。
 
 七、数据来源与出问题怎么办
     主索引 Zhu-junwei、兜底 bing.wilii.cn、老存档 anerg，每日故事自 2013 年 12 月起。
