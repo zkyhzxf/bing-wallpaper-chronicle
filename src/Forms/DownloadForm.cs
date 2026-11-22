@@ -11,6 +11,7 @@ namespace BingWallpaperLite
         private readonly DateTimePicker dtFrom;
         private readonly DateTimePicker dtTo;
         private readonly TextBox txtDest;
+        private readonly ComboBox cmbQuality;
         private readonly Label lblEst;
         private readonly Button btnOk;
         private bool touchedDest;
@@ -18,6 +19,16 @@ namespace BingWallpaperLite
         public string FromDate { get { return dtFrom.Value.ToString("yyyyMMdd"); } }
         public string ToDate { get { return dtTo.Value.ToString("yyyyMMdd"); } }
         public string DestPath { get { return txtDest.Text.Trim(); } }
+        public string MaxRes
+        {
+            get
+            {
+                int i = cmbQuality == null ? 0 : cmbQuality.SelectedIndex;
+                if (i == 1) { return "fhd"; }
+                if (i == 2) { return "hd"; }
+                return "uhd";
+            }
+        }
 
         public DownloadForm()
         {
@@ -110,6 +121,21 @@ namespace BingWallpaperLite
             lblNote.ForeColor = SystemColors.GrayText;
             lblNote.Text = S.DlNote;
             Controls.Add(lblNote);
+
+            Label lblQ = new Label();
+            lblQ.Text = S.DlQuality;
+            lblQ.SetBounds(16, 178, 60, 20);
+            Controls.Add(lblQ);
+
+            cmbQuality = new ComboBox();
+            cmbQuality.DropDownStyle = ComboBoxStyle.DropDownList;
+            cmbQuality.SetBounds(76, 176, 264, 24);
+            cmbQuality.Items.Add(S.DlQualityUhd);
+            cmbQuality.Items.Add(S.DlQualityFhd);
+            cmbQuality.Items.Add(S.DlQualityHd);
+            cmbQuality.SelectedIndex = 0;
+            cmbQuality.SelectedIndexChanged += delegate { OnRangeChanged(); };
+            Controls.Add(cmbQuality);
 
             Button btnLinks = new Button();
             btnLinks.Text = S.BtnExportLinks;

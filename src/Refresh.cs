@@ -267,6 +267,7 @@ namespace BingWallpaperLite
                 string from = f.FromDate;
                 string to = f.ToDate;
                 string dest = f.DestPath;
+                string res = f.MaxRes;
                 if (string.IsNullOrEmpty(dest)) { return; }
 
                 SetBusy(true);
@@ -276,7 +277,7 @@ namespace BingWallpaperLite
                     try
                     {
                         outText = RunScriptCapture("-ExportRange -RangeFrom " + from +
-                            " -RangeTo " + to + " -DestDir \"" + dest + "\"");
+                            " -RangeTo " + to + " -DestDir \"" + dest + "\" -MaxRes " + res);
                     }
                     catch { }
                     SetBusy(false);

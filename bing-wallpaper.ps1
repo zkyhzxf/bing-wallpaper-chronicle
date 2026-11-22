@@ -70,6 +70,8 @@ param(
     [string]$DestDir = '',
     [ValidateSet('auto','cdn','anerg')]
     [string]$Source = 'auto',
+    [ValidateSet('uhd','fhd','hd')]
+    [string]$MaxRes = 'uhd',
     [string]$FavDate = '',
     [switch]$ExportLinks,
     [string]$UnfavDate = '',
@@ -2526,7 +2528,8 @@ if ($ExportRange) {
 
         # 选源：auto 时 2018-09 之后走 Bing，之前走 anerg，失败就换另一个
         $order = @()
-        if ($Source -eq 'cdn') { $order = @('cdn', 'anerg') }
+        if ($MaxRes -eq 'hd') { $order = @('anerg', 'cdn') }
+        elseif ($Source -eq 'cdn') { $order = @('cdn', 'anerg') }
         elseif ($Source -eq 'anerg') { $order = @('anerg', 'cdn') }
         else { if ($cur -ge '20180901') { $order = @('cdn', 'anerg') } else { $order = @('anerg', 'cdn') } }
 
@@ -2537,8 +2540,11 @@ if ($ExportRange) {
             if ($saved) { break }
             if ($src -eq 'cdn') {
                 if (-not $newRec -or -not ([string]$newRec.i)) { $lastMsg = '没有 imageId'; continue }
-                # 2018 年的图只有 1920x1080，2019 起才有 UHD；按画质从高到低试
-                foreach ($suf in @('_UHD', '_1920x1080')) {
+                # 2018 年的图只有 1920x1080，2019 起才有 UHD；按画质档位决定试哪些
+                $sufsC = @()
+                if ($MaxRes -eq 'uhd') { $sufsC = @('_UHD', '_1920x1080') }
+                elseif ($MaxRes -eq 'fhd') { $sufsC = @('_1920x1080') }
+                foreach ($suf in $sufsC) {
                     $u = "https://www.bing.com/th?id=$($newRec.i)$suf.jpg"
                     try {
                         [void](Save-BingImage -Url $u -Dest $destFile -MinKB 60 -Retry 1)

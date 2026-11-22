@@ -239,7 +239,7 @@ namespace BingWallpaperLite
         public static string BCleared         { get { return T("已清理", "Cleared"); } }
         public static string BArchEmpty       { get { return T("历史归档是空的", "History archive is empty"); } }
         public static string BWaiting         { get { return T("等待新图", "Waiting for new image"); } }
-        public static string BWaitingHint     { get { return T("Bing 还没发布今天的图，8:30 和 12:00 会自动再查一次", "Bing hasn't published today's image yet; it will retry at 08:30 and 12:00"); } }
+        public static string BWaitingHint     { get { return T("Bing 还没发布今天的图，8:10 和 12:10 会自动再查一次", "Bing hasn't published today's image yet; it will retry at 08:10 and 12:10"); } }
 
         // ---------------- 计划任务状态
         public static string TaskMissing      { get { return T("计划任务：未注册 ⚠ 点这里修复", "Scheduled task: not registered ⚠ click to fix"); } }
@@ -316,7 +316,7 @@ namespace BingWallpaperLite
         public static string ConfirmArchBody   { get { return T(" 张图移入回收站？\r\n\r\n当前正在显示的壁纸不动。之后可从回收站找回，\r\n也可以通过「选日期」重新下载。", " images will be moved to the Recycle Bin.\r\n\r\nThe current wallpaper is left untouched. You can restore from the Recycle Bin\r\nor re-download later via Pick a date."); } }
         public static string BRepairKOHint     { get { return T("计划任务仍不可用，请用管理员身份运行一次或查看日志", "Task still unavailable; run as administrator once, or check the log"); } }
         public static string BRepairedHint     { get { return T("计划任务已重新注册，自动换图恢复正常", "Task re-registered; daily changes resumed"); } }
-        public static string BReadyHint        { get { return T("壁纸每天 0:10 自动更新，8:30 与 12:00 会补查一次。右键托盘图标可换图、收藏、暂停。", "Wallpaper updates daily at 00:10, with retries at 08:30 and 12:00. Right-click the tray icon to change, favorite, or pause."); } }
+        public static string BReadyHint        { get { return T("壁纸每天 0:10 自动更新，8:10 与 12:10 会补查一次。右键托盘图标可换图、收藏、暂停。", "Wallpaper updates daily at 00:10, with retries at 08:10 and 12:10. Right-click the tray icon to change, favorite, or pause."); } }
         public static string NoImageHint       { get { return T("换一天试试", "Try another date"); } }
         public static string NeedArchHint      { get { return T("2025-03 之前的日期要开启「增强数据源 ▸ 启用第三方归档」才能取到", "Dates before Mar 2025 need Data sources → Enable third-party archive"); } }
         public static string ArchDownHint      { get { return T("检查网络或代理，或在「增强数据源」里临时关闭后重试", "Check network or proxy, or disable Data sources and retry"); } }
@@ -616,7 +616,7 @@ namespace BingWallpaperLite
             {
                 return _en
                     ? @"1. Daily rotation
-    The wallpaper switches to today''s Bing image at 00:10, with retries at 08:30 and 12:00.
+    The wallpaper switches to today''s Bing image at 00:10, with retries at 08:10 and 12:10.
     To jump back to today: tray menu -> ""Change to today"".
 
 2. Browsing backwards
@@ -629,7 +629,7 @@ namespace BingWallpaperLite
     the title even before the image is downloaded; click an entry to fetch it.
 
 3. Finding by date
-    Tray menu -> ""Library"" -> ""Search by date"" opens a calendar.
+    Tray menu -> ""Search by date"" opens a calendar (top level, no need to open the library first).
     Dates shown in bold already have their image stored locally.
 
 4. Favorites, cache and archive
@@ -655,9 +655,23 @@ namespace BingWallpaperLite
     daily stories from December 2013.
     Start with the log: tray menu -> ""System"" -> ""Open log"".
     If automatic change stops working, the top line of the menu shows the scheduled
-    task status; click it to attempt a repair."
+    task status; click it to attempt a repair.
+
+8. Filter by festival
+    Tray menu -> ""Filter by festival"" -> pick one. The photo wall shows that
+    festival across the years. Nine festivals: Spring Festival, Lantern, Qingming,
+    Dragon Boat, Mid-Autumn, Double Ninth, National Day, New Years Day, New Years Eve.
+    Dates are computed from the lunar calendar on the spot: no network, never stale.
+
+9. Bulk download and takeover folder
+    ""Library -> Download wallpapers..."" saves a date range to a folder you pick,
+    with three quality levels: highest available (UHD), 1080p, mirror only.
+    Existing files are skipped, so an interrupted run can be resumed.
+    The result can be mounted as a takeover folder: tray menu -> ""Takeover folder...""
+    It is read-only; leaving takeover sends the sandbox to the Recycle Bin,
+    with an optional backup first."
                     : @"一、每天怎么换图
-    默认在 00:10 自动换成当天的必应图，8:30 与 12:00 各补查一次。
+    默认在 00:10 自动换成当天的必应图，8:10 / 12:10 各补查一次。
     想立刻回到今天：托盘菜单 →「换成今天」。
 
 二、往回翻
@@ -668,7 +682,7 @@ namespace BingWallpaperLite
     托盘菜单 →「往年的今天」列出历年同日的图；还没下载过的也会先显示标题，点一下才去取。
 
 三、按日期找
-    托盘菜单 →「壁纸库」→「按日期搜索」打开日历。
+    托盘菜单 →「按日期搜索…」打开日历（在主菜单里，不用先进壁纸库）。
     日历上显示为粗体的日期，表示本地已经有这一天的图。
 
 四、收藏、缓存与归档
@@ -689,7 +703,18 @@ namespace BingWallpaperLite
 七、数据来源与出问题怎么办
     主索引 Zhu-junwei、兜底 bing.wilii.cn、老存档 anerg，每日故事自 2013 年 12 月起。
     出问题先看日志：托盘菜单 →「系统」→「打开日志」。
-    自动换图不生效时，菜单顶部那行会显示计划任务状态，点它可以尝试修复。";
+    自动换图不生效时，菜单顶部那行会显示计划任务状态，点它可以尝试修复。
+
+八、按节日筛选
+    托盘菜单 →「按节日筛选」→ 选一个节日，照片墙会把历年这一天的图铺开。
+    九个节日：春节 / 元宵 / 清明 / 端午 / 中秋 / 重阳 / 国庆 / 元旦 / 除夕。
+    日期由农历算法现场算出，不需要联网，也不会随年份过时。
+
+九、批量下载与接管目录
+    「壁纸库 → 批量下载壁纸…」可以按日期范围把图下到指定目录，三档画质可选：
+    最高可用（UHD）/ 1080p / 只用镜像。已有同名文件会跳过，中断后接着跑。
+    下好的目录可以直接拿去做「接管目录」：托盘菜单 →「接管目录…」→ 选它。
+    接管是只读挂载，退出时沙盒整体进回收站，可选先备份。";
             }
         }
         public static string InfoBtnFaved    { get { return T("★ 已收藏", "★ Favorited"); } }
@@ -710,7 +735,7 @@ namespace BingWallpaperLite
         public static string CleanStoriesHint { get { return T("删掉的是本地缓存，下次查看时按需重新抓取；不影响壁纸与索引", "Removes the local cache only; stories are re-fetched on demand"); } }
 
         // ---------------- 关于正文
-        public static string AboutFeat1      { get { return T("· 每天 00:10 自动换当天的图，8:30 / 12:00 补查", "· Switches to today's image at 00:10, with retries at 08:30 / 12:00"); } }
+        public static string AboutFeat1      { get { return T("· 每天 00:10 自动换当天的图，8:10 / 12:10 补查", "· Switches to today's image at 00:10, with retries at 08:10 / 12:10"); } }
         public static string AboutFeat2      { get { return T("· 往回翻：最近 8 天直接取，更早的接续归档，可一路翻到 2009-07", "· Browse back: last 8 days from the API, older ones continue from the archive, all the way to Jul 2009"); } }
         public static string AboutFeat2b     { get { return T("· 日历跳到 2009-07 以来的任意一天（2016-03 前是存档图，分辨率较低）", "· Jump to any day since Jul 2009 (before Mar 2016 comes from an older archive at lower resolution)"); } }
         public static string AboutFeat3      { get { return T("· 收藏喜欢的图，收藏与缓存清理互不影响", "· Favorite images; favorites survive cache cleanup"); } }
@@ -770,6 +795,10 @@ namespace BingWallpaperLite
         public static string DlFrom            { get { return T("从", "From"); } }
         public static string DlTo              { get { return T("到", "To"); } }
         public static string DlDest            { get { return T("下载到", "Save to"); } }
+        public static string DlQuality { get { return T("画质", "Quality"); } }
+        public static string DlQualityUhd { get { return T("最高可用（UHD → 1080p）", "Highest (UHD → 1080p)"); } }
+        public static string DlQualityFhd { get { return T("1080p（体积约 1/15）", "1080p (about 1/15 the size)"); } }
+        public static string DlQualityHd { get { return T("只用镜像（1366×768）", "Mirror only (1366×768)"); } }
         public static string DlNote            { get { return T("本地已有同一张会直接跳过，不会重复下载", "Existing files are skipped, nothing is downloaded twice"); } }
         public static string DlBtn             { get { return T("开始", "Start"); } }
         public static string DlWorking         { get { return T("正在下载…", "Downloading…"); } }
