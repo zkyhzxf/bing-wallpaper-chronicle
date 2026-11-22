@@ -1434,6 +1434,29 @@ function Add-Pinned {
 
 # ---------------------------------------------------------------- 无 UHD 名单
 
+# 判断画质只能看真实分辨率，不能看文件大小 —— 实测同一个 _UHD 地址有时返回 1920×1080
+# （20230116、20230204），有时返回 3840×2160 但只有 2.3 MB（20230519），
+# 还有同一地址两次请求体积不一样的情况（20230618：1.4 MB / 3.9 MB）。
+function Get-ImagePixelWidth {
+    param([string]$Path)
+    if (-not $Path -or -not (Test-Path -LiteralPath $Path)) { return 0 }
+    try {
+        if (-not ('System.Drawing.Image' -as [type])) { Add-Type -AssemblyName System.Drawing }
+        $img = [System.Drawing.Image]::FromFile($Path)
+        $w = $img.Width
+        $img.Dispose()
+        return [int]$w
+    } catch { Write-Log ('读取图片尺寸失败：' + $Path + ' - ' + $_.Exception.Message) 'WARN' }
+    return 0
+}
+
+# 宽度不到 3000 就不是 UHD（3840 才算，1080p 是 1920）
+function Test-LowResImage {
+    param([string]$Path)
+    $w = Get-ImagePixelWidth -Path $Path
+    return ($w -gt 0 -and $w -lt 3000)
+}
+
 # 2019 年起 Bing 一般都有 UHD，但个别日期实测拿不到（_UHD 地址返回的是 1080p 内容）。
 # 升级尝试失败后记下这一天，下次不再白等一次下载。
 function Get-NoUhdSet {
@@ -3251,11 +3274,9 @@ try {
         # 文件名不变，收藏、索引、state 都不用动。收藏里的也照样升 —— 收藏存的是「这一天」，
         # 不是「当时那个画质」。
         if ($hit -and $Date -ge '20190101' -and -not (Test-NoUhd -Date8 $Date)) {
-            $upLen = 0
-            $fiUp = Get-Item -LiteralPath $hit.FullName -ErrorAction SilentlyContinue
-            if ($fiUp) { $upLen = $fiUp.Length }
-            if ($upLen -gt 0 -and $upLen -lt 2MB) {
-                Write-Log ("命中本地但只有 " + [math]::Round($upLen / 1KB) + " KB（预览档或旧镜像），重取原图并覆盖")
+            $wUp = Get-ImagePixelWidth -Path $hit.FullName
+            if ($wUp -gt 0 -and $wUp -lt 3000) {
+                Write-Log ("命中本地但只有 " + $wUp + " 像素宽（不是 UHD），重取原图并覆盖")
                 $script:UpgradeDest = $hit.FullName
                 $hit = $null
             }
@@ -3436,12 +3457,10 @@ try {
                         Add-Pinned -Date $Date
                         Write-State -Date $Date -File $dest -Title $archTtl -Copyright $archCpr -SearchUrl ([string]$rec.searchUrl) -ImageId $archId -AppliedDate $Date
                         if ($script:UpgradeDest) {
-                            $szUp = 0
-                            $fiSz = Get-Item -LiteralPath $dest -ErrorAction SilentlyContinue
-                            if ($fiSz) { $szUp = $fiSz.Length }
-                            if ($szUp -gt 0 -and $szUp -lt 2MB) {
+                            $wNew = Get-ImagePixelWidth -Path $dest
+                            if ($wNew -gt 0 -and $wNew -lt 3000) {
                                 Note-NoUhd -Date8 $Date
-                                Write-Log ("这天拿不到 UHD（" + [math]::Round($szUp / 1KB) + " KB），记入名单，下次不再白试")
+                                Write-Log ("这天拿不到 UHD（下载后仍只有 " + $wNew + " 像素宽），记入名单，下次不再白试")
                             }
                         }
                         Write-Log '--- 完成 ---'
@@ -3514,12 +3533,10 @@ try {
             }
             Write-State -Date $Date -File $dest -Title $cdTtl -Copyright $cdCpr -ImageId $cdId -AppliedDate $Date
             if ($script:UpgradeDest) {
-                $szUp2 = 0
-                $fiSz2 = Get-Item -LiteralPath $dest -ErrorAction SilentlyContinue
-                if ($fiSz2) { $szUp2 = $fiSz2.Length }
-                if ($szUp2 -gt 0 -and $szUp2 -lt 2MB) {
+                $wNew2 = Get-ImagePixelWidth -Path $dest
+                if ($wNew2 -gt 0 -and $wNew2 -lt 3000) {
                     Note-NoUhd -Date8 $Date
-                    Write-Log ("这天拿不到 UHD（" + [math]::Round($szUp2 / 1KB) + " KB），记入名单，下次不再白试")
+                    Write-Log ("这天拿不到 UHD（下载后仍只有 " + $wNew2 + " 像素宽），记入名单，下次不再白试")
                 }
             }
             if ($archTried) {
