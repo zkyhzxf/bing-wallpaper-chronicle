@@ -364,6 +364,8 @@ namespace BingWallpaperLite
         public static string WallFetching     { get { return T("正在取这张…", "Fetching…"); } }
         public static string WallFetchingN    { get { return T("正在取第 {0}/{1} 张…", "Fetching {0}/{1}…"); } }
         public static string WallFetchingPreview { get { return T("正在取第 {0}/{1} 张…（预览档 1080p）", "Fetching {0}/{1}… (1080p preview)"); } }
+        public static string WallUpgrading   { get { return T("正在取高清原图…（UHD，约 5 MB）", "Fetching the full-resolution original… (UHD, about 5 MB)"); } }
+        public static string WallPreviewHint { get { return T("（预览为 1080p，收藏或设为壁纸时自动换原图）", "(preview is 1080p; favoriting or setting as wallpaper upgrades to the original)"); } }
         public static string WallFetchDone(int ok, int total)
         {
             string tpl = _en ? "Fetched {0} of {1}" : "已取回 {0}/{1} 张";
@@ -678,7 +680,9 @@ namespace BingWallpaperLite
     faster than the original), and each image appears as soon as it lands, instead
     of waiting for the whole wall. Choosing ""save to archive"" on close upgrades
     every image to UHD again, so the archive still keeps the original.
-    Pass -WallFull to skip the preview step and take UHD directly."
+    Favoriting or setting a wallpaper also upgrades to the original first, so a
+    1080p preview never ends up in your favorites or on your desktop.
+    Set ""wallPreview"": ""uhd"" in config.json (or pass -WallFull) to take UHD directly."
                     : @"一、每天怎么换图
     默认在 00:10 自动换成当天的必应图，8:10 / 12:10 各补查一次。
     想立刻回到今天：托盘菜单 →「换成今天」。
@@ -730,7 +734,8 @@ namespace BingWallpaperLite
     缺图点「把缺的取回」：先取 1080p 当预览（一张约 0.3 MB，比原图快十倍），
     下完一张就显示一张，不用等整墙下完。
     关窗选「暂存到归档」时会自动补一次 UHD，所以归档里仍然是原图。
-    想整墙直接拿 UHD，用脚本参数 -WallFull。";
+    收藏或设为壁纸前也会先补原图，不会把 1080p 存进收藏夹、也不会拿它当桌面。
+    想整墙直接拿 UHD：config.json 里把 wallPreview 设成 ""uhd""，或用脚本参数 -WallFull。";
             }
         }
         public static string InfoBtnFaved    { get { return T("★ 已收藏", "★ Favorited"); } }

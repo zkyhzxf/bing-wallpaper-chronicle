@@ -670,6 +670,32 @@ Check '-WallFull 把 UHD 放回首位' {
     return $true
 }
 
+Check '-WallFull 会绕过墙里已有的预览档' {
+    $src = Get-Content $Script -Raw
+    if ($src -notmatch '-not \$WallFull -and \(Test-Path \$WallDir\)') { return 'wall 命中检查没加 -WallFull 条件' }
+    return $true
+}
+
+Check '收藏与设为壁纸前会补原图' {
+    $t = Get-Content $wallCs -Raw
+    if ($t -notmatch 'private string EnsureFullQuality\(') { return '没找到 EnsureFullQuality' }
+    $calls = ([regex]::Matches($t, 'src = EnsureFullQuality\(')).Count
+    if ($calls -lt 3) { return ('只调用了 ' + $calls + ' 处，应为 3 处') }
+    return $true
+}
+
+Check '2019 年前的日期不尝试升级' {
+    $t = Get-Content $wallCs -Raw
+    if ($t -notmatch 'FullQualityFrom\s*=\s*"20190101"') { return '没找到 20190101 门槛' }
+    return $true
+}
+
+Check '日历与信息窗口能看到照片墙的图' {
+    $t = Get-Content (Join-Path $Root 'src\Refresh.cs') -Raw
+    if ($t -notmatch 'Directory\.GetFiles\(WallDirPath') { return 'FindImageFilePath 没查 wall 目录' }
+    return $true
+}
+
 # ---------------------------------------------------------------- 汇总
 Write-Host ''
 Write-Host ('-' * 50) -ForegroundColor DarkGray

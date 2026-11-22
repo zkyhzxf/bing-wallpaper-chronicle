@@ -17,6 +17,9 @@ namespace BingWallpaperLite
     {
         private const int ThumbW = 320;
         private const int ThumbH = 180;
+        // 2019 年之前必应没有 UHD，预览档已经是最佳画质，不再尝试升级
+        private const string FullQualityFrom = "20190101";
+        private const long FullQualityBytes = 2L * 1024L * 1024L;
         private const int Gap = 16;
         private const int Pad = 12;
 
@@ -417,6 +420,72 @@ namespace BingWallpaperLite
             UpdateStatus();
         }
 
+        /// <summary>这个日期 + 这个文件是不是「预览档」（1080p 那种几百 KB 的）。</summary>
+        private static bool IsPreviewQuality(string d8, string path)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(path)) { return false; }
+                if (string.CompareOrdinal(d8, FullQualityFrom) < 0) { return false; }
+                FileInfo fi = new FileInfo(path);
+                return fi.Exists && fi.Length < FullQualityBytes;
+            }
+            catch { return false; }
+        }
+
+        private int CountPreviewQuality()
+        {
+            int n = 0;
+            foreach (WallCard c in cards)
+            {
+                if (!c.HasImage) { continue; }
+                if (IsPreviewQuality(c.Date8, c.Tag as string)) { n++; }
+            }
+            return n;
+        }
+
+        /// <summary>config.json 里的 wallPreview = uhd 时，取图直接要原图。</summary>
+        private bool PreviewAsUhd
+        {
+            get
+            {
+                try
+                {
+                    string v = Program.CfgString("wallPreview", "1080p");
+                    return string.Equals(v, "uhd", StringComparison.OrdinalIgnoreCase);
+                }
+                catch { return false; }
+            }
+        }
+
+        /// <summary>
+        /// 收藏 / 设为壁纸前把预览档换成原图。换不到就用手里这张，不阻断操作。
+        /// </summary>
+        private string EnsureFullQuality(string d8, string src)
+        {
+            if (string.IsNullOrEmpty(src)) { return src; }
+            if (PreviewAsUhd) { return src; }
+            if (!IsPreviewQuality(d8, src)) { return src; }
+            try
+            {
+                string before = lblStatus.Text;
+                lblStatus.Text = S.WallUpgrading;
+                lblStatus.Refresh();
+                Application.DoEvents();
+                Program.RunScriptExit("-WallDate " + d8 + " -WallFull");
+                string again = FindLocal(d8);
+                lblStatus.Text = before;
+                if (string.IsNullOrEmpty(again)) { return src; }
+                // 刷新卡片引用，缩略图不用换
+                foreach (WallCard c in cards)
+                {
+                    if (c.Date8 == d8) { c.Tag = again; break; }
+                }
+                return again;
+            }
+            catch { return src; }
+        }
+
         private void UpdateStatus()
         {
             try
@@ -435,6 +504,10 @@ namespace BingWallpaperLite
                 else if (missing.Count == 0)
                 {
                     txt = txt + "  " + S.WallIdleHint;
+                }
+                if (selected.Length == 0 && CountPreviewQuality() > 0)
+                {
+                    txt = txt + "  " + S.WallPreviewHint;
                 }
                 lblStatus.Text = txt;
                 btnFetch.Enabled = (missing.Count > 0) && !working;
@@ -481,6 +554,7 @@ namespace BingWallpaperLite
             if (card == null) { return; }
             string src = card.Tag as string;
             if (string.IsNullOrEmpty(src)) { FetchOne(card); return; }
+            src = EnsureFullQuality(card.Date8, src);
             try
             {
                 int code = Program.RunScriptExit("-Use \"" + src + "\"");
@@ -509,6 +583,7 @@ namespace BingWallpaperLite
             UpdateStatus();
             try
             {
+                src = EnsureFullQuality(c.Date8, src);
                 int code = Program.RunScriptExit("-Use \"" + src + "\"");
                 if (code == 0 || code == 4 || code == 8)
                 {
@@ -535,6 +610,7 @@ namespace BingWallpaperLite
             UpdateStatus();
             try
             {
+                src = EnsureFullQuality(c.Date8, src);
                 int code = Program.RunScriptExit("-Use \"" + src + "\"");
                 if (code != 0 && code != 4 && code != 8)
                 {
@@ -597,9 +673,10 @@ namespace BingWallpaperLite
             card.Invalidate();
             lblStatus.Text = S.WallFetching;
             btnFetch.Enabled = false;
+            string oneArgs = PreviewAsUhd ? ("-WallDate " + d8 + " -WallFull") : ("-WallDate " + d8);
             ThreadPool.QueueUserWorkItem(delegate
             {
-                Program.RunScriptExit("-WallDate " + d8);
+                Program.RunScriptExit(oneArgs);
                 try
                 {
                     BeginInvoke((MethodInvoker)delegate
@@ -637,7 +714,9 @@ namespace BingWallpaperLite
                         });
                     }
                     catch { }
-                    int code = Program.RunScriptExit("-WallDate " + d8);
+                    string args = "-WallDate " + d8;
+                    if (PreviewAsUhd) { args += " -WallFull"; }
+                    int code = Program.RunScriptExit(args);
                     if (code == 0 || code == 4 || code == 8) { ok++; }
                     // 下完一张就地刷新一张，不再等整批结束
                     string d8done = d8;

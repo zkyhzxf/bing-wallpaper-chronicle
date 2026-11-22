@@ -559,6 +559,17 @@ namespace BingWallpaperLite
                 }
                 catch { }
             }
+            // 照片墙临时目录：照片墙刚取到的图在这里，排在老存档之前
+            try
+            {
+                if (!string.IsNullOrEmpty(WallDirPath) && Directory.Exists(WallDirPath))
+                {
+                    string[] hitWall = Directory.GetFiles(WallDirPath, date + "_*.jpg");
+                    if (hitWall.Length > 0) { where = 5; return hitWall[0]; }
+                }
+            }
+            catch { }
+
             // 老存档（2009-08 ~ 2016-02）按月分目录，单独一查
             try
             {

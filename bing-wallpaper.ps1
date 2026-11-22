@@ -3135,7 +3135,8 @@ try {
                 $hit = $pfHit
             }
         }
-        if (-not $hit -and $script:WallMode -and (Test-Path $WallDir)) {
+        # -WallFull 是「我要原图」：墙里已有的预览档不算命中，重新下一次覆盖它
+        if (-not $hit -and $script:WallMode -and -not $WallFull -and (Test-Path $WallDir)) {
             $hit = Get-ChildItem $WallDir -Filter "${Date}_*.jpg" -File -ErrorAction SilentlyContinue | Select-Object -First 1
         }
         if ($hit) {
