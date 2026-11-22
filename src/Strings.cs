@@ -409,6 +409,9 @@ namespace BingWallpaperLite
         public static string InfoBtnSearch   { get { return T("了解更多", "Learn more"); } }
         public static string InfoBtnFolder   { get { return T("文件夹中打开", "Show in folder"); } }
         public static string InfoBtnMore     { get { return T("浏览更多壁纸", "Browse more"); } }
+        public static string InfoBtnFav      { get { return T("☆ 收藏", "☆ Favorite"); } }
+        public static string InfoBtnFaved    { get { return T("★ 已收藏", "★ Favorited"); } }
+        public static string InfoFavFail     { get { return T("这张图不在缓存或画廊里，无法收藏", "This image is not in the cache, so it cannot be favorited"); } }
         public static string InfoBtnPrev     { get { return T("◀ 上一张", "◀ Older"); } }
         public static string InfoBtnNext     { get { return T("下一张 ▶", "Newer ▶"); } }
         public static string InfoSwitching   { get { return T("正在切换…", "Switching…"); } }

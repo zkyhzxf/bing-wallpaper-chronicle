@@ -145,13 +145,12 @@ namespace BingWallpaperLite
         }
 
         /// <summary>画廊清理专用：不受 busy 阻断（下载中点关闭也必须生效），也不占用 busy 标志。</summary>
-        /// <summary>同步执行 -Step，供信息窗口原地翻页用。返回脚本退出码。</summary>
-        internal static int RunStep(int dir)
+        /// <summary>同步执行一条脚本指令并返回退出码，供信息窗口内的即时操作（翻页/收藏）使用。</summary>
+        internal static int RunScriptExit(string rawArgs)
         {
             try
             {
-                string args = "-Step " + (dir >= 0 ? "1" : "-1");
-                args = WithGallery(args);
+                string args = WithGallery(rawArgs);
                 ProcessStartInfo psi = new ProcessStartInfo();
                 psi.FileName = PowerShellExe;
                 psi.Arguments = "-NoProfile -ExecutionPolicy Bypass -File \"" + scriptPath + "\" " + args;
@@ -170,6 +169,12 @@ namespace BingWallpaperLite
                 }
             }
             catch { return -1; }
+        }
+
+        /// <summary>同步执行 -Step：dir &gt; 0 更早，dir &lt; 0 更新。</summary>
+        internal static int RunStep(int dir)
+        {
+            return RunScriptExit("-Step " + (dir >= 0 ? "1" : "-1"));
         }
 
         private static void RunGalleryClear()

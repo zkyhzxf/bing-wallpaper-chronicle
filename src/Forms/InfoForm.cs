@@ -27,6 +27,7 @@ namespace BingWallpaperLite
         private string curDate = "";
         private int storySeq = 0;
         private int storyY = 0;
+        private Button btnFav;
 
         /// <summary>读入内存再解码，避免 Image.FromFile 锁定壁纸文件。</summary>
         private static Bitmap MakeThumb(string file, int w, int h)
@@ -112,6 +113,12 @@ namespace BingWallpaperLite
             btnPrevNav = btnPrev;
             btnNextNav = btnNext;
 
+            btnFav = new Button();
+            btnFav.Text = S.InfoBtnFav;
+            btnFav.SetBounds(232, by, 110, 30);
+            btnFav.Click += delegate { ToggleFavorite(); };
+            Controls.Add(btnFav);
+
             by += 40;
 
             Button btnLearn = new Button();
@@ -184,6 +191,7 @@ namespace BingWallpaperLite
             Controls.Add(btnExpand);
 
             curDate = date;
+            RefreshFavState();
             LoadStoryAsync(date);
         }
 
@@ -221,6 +229,52 @@ namespace BingWallpaperLite
                                 ClientSize = new Size(620, storyY + 22 + 150 + 16);
                             };
                         }
+                    });
+                }
+                catch { }
+            });
+        }
+
+        /// <summary>按当前壁纸是否在收藏夹里，刷新按钮文字。</summary>
+        private void RefreshFavState()
+        {
+            if (btnFav == null) { return; }
+            try
+            {
+                bool fav = false;
+                try { fav = Program.IsCurrentFavorited(); } catch { }
+                btnFav.Text = fav ? S.InfoBtnFaved : S.InfoBtnFav;
+            }
+            catch { }
+        }
+
+        /// <summary>收藏 / 取消收藏，与托盘菜单的收藏项走完全相同的脚本指令。</summary>
+        private void ToggleFavorite()
+        {
+            bool isFav = false;
+            try { isFav = Program.IsCurrentFavorited(); } catch { }
+            string args = isFav ? "-Unfavorite" : "-Favorite";
+            if (btnFav != null) { btnFav.Enabled = false; }
+            SetNavEnabled(false);
+            System.Threading.ThreadPool.QueueUserWorkItem(delegate
+            {
+                int code = Program.RunScriptExit(args);
+                string[] st6 = null;
+                if (code == 0) { try { st6 = Program.ReadStateForInfo(); } catch { } }
+                try
+                {
+                    BeginInvoke((MethodInvoker)delegate
+                    {
+                        if (btnFav != null) { btnFav.Enabled = true; }
+                        SetNavEnabled(true);
+                        if (code == 3)
+                        {
+                            MessageBox.Show(S.InfoFavFail, Program.AppName, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                            RefreshFavState();
+                            return;
+                        }
+                        if (st6 != null) { Reload(st6[0], st6[1], st6[2], st6[3], st6[4], st6[5]); }
+                        else { RefreshFavState(); }
                     });
                 }
                 catch { }
@@ -285,6 +339,7 @@ namespace BingWallpaperLite
             if (!string.IsNullOrEmpty(sizeText)) { sb.AppendLine(S.InfoSize + sizeText); }
             lbl.Text = sb.ToString().Trim();
 
+            RefreshFavState();
             storySeq++;
             if (lblStoryHd != null) { lblStoryHd.Visible = false; }
             if (lblStory != null) { lblStory.Visible = false; }

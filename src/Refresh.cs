@@ -708,7 +708,7 @@ namespace BingWallpaperLite
             }
         }
 
-        private static bool IsCurrentFavorited()
+        internal static bool IsCurrentFavorited()
         {
             try
             {
