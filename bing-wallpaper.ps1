@@ -615,8 +615,9 @@ function Get-WallpaperListJson {
 function Get-WallpaperList {
     param([int]$Count)
     $json = Get-WallpaperListJson -Count $Count
-    $arr = @($json | ConvertFrom-Json)
-    return $arr
+    # PS 5.1 的 ConvertFrom-Json 在管道里不展开数组，必须先落到变量
+    $obj = $json | ConvertFrom-Json
+    return @($obj)
 }
 
 function Get-ZhTitleMap {
@@ -685,7 +686,8 @@ function Get-FullIndex {
         try {
             $age = (Get-Date) - (Get-Item $AllIndexPath).LastWriteTime
             if ($age.TotalDays -lt 7) {
-                return @(Get-Content $AllIndexPath -Raw -Encoding UTF8 | ConvertFrom-Json)
+                $arrC = Get-Content $AllIndexPath -Raw -Encoding UTF8 | ConvertFrom-Json
+                return @($arrC)
             }
         } catch { }
     }
@@ -710,7 +712,10 @@ function Get-FullIndex {
         if (Test-Path $AllIndexPath) {
             $oldAge = [math]::Round(((Get-Date) - (Get-Item $AllIndexPath).LastWriteTime).TotalDays, 1)
             Write-Log ('索引下载失败，改用本地旧索引（' + $oldAge + ' 天前）') 'WARN'
-            try { return @(Get-Content $AllIndexPath -Raw -Encoding UTF8 | ConvertFrom-Json) } catch { }
+            try {
+                $arrD = Get-Content $AllIndexPath -Raw -Encoding UTF8 | ConvertFrom-Json
+                return @($arrD)
+            } catch { }
         }
         throw '全量索引下载失败，且本地没有可用索引'
     }
@@ -1289,7 +1294,8 @@ if ($Status) {
     $idxAgeDays = -1
     if (Test-Path $AllIndexPath) {
         try {
-            $idxCount = @(Get-Content $AllIndexPath -Raw -Encoding UTF8 | ConvertFrom-Json).Count
+            $idxTmp = Get-Content $AllIndexPath -Raw -Encoding UTF8 | ConvertFrom-Json
+            $idxCount = @($idxTmp).Count
             $idxAgeDays = [math]::Round(((Get-Date) - (Get-Item $AllIndexPath).LastWriteTime).TotalDays, 2)
         } catch { }
     }
@@ -1659,7 +1665,8 @@ try {
             # 缓存索引里查不到就退回接口再查一次，别写空标题
             if (-not $meta -or [string]$meta.title -eq '') {
                 try {
-                    $l8 = @((Get-WallpaperListJson -Count 8) | ConvertFrom-Json)
+                    $l8obj = (Get-WallpaperListJson -Count 8) | ConvertFrom-Json
+                    $l8 = @($l8obj)
                     $hit8 = $l8 | Where-Object { [string]$_.startdate -eq $dateKey } | Select-Object -First 1
                     if ($hit8) {
                         $zhMap = Get-ZhTitleMap
@@ -2060,7 +2067,8 @@ try {
         }
 
         # 2) 接口 8 天内 → 走正常下载（带元信息）
-        $list8 = @((Get-WallpaperListJson -Count 8) | ConvertFrom-Json)
+        $list8obj = (Get-WallpaperListJson -Count 8) | ConvertFrom-Json
+        $list8 = @($list8obj)
         $pos8 = -1
         for ($i = 0; $i -lt $list8.Count; $i++) {
             if ([string]$list8[$i].startdate -eq $Date) { $pos8 = $i; break }
@@ -2303,7 +2311,8 @@ try {
     }
 
     $wpJson = Get-WallpaperListJson -Count ([Math]::Max($keepDays, 8))
-    $wallpapers = @($wpJson | ConvertFrom-Json)
+    $wpObj = $wpJson | ConvertFrom-Json
+    $wallpapers = @($wpObj)
     # ---- 联网模式
     Write-Log "微软接口返回 $($wallpapers.Count) 天"
 
