@@ -357,32 +357,31 @@ namespace BingWallpaperLite
             }
         }
 
-        /// <summary>选中当前日期 → 确认 → 关窗；取消则留在本窗口继续挑。</summary>
+        /// <summary>选中日期直接换图，窗口留着继续挑。</summary>
         private void AcceptPick()
         {
             string d = cal.SelectionStart.ToString("yyyyMMdd");
             if (string.IsNullOrEmpty(d)) { return; }
-
-            Cursor prev = Cursor;
-            try
-            {
-                Cursor = Cursors.WaitCursor;
-                string title = Program.LookupDateTitle(d);
-                string q = S.SrchConfirm + "\r\n\r\n" + d + "  " + title;
-                if (MessageBox.Show(q, Program.AppName + S.SrchConfirmTtl,
-                        MessageBoxButtons.OKCancel, MessageBoxIcon.Question) != DialogResult.OK)
-                {
-                    return;
-                }
-            }
-            finally
-            {
-                Cursor = prev;
-            }
-
             SelectedDate = d;
-            DialogResult = DialogResult.OK;
-            Close();
+            ok.Enabled = false;
+            lblWhere.Text = S.SrchWorking;
+            string d8 = d;
+            System.Threading.ThreadPool.QueueUserWorkItem(delegate
+            {
+                int code = Program.RunScriptExit("-Date " + d8);
+                try
+                {
+                    BeginInvoke((MethodInvoker)delegate
+                    {
+                        ok.Enabled = true;
+                        bool done = (code == 0 || code == 4 || code == 8);
+                        try { RefreshInfo(); } catch { }
+                        try { cal.BoldedDates = LocalDates().ToArray(); } catch { }
+                        lblWhere.Text = done ? S.SrchSwitched(d8) : S.SrchSwitchFail;
+                    });
+                }
+                catch { }
+            });
         }
 
         protected override void Dispose(bool disposing)

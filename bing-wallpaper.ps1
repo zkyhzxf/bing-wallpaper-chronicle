@@ -83,7 +83,9 @@ param(
     [switch]$CleanStories,
     [switch]$Status,
     [int]$BudgetSec = 0,
-    [int]$ProbeLockWait = 0
+    [int]$ProbeLockWait = 0,
+    [switch]$RebuildCacheIndex,
+    [switch]$AuditDates
 )
 
 $ErrorActionPreference = 'Stop'
@@ -159,6 +161,53 @@ function Get-DownloadDir {
     return $d
 }
 $DownDir = Get-DownloadDir
+
+# 把 cache 根目录里的一张图补进 cache\index.json；文件不在 cache 根就跳过。
+# 命中本地 / 预取转正 / 复用旧文件这三条路径以前不写索引，cache 里就会出现查不到标题的孤儿文件。
+function Update-CacheIndex {
+    param([string]$Date, [string]$Path, [string]$Title, [string]$Copyright, [string]$ImageId)
+    try {
+        if ($script:NoApply -or $Gallery) { return }
+        if ($Date.Length -ne 8 -or -not $Path -or -not (Test-Path $Path)) { return }
+        $dir = Split-Path -Parent $Path
+        if (-not $dir) { return }
+        $di = New-Object System.IO.DirectoryInfo($dir)
+        $ci = New-Object System.IO.DirectoryInfo($CacheDir)
+        if ($di.FullName -ne $ci.FullName) { return }
+        $catalog = @{}
+        if (Test-Path $IndexPath) {
+            try {
+                $old = Get-Content $IndexPath -Raw -Encoding UTF8 | ConvertFrom-Json
+                foreach ($pp in $old.PSObject.Properties) { $catalog[$pp.Name] = $pp.Value }
+            } catch { }
+        }
+        $ttl = [string]$Title
+        $cpr = [string]$Copyright
+        $iid = [string]$ImageId
+        if (-not $ttl) {
+            try {
+                $rec = Get-ArchiveRecord -Date $Date
+                if ($rec) {
+                    if (-not $ttl) { $ttl = [string]$rec.title }
+                    if (-not $cpr) { $cpr = [string]$rec.copyright }
+                    if (-not $iid) { $iid = [string]$rec.id }
+                }
+            } catch { }
+        }
+        $catalog[$Date] = [ordered]@{
+            title     = $ttl
+            titleEn   = ''
+            copyright = $cpr
+            file      = (Split-Path $Path -Leaf)
+            imageId   = $iid
+            sizeBytes = (Get-Item $Path).Length
+        }
+        [System.IO.File]::WriteAllText($IndexPath, ($catalog | ConvertTo-Json -Depth 6), (New-Object System.Text.UTF8Encoding($false)))
+        Write-Log ("已补写 cache 索引：$Date")
+    } catch {
+        Write-Log ("补写 cache 索引失败：" + $_.Exception.Message) 'WARN'
+    }
+}
 
 # ---------------------------------------------------------------- 日志
 
@@ -1488,6 +1537,116 @@ function Exit-Run {
     exit $Code
 }
 
+# ---------------------------------------------------------------- 重建缓存索引
+
+if ($RebuildCacheIndex) {
+    $catalog = @{}
+    if (Test-Path $IndexPath) {
+        try {
+            $old = Get-Content $IndexPath -Raw -Encoding UTF8 | ConvertFrom-Json
+            foreach ($pp in $old.PSObject.Properties) { $catalog[$pp.Name] = $pp.Value }
+        } catch { }
+    }
+    $added = 0
+    $kept = 0
+    $skipped = 0
+    foreach ($f in @(Get-ChildItem $CacheDir -Filter '*.jpg' -File -ErrorAction SilentlyContinue)) {
+        $m = [regex]::Match($f.Name, '^(\d{8})_')
+        if (-not $m.Success) { $skipped++; continue }
+        $d8 = $m.Groups[1].Value
+        if ($catalog.ContainsKey($d8) -and [string]$catalog[$d8].title) { $kept++; continue }
+        $ttl = ''
+        $cpr = ''
+        $iid = ''
+        try {
+            $rec = Get-ArchiveRecord -Date $d8
+            if ($rec) {
+                $ttl = [string]$rec.title
+                $cpr = [string]$rec.copyright
+                $iid = [string]$rec.id
+            }
+        } catch { }
+        $catalog[$d8] = [ordered]@{
+            title     = $ttl
+            titleEn   = ''
+            copyright = $cpr
+            file      = $f.Name
+            imageId   = $iid
+            sizeBytes = $f.Length
+        }
+        $added++
+    }
+    if ($DryRun) {
+        Write-Host ("[DryRun] 需补写 $added 条，已有 $kept 条，跳过 $skipped 个文件")
+        exit 0
+    }
+    [System.IO.File]::WriteAllText($IndexPath, ($catalog | ConvertTo-Json -Depth 6), (New-Object System.Text.UTF8Encoding($false)))
+    Write-Host ("补写 $added 条，已有 $kept 条，跳过 $skipped 个文件")
+    exit 0
+}
+
+# ---------------------------------------------------------------- 日期自查
+
+if ($AuditDates) {
+    $allArr = @()
+    $oldArr = @()
+    $wilArr = @()
+    # PS 5.1 的 ConvertFrom-Json 在管道里不展开数组，必须先落变量再包装
+    try { $tmpAll = Get-Content (Join-Path $ArchiveDir 'all-index.json') -Raw -Encoding UTF8 | ConvertFrom-Json; $allArr = @($tmpAll) } catch { }
+    try { $tmpOld = Get-Content (Join-Path $ArchiveDir 'old-index.json') -Raw -Encoding UTF8 | ConvertFrom-Json; $oldArr = @($tmpOld) } catch { }
+    try { $tmpWil = Get-Content (Join-Path $ArchiveDir 'wilii-index.json') -Raw -Encoding UTF8 | ConvertFrom-Json; $wilArr = @($tmpWil) } catch { }
+
+    $allMap = @{}
+    $dupAll = 0
+    foreach ($e in $allArr) { $k = [string]$e.d; if ($k.Length -eq 8) { if ($allMap.ContainsKey($k)) { $dupAll++ }; $allMap[$k] = [string]$e.t } }
+    $oldMap = @{}
+    foreach ($e in $oldArr) { $k = [string]$e.d; if ($k.Length -eq 8) { $oldMap[$k] = [string]$e.t } }
+    $wilMap = @{}
+    foreach ($e in $wilArr) { $k = [string]$e.d; if ($k.Length -eq 8) { $wilMap[$k] = [string]$e.n } }
+
+    Write-Host ('all-index {0} 条，old-index {1} 条，wilii-index {2} 条' -f $allMap.Count, $oldMap.Count, $wilMap.Count)
+
+    # 显式 foreach：Hashtable.Keys 在管道里会被当成一个集合对象，Where-Object 只求值一次
+    $below = 0
+    foreach ($k in $allMap.Keys) { if ($k -lt $ArchiveMinDate) { $below++ } }
+    foreach ($k in $oldMap.Keys) { if ($k -lt $ArchiveMinDate) { $below++ } }
+    foreach ($k in $wilMap.Keys) { if ($k -lt $ArchiveMinDate) { $below++ } }
+    Write-Host ('早于下界 {0} 的条目：{1} 个' -f $ArchiveMinDate, $below)
+
+    $onlyAll = New-Object System.Collections.ArrayList
+    foreach ($k in $allMap.Keys) { if (-not $wilMap.ContainsKey($k)) { [void]$onlyAll.Add($k) } }
+    $onlyWil = New-Object System.Collections.ArrayList
+    foreach ($k in $wilMap.Keys) { if (-not $allMap.ContainsKey($k)) { [void]$onlyWil.Add($k) } }
+    Write-Host ('只在 all-index 里：{0} 个；只在 wilii-index 里：{1} 个' -f $onlyAll.Count, $onlyWil.Count)
+    if ($onlyAll.Count -gt 0) { Write-Host ('  样本: ' + (($onlyAll | Sort-Object | Select-Object -First 5) -join ', ')) }
+    if ($onlyWil.Count -gt 0) { Write-Host ('  样本: ' + (($onlyWil | Sort-Object | Select-Object -First 5) -join ', ')) }
+
+    $conflict = 0
+    $samples = New-Object System.Collections.ArrayList
+    foreach ($f in @(Get-ChildItem $ArchiveDir -Filter '20??-??.json' -File -ErrorAction SilentlyContinue)) {
+        try {
+            $mu = Get-Content $f.FullName -Raw -Encoding UTF8 | ConvertFrom-Json
+            foreach ($pp in $mu.PSObject.Properties) {
+                $d8 = [string]$pp.Name
+                $mt = [string]$pp.Value.t
+                $at = ''
+                if ($allMap.ContainsKey($d8)) { $at = [string]$allMap[$d8] }
+                if ($mt -and $at -and $at -ne $mt) {
+                    $conflict++
+                    if ($samples.Count -lt 5) { [void]$samples.Add(($d8 + ' 月份[' + $mt + '] 全量[' + $at + ']')) }
+                }
+            }
+        } catch { }
+    }
+    Write-Host ('月份缓存与全量索引的标题冲突：{0} 条' -f $conflict)
+    foreach ($s in $samples) { Write-Host ('  ' + $s) }
+
+    Write-Host ('全量索引重复日期：{0} 组' -f $dupAll)
+    Write-Host '自查完成（只读，未改动任何文件）'
+    exit 0
+}
+
+
 # ---------------------------------------------------------------- 状态查询
 
 if ($Status) {
@@ -2319,6 +2478,7 @@ try {
                 } catch { }
             }
             # 翻页/取历史图命中本地时也要进保留名单，否则会被自动清理删掉
+            Update-CacheIndex -Date $Date -Path $hit.FullName -Title $tTitle -Copyright $tCpr -ImageId $tId
             Add-Pinned -Date $Date
             if ($tTitle.Length -gt 60) { $tTitle = $tTitle.Substring(0, 60) }
             Write-State -Date $Date -File $hit.FullName -Title $tTitle -Copyright $tCpr -SearchUrl $tSearch -ImageId $tId -AppliedDate $Date

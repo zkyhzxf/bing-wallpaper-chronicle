@@ -77,9 +77,9 @@ namespace BingWallpaperLite
             Controls.Add(btnApply);
 
             Button btnCancel = new Button();
-            btnCancel.Text = S.BtnCancel;
+            btnCancel.Text = S.BtnClose;
             btnCancel.SetBounds(514, 422, 86, 32);
-            btnCancel.DialogResult = DialogResult.Cancel;
+            btnCancel.Click += delegate { Close(); };
             Controls.Add(btnCancel);
 
             AcceptButton = btnSearch;
@@ -222,22 +222,33 @@ namespace BingWallpaperLite
             return d[k].ToString();
         }
 
+        /// <summary>选中一条就直接换图，窗口留着 —— 换图不再是「关窗确认」的副作用。</summary>
         private void Accept()
         {
             if (lst.SelectedIndex < 0 || lst.SelectedIndex >= results.Count) { return; }
             string date = results[lst.SelectedIndex][0];
-            string title = results[lst.SelectedIndex][1];
-
-            string q = S.SrchConfirm + "\r\n\r\n" + date + "  " + title;
-            if (MessageBox.Show(q, Program.AppName + S.SrchConfirmTtl,
-                    MessageBoxButtons.OKCancel, MessageBoxIcon.Question) != DialogResult.OK)
-            {
-                return;
-            }
-
             PickedDate = date;
-            DialogResult = DialogResult.OK;
-            Close();
+
+            btnApply.Enabled = false;
+            btnSearch.Enabled = false;
+            lblStatus.Text = S.SrchWorking;
+            string d8 = date;
+            System.Threading.ThreadPool.QueueUserWorkItem(delegate
+            {
+                int code = Program.RunScriptExit("-Date " + d8);
+                try
+                {
+                    BeginInvoke((MethodInvoker)delegate
+                    {
+                        btnSearch.Enabled = true;
+                        btnApply.Enabled = (lst.SelectedIndex >= 0);
+                        lblStatus.Text = (code == 0 || code == 4 || code == 8)
+                            ? S.SrchSwitched(d8)
+                            : S.SrchSwitchFail;
+                    });
+                }
+                catch { }
+            });
         }
     }
     /// <summary>「这张图是哪儿」窗口：缩略图 + 信息 + 两个外链按钮。</summary>

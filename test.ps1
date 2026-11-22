@@ -290,6 +290,39 @@ Check '下载总预算参数与落点函数就位' {
     return $true
 }
 
+Check '-RebuildCacheIndex -DryRun 不改索引文件' {
+    $idx = Join-Path $Root 'cache\index.json'
+    $beforeTicks = (Get-Item $idx).LastWriteTimeUtc.Ticks
+    $beforeLen = (Get-Item $idx).Length
+    $r = Run-Script @('-RebuildCacheIndex', '-DryRun')
+    if ($r.Code -ne 0) { return ('退出码 ' + $r.Code) }
+    if ($r.Output -notmatch 'DryRun') { return '输出里没有 DryRun 标记' }
+    if ((Get-Item $idx).LastWriteTimeUtc.Ticks -ne $beforeTicks) { return '索引文件被改动了' }
+    if ((Get-Item $idx).Length -ne $beforeLen) { return '索引文件长度变了' }
+    return $true
+}
+
+Check '-AuditDates 输出三方索引统计' {
+    $r = Run-Script @('-AuditDates')
+    if ($r.Code -ne 0) { return ('退出码 ' + $r.Code) }
+    foreach ($need in @('all-index', 'old-index', 'wilii-index', '标题冲突', '自查完成')) {
+        if ($r.Output.IndexOf($need) -lt 0) { return ('输出缺少: ' + $need) }
+    }
+    if ($r.Output -match 'all-index 0 条') { return '三方索引都解析成 0 条' }
+    return $true
+}
+
+Check '往年的今天不再拼后缀字，且用（无标题）兜底' {
+    $str = Get-Content (Join-Path $Root 'src\Strings.cs') -Raw -Encoding UTF8
+    foreach ($bad in @('ClickFetchSfx', 'NeedArchiveSfx')) {
+        if ($str.IndexOf($bad) -ge 0) { return ('Strings.cs 里还有 ' + $bad) }
+    }
+    $ref = Get-Content (Join-Path $Root 'src\Refresh.cs') -Raw -Encoding UTF8
+    if ($ref.IndexOf('ClickFetchSfx') -ge 0) { return 'Refresh.cs 还在用 ClickFetchSfx' }
+    if ($ref.IndexOf('S.NoTitle') -lt 0) { return 'Refresh.cs 没有用 S.NoTitle 兜底' }
+    return $true
+}
+
 # ---------------------------------------------------------------- 5. 数据完整性
 Write-Host ''
 Write-Host '[5] 数据完整性' -ForegroundColor Yellow

@@ -346,8 +346,34 @@ namespace BingWallpaperLite
         public static string WorkingDots    { get { return T(" · 处理中…", " · working…"); } }
         public static string DaysSuffix     { get { return _en ? " days)" : " 天）"; } }
         public static string DaysPrefix     { get { return _en ? " (" : "（"; } }
-        public static string NeedArchiveSfx { get { return T("  （需要增强数据源）", "  (requires Data sources)"); } }
-        public static string ClickFetchSfx  { get { return T("  （点击获取）", "  (click to fetch)"); } }
+        public static string NoTitle        { get { return T("（无标题）", "(no title)"); } }
+        public static string ReloadIndex    { get { return T("重新载入索引", "Reload index"); } }
+        public static string SrchWorking    { get { return T("正在换图…", "Switching…"); } }
+        public static string SrchSwitchFail { get { return T("换图失败，可以再点一次", "Switch failed; try again"); } }
+        public static string BtnClose       { get { return T("关闭", "Close"); } }
+
+        public static string SrchSwitched(string date)
+        {
+            return _en ? ("Switched to " + date) : ("已切换到 " + date);
+        }
+
+        public static string GalleryBalloonOn
+        {
+            get { return T("画廊模式已开启", "Gallery mode on"); }
+        }
+        public static string GalleryBalloonOnHint
+        {
+            get { return T("看的图存在画廊目录，不登记保护名单；关掉模式会清空", "Images go to the gallery folder and are not protected; turning it off clears them"); }
+        }
+        public static string GalleryBalloonOff(int n, double mb)
+        {
+            string tpl = _en ? "Gallery mode off, cleared {0} images / {1} MB" : "画廊模式已关闭，已清空 {0} 张 · {1} MB";
+            return string.Format(tpl, n, mb.ToString("0.0"));
+        }
+        public static string GalleryBalloonOffHint
+        {
+            get { return T("桌面壁纸保持不变，缓存与归档不受影响", "Desktop wallpaper is unchanged; cache and archive are untouched"); }
+        }
         public static string ArchSrcOn      { get { return T("来源 Zhu-junwei（2016 起）+ niumoo 兜底", "Source: Zhu-junwei (since 2016) + niumoo fallback"); } }
         public static string ArchSrcOff     { get { return T("已关闭，8 天以外的日期只能走压缩版", "Disabled; dates older than 8 days fall back to compressed"); } }
         public static string ArchCacheInfo(int months, double kb)
@@ -501,6 +527,7 @@ namespace BingWallpaperLite
         public static string InfoRetrying    { get { return T("正在取图…（第 {0}/{1} 次）", "Fetching… (attempt {0}/{1})"); } }
         public static string StoryTitle      { get { return T("每日故事", "Daily story"); } }
         public static string StoryExpand     { get { return T("展开全文", "Read more"); } }
+        public static string StoryCollapse   { get { return T("收起", "Collapse"); } }
         public static string StoryLoading    { get { return T("正在获取故事…", "Loading story…"); } }
         public static string CleanStories    { get { return T("清理每日故事缓存", "Clear story cache"); } }
         public static string CleanStoriesN   { get { return T("清理每日故事缓存（{0} 条）", "Clear story cache ({0})"); } }

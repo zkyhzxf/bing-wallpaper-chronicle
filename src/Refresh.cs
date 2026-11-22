@@ -25,6 +25,9 @@ namespace BingWallpaperLite
         // 这样某层出问题时能立刻定位，不用像之前那样在一个 60 行函数里猜。
 
         /// <summary>刷新编排入口：只负责防重入与调度，不做具体工作。</summary>
+        private static SearchForm searchForm;
+        private static CalendarForm calForm;
+
         private static void RefreshAll()
         {
             if (refreshing) { return; }
@@ -222,26 +225,21 @@ namespace BingWallpaperLite
         private static void DoPickDate()
         {
             if (busy) { return; }
-            using (CalendarForm f = new CalendarForm())
-            {
-                if (f.ShowDialog() != DialogResult.OK) { return; }
-                string d = f.SelectedDate;
-                if (string.IsNullOrEmpty(d)) { return; }
-                // 确认已在 CalendarForm.AcceptPick 里做过，这里直接换图
-                anchor.BeginInvoke((MethodInvoker)delegate { RunScriptEx("-Date " + d, "date"); });
-            }
+            // 非模态常驻：选中日期直接换图，窗口留着，方便连着挑几天
+            if (calForm != null && !calForm.IsDisposed) { calForm.Activate(); return; }
+            calForm = new CalendarForm();
+            calForm.FormClosed += delegate { calForm = null; RefreshAll(); };
+            calForm.Show();
         }
 
         private static void DoSearch()
         {
             if (busy) { return; }
-            using (SearchForm f = new SearchForm())
-            {
-                if (f.ShowDialog() != DialogResult.OK) { return; }
-                string d = f.PickedDate;
-                if (string.IsNullOrEmpty(d)) { return; }
-                anchor.BeginInvoke((MethodInvoker)delegate { RunScriptEx("-Date " + d, "search"); });
-            }
+            // 非模态常驻：选中结果直接换图，窗口留着，可以接着搜下一组
+            if (searchForm != null && !searchForm.IsDisposed) { searchForm.Activate(); return; }
+            searchForm = new SearchForm();
+            searchForm.FormClosed += delegate { searchForm = null; RefreshAll(); };
+            searchForm.Show();
         }
 
         private static void DoAi()
@@ -364,6 +362,7 @@ namespace BingWallpaperLite
             lib.DropDownItems.Add(MakeItem(S.OpenCacheDir, delegate { OpenTarget(cacheDir); }));
             lib.DropDownItems.Add(MakeItem(S.OpenFavDir, delegate { OpenTarget(favDir); }));
             lib.DropDownItems.Add(MakeItem(S.OpenArchiveDir, delegate { OpenTarget(archiveImgDir); }));
+            lib.DropDownItems.Add(MakeItem(S.ReloadIndex, delegate { InvalidateArchiveIndex(); RefreshAll(); }));
             lib.DropDownItems.Add(MakeItem(S.ExportDownloaded, delegate { DoExportDownloaded(); }));
             lib.DropDownItems.Add(MakeItem(S.DownloadRange, delegate { DoDownloadRange(); }));
         }
@@ -701,13 +700,13 @@ namespace BingWallpaperLite
                 int us = name.IndexOf('_');
                 string fileDate = us > 0 ? name.Substring(0, us) : name;
 
-                string label = name;
+                // 标题查不到时只显示日期 +（无标题），不再回落到 20261105_OHR.StileCrossing 这种英文文件名
+                string t = "";
                 if (idx != null && idx.ContainsKey(fileDate))
                 {
-                    Dictionary<string, object> entry = idx[fileDate] as Dictionary<string, object>;
-                    string t = GetStr(entry, "title");
-                    if (t.Length > 0) { label = fileDate + "  " + t; }
+                    t = GetStr(idx[fileDate] as Dictionary<string, object>, "title");
                 }
+                string label = fileDate + "  " + (t.Length > 0 ? t : S.NoTitle);
 
                 label = (fileDate == currentDate) ? ("● " + label) : ("　 " + label);
 
@@ -1016,18 +1015,14 @@ namespace BingWallpaperLite
                         ttl = GetStr(cacheIdx[key] as Dictionary<string, object>, "title");
                     }
                     if (ttl.Length == 0) { ttl = ArchiveTitleOf(archiveIdx, key); }
-                    label = label + "  " + (ttl.Length > 0 ? ttl : Path.GetFileNameWithoutExtension(localFile));
-                }
-                else if (!archiveOn)
-                {
-                    label = label + S.NeedArchiveSfx;
+                    label = label + "  " + (ttl.Length > 0 ? ttl : S.NoTitle);
                 }
                 else
                 {
                     // 标题在本地索引里（all-index 覆盖 2016-03 起、old-index 覆盖 2009-07 起），
-                    // 没下载过也能先把名字显示出来，用户不用点开才知道是什么
+                    // 没下载过也先把名字显示出来；能不能点由 Enabled 表达，不再拼后缀字
                     string ttl = ArchiveTitleOf(archiveIdx, key);
-                    label = label + (ttl.Length > 0 ? ("  " + ttl) : "") + S.ClickFetchSfx;
+                    label = label + "  " + (ttl.Length > 0 ? ttl : S.NoTitle);
                 }
 
                 ToolStripMenuItem it = new ToolStripMenuItem(label);
@@ -1059,6 +1054,13 @@ namespace BingWallpaperLite
 
         private static Dictionary<string, object> archIdxCache;
         private static string archIdxStamp;
+
+        /// <summary>让归档索引缓存立即失效（索引文件被外部改写后手动调用）。</summary>
+        internal static void InvalidateArchiveIndex()
+        {
+            archIdxCache = null;
+            archIdxStamp = null;
+        }
 
         /// <summary>归档索引的合并标题，key 为 8 位日期；不带就返回空串。</summary>
         private static string ArchiveTitleOf(Dictionary<string, object> idx, string key)

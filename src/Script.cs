@@ -184,27 +184,55 @@ namespace BingWallpaperLite
             return RunScriptExit("-PrefetchDate " + date);
         }
 
-        private static void RunGalleryClear()
+        /// <summary>清画廊但不要提示（程序启动、退出时用）。</summary>
+        private static void RunGalleryClear() { RunGalleryClear(null); }
+
+        /// <summary>清画廊；done 不为 null 时在清完后回调（清掉的张数、MB），并全程在后台线程跑，不卡界面。</summary>
+        internal static void RunGalleryClear(System.Action<int, double> done)
         {
-            if (!File.Exists(scriptPath)) { return; }
+            int n0 = 0;
+            double mb0 = 0;
             try
             {
-                ProcessStartInfo psi = new ProcessStartInfo();
-                psi.FileName = PowerShellExe;
-                psi.Arguments = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File \"" + scriptPath + "\" -GalleryClear";
-                psi.UseShellExecute = false;
-                psi.CreateNoWindow = true;
-                psi.RedirectStandardOutput = true;
-                psi.RedirectStandardError = true;
-                using (Process p = Process.Start(psi))
+                string gd = GalleryDirPath;
+                if (Directory.Exists(gd))
                 {
-                    System.Threading.Tasks.Task<string> gOut = p.StandardOutput.ReadToEndAsync();
-                    System.Threading.Tasks.Task<string> gErr = p.StandardError.ReadToEndAsync();
-                    if (!p.WaitForExit(60000)) { try { p.Kill(); } catch { } }
-                    else { try { gOut.Wait(2000); } catch { } try { gErr.Wait(2000); } catch { } }
+                    foreach (string f in Directory.GetFiles(gd, "*.jpg"))
+                    {
+                        try { mb0 += (new FileInfo(f)).Length / 1024.0 / 1024.0; n0++; } catch { }
+                    }
                 }
             }
             catch { }
+
+            ThreadPool.QueueUserWorkItem(delegate
+            {
+                if (File.Exists(scriptPath))
+                {
+                    try
+                    {
+                        ProcessStartInfo psi = new ProcessStartInfo();
+                        psi.FileName = PowerShellExe;
+                        psi.Arguments = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File \"" + scriptPath + "\" -GalleryClear";
+                        psi.UseShellExecute = false;
+                        psi.CreateNoWindow = true;
+                        psi.RedirectStandardOutput = true;
+                        psi.RedirectStandardError = true;
+                        using (Process p = Process.Start(psi))
+                        {
+                            System.Threading.Tasks.Task<string> gOut = p.StandardOutput.ReadToEndAsync();
+                            System.Threading.Tasks.Task<string> gErr = p.StandardError.ReadToEndAsync();
+                            if (!p.WaitForExit(60000)) { try { p.Kill(); } catch { } }
+                            else { try { gOut.Wait(2000); } catch { } try { gErr.Wait(2000); } catch { } }
+                        }
+                    }
+                    catch { }
+                }
+                if (done != null)
+                {
+                    try { done(n0, Math.Round(mb0, 1)); } catch { }
+                }
+            });
         }
 
         private static void RunScriptEx(string arguments, string opMode)

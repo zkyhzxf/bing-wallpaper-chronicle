@@ -27,6 +27,8 @@ namespace BingWallpaperLite
         private string curDate = "";
         private int storySeq = 0;
         private int storyY = 0;
+        private bool storyExpanded = false;
+        private string storyFull = "";
         private Button btnFav;
         private readonly System.Collections.Generic.HashSet<string> pfetched =
             new System.Collections.Generic.HashSet<string>();
@@ -178,6 +180,7 @@ namespace BingWallpaperLite
             btnExpand.Text = S.StoryExpand;
             btnExpand.SetBounds(20, sy + 82, 92, 26);
             btnExpand.Visible = false;
+            btnExpand.Click += delegate { ToggleStory(); };
             Controls.Add(btnExpand);
 
             curDate = date;
@@ -203,23 +206,20 @@ namespace BingWallpaperLite
                     BeginInvoke((MethodInvoker)delegate
                     {
                         if (seq != storySeq) { return; }
+                        // 每次换故事都回到收起态：高度、按钮位置、按钮文字一起复位，
+                        // 否则上一张展开过的 150 高度会留到这一张，正文被裁出省略号
                         bool longText = story.Length > 150;
                         string brief = longText ? story.Substring(0, 150) + "…" : story;
+                        storyFull = story;
+                        storyExpanded = false;
                         lblStoryHd.Visible = true;
                         lblStory.Text = brief;
+                        lblStory.SetBounds(20, storyY + 22, 580, 56);
                         lblStory.Visible = true;
+                        btnExpand.Text = S.StoryExpand;
+                        btnExpand.SetBounds(20, storyY + 82, 92, 26);
+                        btnExpand.Visible = longText;
                         ClientSize = new Size(620, storyY + 22 + (longText ? 92 : 62) + 16);
-                        if (longText)
-                        {
-                            btnExpand.Visible = true;
-                            btnExpand.Click += delegate
-                            {
-                                lblStory.Text = story;
-                                btnExpand.Visible = false;
-                                lblStory.SetBounds(20, storyY + 22, 580, 150);
-                                ClientSize = new Size(620, storyY + 22 + 150 + 16);
-                            };
-                        }
                     });
                 }
                 catch { }
@@ -377,6 +377,30 @@ namespace BingWallpaperLite
             });
         }
 
+        /// <summary>展开 / 收起每日故事。展开状态只影响本张图，翻页由 Reload 复位。</summary>
+        private void ToggleStory()
+        {
+            if (string.IsNullOrEmpty(storyFull)) { return; }
+            storyExpanded = !storyExpanded;
+            bool longText = storyFull.Length > 150;
+            if (storyExpanded)
+            {
+                lblStory.Text = storyFull;
+                lblStory.SetBounds(20, storyY + 22, 580, 150);
+                btnExpand.Text = S.StoryCollapse;
+                btnExpand.SetBounds(20, storyY + 22 + 150 + 8, 92, 26);
+                ClientSize = new Size(620, storyY + 22 + 150 + 8 + 26 + 12);
+            }
+            else
+            {
+                lblStory.Text = longText ? (storyFull.Substring(0, 150) + "…") : storyFull;
+                lblStory.SetBounds(20, storyY + 22, 580, 56);
+                btnExpand.Text = S.StoryExpand;
+                btnExpand.SetBounds(20, storyY + 82, 92, 26);
+                ClientSize = new Size(620, storyY + 22 + (longText ? 92 : 62) + 16);
+            }
+        }
+
         /// <summary>用新数据刷新窗口内容，布局保持不动。</summary>
         private void Reload(string date, string title, string copyright, string file, string sizeText, string searchUrl)
         {
@@ -402,7 +426,15 @@ namespace BingWallpaperLite
             storySeq++;
             if (lblStoryHd != null) { lblStoryHd.Visible = false; }
             if (lblStory != null) { lblStory.Visible = false; }
-            if (btnExpand != null) { btnExpand.Visible = false; }
+            if (btnExpand != null)
+            {
+                btnExpand.Visible = false;
+                btnExpand.Text = S.StoryExpand;
+                btnExpand.SetBounds(20, storyY + 82, 92, 26);
+            }
+            if (lblStory != null) { lblStory.SetBounds(20, storyY + 22, 580, 56); }
+            storyExpanded = false;
+            storyFull = "";
             ClientSize = new Size(620, storyY + 16);
             LoadStoryAsync(date);
             PrefetchAround(date);

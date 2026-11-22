@@ -48,7 +48,19 @@ namespace BingWallpaperLite
                 GalleryMode = turnOn;
                 // 开、关都清一次：开时清上次的残留，关时清本次看过的
                 // 走独立通道：下载中点关闭也要生效（RunScriptEx 会被 busy 挡掉）
-                anchor.BeginInvoke((MethodInvoker)delegate { RunGalleryClear(); });
+                // 手动切换才发气泡；程序启动与退出时的清理传 null，保持安静
+                anchor.BeginInvoke((MethodInvoker)delegate
+                {
+                    RunGalleryClear(delegate(int n, double mb)
+                    {
+                        try
+                        {
+                            if (turnOn) { Balloon(S.GalleryBalloonOn, S.GalleryBalloonOnHint); }
+                            else { Balloon(S.GalleryBalloonOff(n, mb), S.GalleryBalloonOffHint); }
+                        }
+                        catch { }
+                    });
+                });
             };
             m.Items.Add(galleryToggle);
 
