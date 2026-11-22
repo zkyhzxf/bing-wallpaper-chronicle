@@ -1,4 +1,4 @@
-# 必应壁纸编年史
+﻿# 必应壁纸编年史
 
 **又名「必年代记」** ｜ 必应中国区 2009-07-13 至今的每日壁纸档案
 
@@ -251,6 +251,16 @@ dist\                   发布产物（不入库）
 
 只需要 `.NET Framework 4.x`（Windows 自带），无外部依赖。
 
+编译产出在 `dist\`，但**程序实际运行的是根目录那份**。让新版本在本机生效是三步，少一步托盘就没了：
+
+```powershell
+Get-Process BingWallpaperLite | Stop-Process -Force   # 1. 停（文件被占用时复制会失败）
+Copy-Item dist\BingWallpaperLite.exe . -Force         # 2. 换
+Start-Process .\BingWallpaperLite.exe                 # 3. 拉起来
+```
+
+计划任务独立调脚本，所以漏掉第 3 步只影响托盘图标与右键菜单，不影响 00:10 的自动换图。
+
 `build.ps1` 优先编译 `src\` 下所有 `.cs`；如果 `src\` 不存在，退回编译单文件 `TrayProgram.cs`。
 
 ### 测试
@@ -260,7 +270,7 @@ dist\                   发布产物（不入库）
 .\test.ps1 -SkipBuild   # 跳过编译，只测功能
 ```
 
-58 项断言，约 1 分钟。全部走命令行，不碰界面，不依赖网络。
+67 项断言，约 1 分钟。全部走命令行，不碰界面，不依赖网络。
 
 改完功能跑一遍，就知道有没有破坏别的。
 
