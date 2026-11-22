@@ -93,7 +93,9 @@ param(
     [switch]$AuditOld,
     [switch]$FixLegacyFav,
     [switch]$FixLegacyDates,
-    [switch]$FixDatedFiles
+    [switch]$FixDatedFiles,
+    [switch]$TestArchiveDir,
+    [int]$TestArchiveSweep = 0
 )
 
 $ErrorActionPreference = 'Stop'
@@ -209,6 +211,26 @@ if ($script:Takeover) {
     foreach ($dT in @($TakeoverDir, $CacheDir, $FavDir)) {
         if (-not (Test-Path $dT)) { try { New-Item -ItemType Directory -Path $dT -Force | Out-Null } catch { } }
     }
+}
+
+# ---------------------------------------------------------------- 测试沙盒
+# 只给 test.ps1 用：把归档清理涉及的路径指到临时沙盒。
+# 路径必须带 BWTEST 标记，防止误配到真实目录；这里只做变量赋值，不调函数。
+if ($TestArchiveDir) {
+    $sbRoot = [string]$env:BING_TEST_SANDBOX
+    if (-not $sbRoot -or $sbRoot -notmatch 'BWTEST') {
+        Write-Host '测试沙盒路径必须带 BWTEST 标记，已拒绝'
+        exit 4
+    }
+    if (-not (Test-Path $sbRoot)) {
+        Write-Host '测试沙盒不存在，已拒绝'
+        exit 4
+    }
+    $ArchiveImgDir    = Join-Path $sbRoot 'archive'
+    $FavDir           = Join-Path $sbRoot 'favorites'
+    $FavIndex         = Join-Path $FavDir 'index.json'
+    $PinnedPath       = Join-Path $sbRoot 'pinned.json'
+    $PinnedLegacyPath = $PinnedPath
 }
 
 if (-not (Test-Path $CacheDir)) { New-Item -ItemType Directory -Path $CacheDir -Force | Out-Null }
@@ -1531,6 +1553,17 @@ function Clear-ArchiveBySize {
         Write-Log ('归档仍超限：' + [math]::Round($total / 1MB, 1) + ' MB（上限 ' + $MaxMB + ' MB），剩余全部受收藏或当前壁纸保护') 'WARN'
     }
     return $removed
+}
+
+# 测试用入口：直接跑一次归档两轮清理，只配合 -TestArchiveDir 沙盒
+if ($TestArchiveSweep -gt 0) {
+    if (-not $TestArchiveDir) {
+        Write-Host '需同时给 -TestArchiveDir 并设置 BING_TEST_SANDBOX 指向 BWTEST 沙盒'
+        exit 4
+    }
+    $sweepN = Clear-ArchiveBySize -MaxMB $TestArchiveSweep
+    Write-Host ('清理返回：' + $sweepN)
+    exit 0
 }
 function Clear-AllCache {
     param([string]$Mode = 'recycle')

@@ -406,6 +406,85 @@ Check '-CleanFavorites -DryRun 不删文件' {
 
 # ---------------------------------------------------------------- 5. 老索引一致性（v3.6.38）
 
+Write-Host '[6.5] 归档两轮清理' -ForegroundColor Yellow
+
+$sbRoot = Join-Path $env:TEMP ('BWTEST-' + [Guid]::NewGuid().ToString('N').Substring(0, 8))
+$sbArch = Join-Path $sbRoot 'archive'
+$sbFav = Join-Path $sbRoot 'favorites'
+$sbPin = Join-Path $sbRoot 'pinned.json'
+
+function New-TestSandbox([string[]]$pinDates, [string[]]$favDates) {
+    if (Test-Path $sbRoot) { Remove-Item $sbRoot -Recurse -Force -ErrorAction SilentlyContinue }
+    New-Item -ItemType Directory -Path $sbArch -Force | Out-Null
+    New-Item -ItemType Directory -Path $sbFav -Force | Out-Null
+    $buf = New-Object byte[] 204800
+    for ($i = 1; $i -le 8; $i++) {
+        [System.IO.File]::WriteAllBytes((Join-Path $sbArch ('2020010' + $i + '.jpg')), $buf)
+    }
+    foreach ($fd in @($favDates)) {
+        if (-not $fd) { continue }
+        [System.IO.File]::WriteAllBytes((Join-Path $sbFav ($fd + '_FakeItem_ZH-CN1_1920x1080.jpg')), (New-Object byte[] 16))
+    }
+    $pin = [ordered]@{}
+    foreach ($d in $pinDates) { $pin[$d] = $true }
+    [System.IO.File]::WriteAllText($sbPin, (ConvertTo-Json -InputObject $pin -Compress), (New-Object System.Text.UTF8Encoding($false)))
+}
+
+function Invoke-Sweep([int]$mb) {
+    $env:BING_TEST_SANDBOX = $sbRoot
+    return Run-Script @('-TestArchiveDir', '-TestArchiveSweep', ([string]$mb), '-DryRun')
+}
+
+Check '第一轮只删未登记项，pinned 与收藏不动' {
+    New-TestSandbox -pinDates @('20200102', '20200103') -favDates @('20200101')
+    $r = Invoke-Sweep 1
+    $o = $r.Output
+    foreach ($d in @('20200104', '20200105', '20200106')) {
+        if ($o -notmatch ('将删除 ' + $d)) { return ('第一轮该删 ' + $d + ' 却没删') }
+    }
+    foreach ($d in @('20200101', '20200102', '20200103')) {
+        if ($o -match ('将删除 ' + $d)) { return ('第一轮误删受保护的 ' + $d) }
+    }
+    if ($o -match '含已登记') { return '第一轮就该停住，不该进第二轮' }
+    return $true
+}
+
+Check '第二轮才动 pinned，收藏仍跳过' {
+    New-TestSandbox -pinDates @('20200102', '20200103', '20200104', '20200105', '20200106', '20200107') -favDates @('20200101')
+    $r = Invoke-Sweep 1
+    $o = $r.Output
+    if ($o -notmatch '含已登记') { return '没进第二轮（pinned 没被降级清理）' }
+    if ($o -notmatch ('将删除 20200102')) { return '第二轮没删 20200102' }
+    if ($o -match ('将删除 20200101')) { return '第二轮误删了收藏项 20200101' }
+    return $true
+}
+
+Check '归档超限后打出「仍超限」警告' {
+    New-TestSandbox -pinDates @() -favDates @('20200101', '20200102', '20200103', '20200104', '20200105', '20200106', '20200107', '20200108')
+    $r = Invoke-Sweep 1
+    if ($r.Output -notmatch '仍超限') { return '全部受保护时该打出仍超限警告' }
+    return $true
+}
+
+Check '沙盒路径不带 BWTEST 标记应被拒绝' {
+    $env:BING_TEST_SANDBOX = (Join-Path $env:TEMP 'not-a-sandbox')
+    $r = Run-Script @('-TestArchiveDir', '-TestArchiveSweep', '1', '-DryRun')
+    if ($r.Code -ne 4) { return ('退出码 ' + $r.Code + '，应为 4') }
+    return $true
+}
+
+Check '沙盒清理不碰真实归档目录' {
+    $real = Join-Path $Root 'archive\images'
+    $n1 = @(Get-ChildItem $real -Filter '*.jpg' -File -ErrorAction SilentlyContinue).Count
+    New-TestSandbox -pinDates @('20200102') -favDates @('20200101')
+    $null = Invoke-Sweep 1
+    $n2 = @(Get-ChildItem $real -Filter '*.jpg' -File -ErrorAction SilentlyContinue).Count
+    if ($n1 -ne $n2) { return ('真实归档从 ' + $n1 + ' 变成 ' + $n2) }
+    return $true
+}
+
+try { if (Test-Path $sbRoot) { Remove-Item $sbRoot -Recurse -Force -ErrorAction SilentlyContinue } } catch { }
+
 Write-Host '[7] 老索引一致性' -ForegroundColor Yellow
 
 $oldIdxPath = Join-Path $Root 'archive\old-index.json'
