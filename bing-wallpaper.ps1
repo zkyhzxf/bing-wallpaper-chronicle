@@ -100,6 +100,11 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# 临时件的删除方式：画廊图、预取图、故事缓存、两处索引、清空缓存 —— 都是可重建/可重抓的东西，
+# 默认直接删，不进回收站（回收站有配额，塞满之后照样变永久删，等于假装安全）。
+# 用户显式给 -CleanMode 时一律按用户说的来。
+$modeTemp = if ($PSBoundParameters.ContainsKey('CleanMode')) { $CleanMode } else { 'permanent' }
+
 # 预取模式：只下载到归档，不设壁纸、不写 state、不登记保护名单
 $script:NoApply = $false
 if ($PrefetchDate) {
@@ -1456,8 +1461,13 @@ function Remove-OneFile {
             [Microsoft.VisualBasic.FileIO.UICancelOption]::DoNothing)
         return $true
     } catch {
-        # 回收站不可用（被禁用/网络盘）时降级为直接删
-        try { [System.IO.File]::Delete($Path); return $true } catch { return $false }
+        # 回收站不可用（被禁用/网络盘）时降级为直接删，并留一行日志 ——
+        # 否则用户会以为文件还在回收站里，实际已经永久没了
+        try {
+            [System.IO.File]::Delete($Path)
+            Write-Log ("回收站不可用，已直接删除：" + $Path) 'WARN'
+            return $true
+        } catch { return $false }
     }
 }
 
@@ -2405,7 +2415,7 @@ if ($ExportRange) {
 try {
     if ($CleanAll) {
         Write-Log '--- 清空缓存（保留当前壁纸）---'
-        $allN = [int](Clear-AllCache -Mode $CleanMode)
+        $allN = [int](Clear-AllCache -Mode $modeTemp)
         Write-Output ('{"removed":' + $allN + ',"protected":' + $kept + '}')
         Exit-Run 0
     }
@@ -2648,7 +2658,7 @@ try {
                 # 兜底：任何情况下都不删当前壁纸
                 if ($curG -and $_.FullName -ieq $curG) { return }
                 if ($DryRun) { Write-Log "[DryRun] 将删除画廊 $($_.Name)"; $nG++ }
-                elseif (Remove-OneFile -Path $_.FullName -Mode $CleanMode) { $nG++ }
+                elseif (Remove-OneFile -Path $_.FullName -Mode $modeTemp) { $nG++ }
             }
         }
         Write-Log ("退出画廊模式：清理 " + $nG + " 张")
@@ -2661,7 +2671,7 @@ try {
         if (Test-Path $PrefetchDir) {
             Get-ChildItem $PrefetchDir -Filter '*.jpg' -File -ErrorAction SilentlyContinue | ForEach-Object {
                 if ($DryRun) { Write-Log "[DryRun] 将删除预取 $($_.Name)"; $nP++ }
-                elseif (Remove-OneFile -Path $_.FullName -Mode $CleanMode) { $nP++ }
+                elseif (Remove-OneFile -Path $_.FullName -Mode $modeTemp) { $nP++ }
             }
         }
         Write-Log ("清理预取缓存：" + $nP + " 张")
@@ -2681,7 +2691,7 @@ try {
         if (Test-Path $StoriesDir) {
             Get-ChildItem $StoriesDir -Filter '*.txt' -File -ErrorAction SilentlyContinue | ForEach-Object {
                 if ($DryRun) { Write-Log "[DryRun] 将删除故事 $($_.Name)"; $nS++ }
-                elseif (Remove-OneFile -Path $_.FullName -Mode $CleanMode) { $nS++ }
+                elseif (Remove-OneFile -Path $_.FullName -Mode $modeTemp) { $nS++ }
             }
         }
         Write-Log ("清理每日故事：" + $nS + " 条")
@@ -2694,7 +2704,7 @@ try {
         Get-ChildItem $ArchiveDir -Filter '*.json' -File -ErrorAction SilentlyContinue | ForEach-Object {
             if ($_.Name -eq 'all-index.json' -or $_.Name -match '^\d{4}-\d{2}\.json$') {
                 if ($DryRun) { Write-Log "[DryRun] 将删除索引 $($_.Name)"; $nIdx++ }
-                elseif (Remove-OneFile -Path $_.FullName -Mode $CleanMode) { $nIdx++ }
+                elseif (Remove-OneFile -Path $_.FullName -Mode $modeTemp) { $nIdx++ }
             }
         }
         Write-Log ("清理归档索引：删除 " + $nIdx + " 个文件")
@@ -2756,7 +2766,7 @@ try {
                 Get-ChildItem $ArchiveDir -Filter '*.json' -File -ErrorAction SilentlyContinue | ForEach-Object {
                     if ($_.Name -eq 'all-index.json' -or $_.Name -match '^\d{4}-\d{2}\.json$') {
                         if ($DryRun) { Write-Log "[DryRun] 将删除归档索引 $($_.Name)"; $nIdxA++ }
-                        elseif (Remove-OneFile -Path $_.FullName -Mode $CleanMode) { $nIdxA++ }
+                        elseif (Remove-OneFile -Path $_.FullName -Mode $modeTemp) { $nIdxA++ }
                     }
                 }
                 Write-Log ("同时清理归档索引：删除 " + $nIdxA + " 个文件")

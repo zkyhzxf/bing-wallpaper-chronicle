@@ -19,9 +19,9 @@ using Microsoft.Win32;
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyConfiguration("Release")]
 [assembly: AssemblyCulture("")]
-[assembly: AssemblyVersion("3.6.42.0")]
-[assembly: AssemblyFileVersion("3.6.42.0")]
-[assembly: AssemblyInformationalVersion("3.6.42")]
+[assembly: AssemblyVersion("3.6.43.0")]
+[assembly: AssemblyFileVersion("3.6.43.0")]
+[assembly: AssemblyInformationalVersion("3.6.43")]
 [assembly: ComVisible(false)]
 
 namespace BingWallpaperLite
@@ -31,7 +31,7 @@ namespace BingWallpaperLite
         // ---------------------------------------------------------------- 常量
 
         internal const string AppName     = "必应壁纸编年史";
-        internal const string AppVersion  = "3.6.42";
+        internal const string AppVersion  = "3.6.43";
         private const string TaskName    = "BingWallpaperChronicle";
         private const string RunValue    = "BingWallpaperChronicle";
 
@@ -198,18 +198,14 @@ namespace BingWallpaperLite
             if (!Directory.Exists(dir)) { return; }
             try
             {
-                if (askKeepFav)
-                {
-                    Microsoft.VisualBasic.FileIO.FileSystem.DeleteDirectory(
-                        dir,
-                        Microsoft.VisualBasic.FileIO.UIOption.OnlyErrorDialogs,
-                        Microsoft.VisualBasic.FileIO.RecycleOption.SendToRecycleBin,
-                        Microsoft.VisualBasic.FileIO.UICancelOption.DoNothing);
-                }
-                else
-                {
-                    Directory.Delete(dir, true);
-                }
+                // 整目录一律送回收站：沙盒里的图是用户自己目录的副本，误点也该能反悔。
+                // 原来 askKeepFav=false 会 Directory.Delete 永久递归删除，那条分支一直不可达，
+                // 留着就是隐患（将来有人传 false 就会连收藏一起永久删掉）。
+                Microsoft.VisualBasic.FileIO.FileSystem.DeleteDirectory(
+                    dir,
+                    Microsoft.VisualBasic.FileIO.UIOption.OnlyErrorDialogs,
+                    Microsoft.VisualBasic.FileIO.RecycleOption.SendToRecycleBin,
+                    Microsoft.VisualBasic.FileIO.UICancelOption.DoNothing);
             }
             catch { }
         }
