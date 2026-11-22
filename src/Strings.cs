@@ -410,6 +410,83 @@ namespace BingWallpaperLite
         public static string InfoBtnFolder   { get { return T("文件夹中打开", "Show in folder"); } }
         public static string InfoBtnMore     { get { return T("浏览更多壁纸", "Browse more"); } }
         public static string InfoBtnFav      { get { return T("☆ 收藏", "☆ Favorite"); } }
+        public static string HelpItem       { get { return T("帮助…", "Help…"); } }
+        public static string HelpTitle      { get { return T(" · 帮助", " · Help"); } }
+        public static string HelpBody
+        {
+            get
+            {
+                return _en
+                    ? @"1. Daily rotation
+    The wallpaper switches to today''s Bing image at 00:10, with retries at 08:30 and 12:00.
+    To jump back to today: tray menu -> ""Change to today"".
+
+2. Browsing backwards
+    ""Previous / Next"" moves one day at a time. The last 8 days come from the live API;
+    older ones continue from the archive, back to 13 July 2009.
+    With ""What is this image"" open, the left and right arrow keys work too, and the
+    window and desktop wallpaper change together.
+
+3. Finding by date
+    Tray menu -> ""Library"" -> ""Search by date"" opens a calendar.
+    Dates shown in bold already have their image stored locally.
+
+4. Favorites, cache and archive
+    Cache keeps 30 days; the archive is capped at 500 MB and clears oldest first.
+    Images in favorites are never removed automatically.
+    ""Clean cache"" and ""Clean archive"" free space by those rules and always keep
+    favorites and the current wallpaper.
+
+5. Gallery mode
+    Turn it on to browse freely without piling up files.
+    Images viewed in gallery mode land in cache\gallery and are not registered for
+    protection; turning the mode off or restarting clears them.
+    Click ""Favorite"" on anything you like - it moves to favorites and survives the cleanup.
+
+6. Why some images look soft
+    Originals from 2009-2013 are 958x512, 2014 to early 2016 are 1366x768 or 1080p,
+    and only from March 2016 onwards are they 3840x2160. That was Bing''s publishing
+    standard at the time, not a download error.
+
+7. Data sources and troubleshooting
+    Primary index Zhu-junwei, fallback bing.wilii.cn, legacy archive anerg,
+    daily stories from December 2013.
+    Start with the log: tray menu -> ""System"" -> ""Open log"".
+    If automatic change stops working, the top line of the menu shows the scheduled
+    task status; click it to attempt a repair."
+                    : @"一、每天怎么换图
+    默认在 00:10 自动换成当天的必应图，8:30 与 12:00 各补查一次。
+    想立刻回到今天：托盘菜单 →「换成今天」。
+
+二、往回翻
+    「上一张 / 下一张」按天往前翻。最近 8 天走实时接口，更早的自动接续归档，
+    最远可以翻到 2009 年 7 月 13 日。
+    打开「这张图是哪儿」之后，按键盘 ← → 也能翻，窗口内容和桌面壁纸会一起变。
+
+三、按日期找
+    托盘菜单 →「壁纸库」→「按日期搜索」打开日历。
+    日历上显示为粗体的日期，表示本地已经有这一天的图。
+
+四、收藏、缓存与归档
+    缓存保留 30 天，归档上限 500 MB，超过就从最旧的开始清。
+    收藏夹里的图永远不会被自动清理。
+    「清理缓存」「清理归档」会按上述规则腾空间，收藏与当前壁纸始终保留。
+
+五、画廊模式
+    想随手翻着看、又不想攒下一堆文件时打开它。
+    画廊里看的图落在 cache\gallery，不登记保护名单；关掉模式或重启软件就清空。
+    看到喜欢的随手点「收藏」，它会移进收藏夹，退出画廊也不会被清。
+
+六、为什么有些图比较糊
+    2009 至 2013 年的原图就是 958×512，2014 年到 2016 年初是 1366×768 或 1080p，
+    2016 年 3 月之后才是 3840×2160。这是当年必应的发布标准，不是下载出错。
+
+七、数据来源与出问题怎么办
+    主索引 Zhu-junwei、兜底 bing.wilii.cn、老存档 anerg，每日故事自 2013 年 12 月起。
+    出问题先看日志：托盘菜单 →「系统」→「打开日志」。
+    自动换图不生效时，菜单顶部那行会显示计划任务状态，点它可以尝试修复。";
+            }
+        }
         public static string InfoBtnFaved    { get { return T("★ 已收藏", "★ Favorited"); } }
         public static string InfoFavFail     { get { return T("这张图不在缓存或画廊里，无法收藏", "This image is not in the cache, so it cannot be favorited"); } }
         public static string InfoBtnPrev     { get { return T("◀ 上一张", "◀ Older"); } }

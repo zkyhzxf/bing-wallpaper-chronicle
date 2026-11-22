@@ -36,11 +36,7 @@ namespace BingWallpaperLite
             };
             m.Items.Add(taskState);
 
-            m.Items.Add(MakeKeepOpenItem(S.PrevOlder, "-Step 1", "prev"));
-            m.Items.Add(MakeKeepOpenItem(S.NextNewer, "-Step -1", "next"));
-
-            m.Items.Add(MakeItem(S.WhereIsThis, delegate { ShowInfo(); }));
-
+            // 顺序：状态 -> 模式 -> 查看 -> 移动
             ToolStripMenuItem galleryToggle = new ToolStripMenuItem(S.GalleryMenu);
             galleryToggle.Name = "gallerytoggle";
             galleryToggle.CheckOnClick = false;
@@ -55,6 +51,11 @@ namespace BingWallpaperLite
                 anchor.BeginInvoke((MethodInvoker)delegate { RunGalleryClear(); });
             };
             m.Items.Add(galleryToggle);
+
+            m.Items.Add(MakeItem(S.WhereIsThis, delegate { ShowInfo(); }));
+
+            m.Items.Add(MakeKeepOpenItem(S.PrevOlder, "-Step 1", "prev"));
+            m.Items.Add(MakeKeepOpenItem(S.NextNewer, "-Step -1", "next"));
 
             ToolStripMenuItem favToggle = new ToolStripMenuItem(S.FavOff);
             favToggle.Name = "favtoggle";
@@ -302,6 +303,8 @@ namespace BingWallpaperLite
 
             ToolStripMenuItem sysMenu = new ToolStripMenuItem(S.SysMenu);
 
+            sysMenu.DropDownItems.Add(MakeItem(S.HelpItem, delegate { ShowHelp(); }));
+            sysMenu.DropDownItems.Add(new ToolStripSeparator());
             sysMenu.DropDownItems.Add(MakeItem(S.AboutItem + AppName, delegate { ShowAbout(); }));
             sysMenu.DropDownItems.Add(MakeItem(S.OpenLog, delegate { OpenTarget(logPath); }));
             sysMenu.DropDownItems.Add(new ToolStripSeparator());

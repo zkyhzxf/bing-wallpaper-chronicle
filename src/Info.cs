@@ -186,6 +186,19 @@ namespace BingWallpaperLite
             catch { }
         }
 
+        /// <summary>打开帮助窗口。</summary>
+        private static void ShowHelp()
+        {
+            try
+            {
+                using (HelpForm f = new HelpForm())
+                {
+                    f.ShowDialog(anchor);
+                }
+            }
+            catch { }
+        }
+
         private static void ShowAbout()
         {
             int cCount, fCount, aCount;
