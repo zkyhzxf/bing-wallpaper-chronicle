@@ -363,6 +363,7 @@ namespace BingWallpaperLite
         public static string WallToArchive   { get { return T("直接存进归档", "Save to archive"); } }
         public static string WallFetching     { get { return T("正在取这张…", "Fetching…"); } }
         public static string WallFetchingN    { get { return T("正在取第 {0}/{1} 张…", "Fetching {0}/{1}…"); } }
+        public static string WallFetchingPreview { get { return T("正在取第 {0}/{1} 张…（预览档 1080p）", "Fetching {0}/{1}… (1080p preview)"); } }
         public static string WallFetchDone(int ok, int total)
         {
             string tpl = _en ? "Fetched {0} of {1}" : "已取回 {0}/{1} 张";
@@ -669,7 +670,15 @@ namespace BingWallpaperLite
     Existing files are skipped, so an interrupted run can be resumed.
     The result can be mounted as a takeover folder: tray menu -> ""Takeover folder...""
     It is read-only; leaving takeover sends the sandbox to the Recycle Bin,
-    with an optional backup first."
+    with an optional backup first.
+
+10. Photo wall
+    Tray menu -> ""Days in past years"" or ""Filter by festival"" opens it.
+    ""Fetch missing"" pulls 1080p first as a preview (about 0.3 MB each, ten times
+    faster than the original), and each image appears as soon as it lands, instead
+    of waiting for the whole wall. Choosing ""save to archive"" on close upgrades
+    every image to UHD again, so the archive still keeps the original.
+    Pass -WallFull to skip the preview step and take UHD directly."
                     : @"一、每天怎么换图
     默认在 00:10 自动换成当天的必应图，8:10 / 12:10 各补查一次。
     想立刻回到今天：托盘菜单 →「换成今天」。
@@ -714,7 +723,14 @@ namespace BingWallpaperLite
     「壁纸库 → 批量下载壁纸…」可以按日期范围把图下到指定目录，三档画质可选：
     最高可用（UHD）/ 1080p / 只用镜像。已有同名文件会跳过，中断后接着跑。
     下好的目录可以直接拿去做「接管目录」：托盘菜单 →「接管目录…」→ 选它。
-    接管是只读挂载，退出时沙盒整体进回收站，可选先备份。";
+    接管是只读挂载，退出时沙盒整体进回收站，可选先备份。
+
+十、照片墙
+    托盘菜单 →「往年的今天」或「按节日筛选」都会打开照片墙。
+    缺图点「把缺的取回」：先取 1080p 当预览（一张约 0.3 MB，比原图快十倍），
+    下完一张就显示一张，不用等整墙下完。
+    关窗选「暂存到归档」时会自动补一次 UHD，所以归档里仍然是原图。
+    想整墙直接拿 UHD，用脚本参数 -WallFull。";
             }
         }
         public static string InfoBtnFaved    { get { return T("★ 已收藏", "★ Favorited"); } }

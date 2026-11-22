@@ -91,6 +91,7 @@ param(
     [switch]$RebuildCacheIndex,
     [switch]$AuditDates,
     [string]$WallDate = '',
+    [switch]$WallFull,
     [switch]$WallKeep,
     [switch]$WallDrop,
     [switch]$WallArchive,
@@ -1686,19 +1687,41 @@ if ($WallKeep) {
     if (-not (Test-Path $WallDir)) { Write-Host '照片墙临时目录是空的'; exit 0 }
     if (-not (Test-Path $ArchiveImgDir)) { New-Item -ItemType Directory -Path $ArchiveImgDir -Force | Out-Null }
     $movedW = 0
+    $upW = 0
+    # 补 UHD 的总时长封顶，超时就只搬现有的预览档
+    $upDeadline = (Get-Date).AddSeconds(60)
     foreach ($f in @(Get-ChildItem $WallDir -Filter '*.jpg' -File -ErrorAction SilentlyContinue)) {
+        $mW = [regex]::Match($f.Name, '^(\d{8})_')
+        $destW = Join-Path $ArchiveImgDir $f.Name
+        if (Test-Path -LiteralPath $destW) { $destW = Join-Path $ArchiveImgDir ($f.BaseName + '_' + (Get-Date -Format 'HHmmss') + '.jpg') }
         try {
-            $destW = Join-Path $ArchiveImgDir $f.Name
-            if (Test-Path -LiteralPath $destW) { $destW = Join-Path $ArchiveImgDir ($f.BaseName + '_' + (Get-Date -Format 'HHmmss') + '.jpg') }
+            # 预览档先进归档（原目录随即变空，不涉及删除）
             Move-Item -LiteralPath $f.FullName -Destination $destW -Force
-            $mW = [regex]::Match($f.Name, '^(\d{8})_')
+            # 墙里放的多半是 1080p 预览档：归档时补一张 UHD 覆盖过去，补不到就留着预览档
+            if ($mW.Success -and $f.Length -lt 2500KB -and (Get-Date) -lt $upDeadline) {
+                $d8W = $mW.Groups[1].Value
+                try {
+                    $recW = Get-ArchiveRecord -Date $d8W
+                    if ($recW -and $recW.id) {
+                        $tmpW = Join-Path $CacheDir ('.wallfull_' + $d8W + '.jpg')
+                        $szW = Save-BingImage -Url ("https://www.bing.com/th?id=" + [string]$recW.id + '_UHD.jpg') -Dest $tmpW -MinKB 300
+                        if ($szW -gt 0 -and (Test-Path -LiteralPath $tmpW)) {
+                            Move-Item -LiteralPath $tmpW -Destination $destW -Force
+                            $upW++
+                            Write-Log ("照片墙补 UHD 成功：$d8W " + [math]::Round($szW / 1MB, 2) + ' MB')
+                        }
+                    }
+                } catch {
+                    Write-Log ("照片墙补 UHD 失败：" + $d8W + " " + $_.Exception.Message) 'WARN'
+                }
+            }
             if ($mW.Success) { Add-Pinned -Date $mW.Groups[1].Value }
             $movedW++
         } catch {
             Write-Log ("照片墙暂存失败：" + $f.Name + " " + $_.Exception.Message) 'WARN'
         }
     }
-    Write-Host ("已暂存 $movedW 张到历史归档")
+    Write-Host ("已暂存 $movedW 张到历史归档（其中 $upW 张补到 UHD）")
     exit 0
 }
 
@@ -3245,23 +3268,30 @@ try {
                     if ($script:WallMode -and $script:WallArchive) { $dest = Join-Path $ArchiveImgDir $fileName }
                     elseif ($script:WallMode) { $dest = Join-Path $WallDir $fileName }
                     elseif ($script:NoApply) { $dest = Join-Path $PrefetchDir $fileName }
-                    if ($DryRun) {
-                        Write-Log ("[DryRun] 将下载归档原图：" + $archId + " → " + $dest + "（不下载、不设壁纸）")
-                        Exit-Run 0
-                    }
-                    $locked = Enter-RunLock -WaitSec $script:LockWaitSec
-                    if (-not $locked) { exit 2 }
-
-                    # 候选地址：UHD 原图 > 归档给出的直链
+                    # 候选顺序：照片墙默认先拿 1080p —— 预览只有 320 宽，没必要为它下 5 MB 原图；
+                    # 其余场景（常规换图 / 预取 / 照片墙暂存）仍然 UHD 优先。
                     $cand = @()
-                    $cand += @{ url = "https://www.bing.com/th?id=${archId}_UHD.jpg"; tag = '归档原图 UHD'; minKb = 300 }
-                    # 2016-2018 的图 Bing 只留了 1080p，UHD 会 404
-                    $cand += @{ url = "https://www.bing.com/th?id=${archId}_1920x1080.jpg"; tag = '归档原图 1080p'; minKb = 60 }
+                    if ($script:WallMode -and -not $WallFull) {
+                        $cand += @{ url = "https://www.bing.com/th?id=${archId}_1920x1080.jpg"; tag = '照片墙预览 1080p'; minKb = 60 }
+                        $cand += @{ url = "https://www.bing.com/th?id=${archId}_UHD.jpg"; tag = '归档原图 UHD'; minKb = 300 }
+                    } else {
+                        $cand += @{ url = "https://www.bing.com/th?id=${archId}_UHD.jpg"; tag = '归档原图 UHD'; minKb = 300 }
+                        # 2016-2018 的图 Bing 只留了 1080p，UHD 会 404
+                        $cand += @{ url = "https://www.bing.com/th?id=${archId}_1920x1080.jpg"; tag = '归档原图 1080p'; minKb = 60 }
+                    }
                     if ($rec.url) {
                         $u2 = [string]$rec.url
                         if ($u2.StartsWith('/')) { $u2 = 'https://www.bing.com' + $u2 }
                         $cand += @{ url = $u2; tag = '归档直链'; minKb = 60 }
                     }
+
+                    if ($DryRun) {
+                        Write-Log ("[DryRun] 将下载归档原图：" + $archId + " → " + $dest + "（不下载、不设壁纸）")
+                        Write-Log ("[DryRun] 候选顺序：" + (($cand | ForEach-Object { $_.tag }) -join ' → '))
+                        Exit-Run 0
+                    }
+                    $locked = Enter-RunLock -WaitSec $script:LockWaitSec
+                    if (-not $locked) { exit 2 }
 
                     $got = $null
                     foreach ($c in $cand) {

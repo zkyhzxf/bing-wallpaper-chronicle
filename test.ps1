@@ -614,6 +614,62 @@ Check '2015 段未被本次改动波及' {
     if ($diff -ne 0) { return ('2015-01-01 起有 ' + $diff + ' 处变化') }
     return $true
 }
+
+Write-Host '[8] 照片墙：布局与取图档位' -ForegroundColor Yellow
+
+$wallCs = Join-Path $Root 'src\Forms\PhotoWallForm.cs'
+
+Check '卡片区不再被顶栏/底栏压住（Fill 排在 z 序首位）' {
+    if (-not (Test-Path $wallCs)) { return '缺 src\Forms\PhotoWallForm.cs' }
+    $t = Get-Content $wallCs -Raw
+    if ($t -notmatch 'SetChildIndex\(host, 0\)') { return '没找到 SetChildIndex(host, 0)' }
+    if ($t -match 'SetChildIndex\(host, Controls\.Count - 1\)') { return '旧的末尾写法还在' }
+    return $true
+}
+
+Check '卡片区显式设置滚动范围' {
+    $t = Get-Content $wallCs -Raw
+    if ($t -notmatch 'host\.AutoScrollMinSize\s*=\s*new Size\(') { return '没找到 AutoScrollMinSize 赋值' }
+    return $true
+}
+
+Check '取回的图逐张上屏' {
+    $t = Get-Content $wallCs -Raw
+    if ($t -notmatch 'private void RefreshCardFor\(string d8\)') { return '没找到 RefreshCardFor' }
+    $m = [regex]::Match($t, 'private void FetchAll\(\)[\s\S]*?RefreshCardFor\(')
+    if (-not $m.Success) { return 'FetchAll 里没有调用 RefreshCardFor' }
+    return $true
+}
+
+Check '照片墙默认先取 1080p 预览' {
+    $r = Run-Script @('-WallDate', '20240315', '-DryRun')
+    if ($r.Output -notmatch '候选顺序：([^\r\n]*)') {
+        # 那天已经在本地：退回源码校验分支顺序（幂等）
+        $src = Get-Content $Script -Raw
+        if ($src -notmatch '\$script:WallMode -and -not \$WallFull') { return '照片墙分支条件没找到' }
+        $i1080 = $src.IndexOf('照片墙预览 1080p')
+        if ($i1080 -lt 0) { return '源码里没有「照片墙预览 1080p」候选' }
+        $iUhd = $src.IndexOf('归档原图 UHD', $i1080)
+        if ($iUhd -lt 0 -or $iUhd -lt $i1080) { return '源码里 1080p 没排在 UHD 之前' }
+        return $true
+    }
+    $order = $Matches[1]
+    if ($order -notmatch '^照片墙预览 1080p') { return ('首项不是 1080p：' + $order) }
+    return $true
+}
+
+Check '-WallFull 把 UHD 放回首位' {
+    $r = Run-Script @('-WallDate', '20240315', '-DryRun', '-WallFull')
+    if ($r.Output -notmatch '候选顺序：([^\r\n]*)') {
+        $src = Get-Content $Script -Raw
+        if ($src -notmatch 'if \(\$script:WallMode -and -not \$WallFull\)') { return 'WallFull 分支条件没找到' }
+        return $true
+    }
+    $order = $Matches[1]
+    if ($order -notmatch '^归档原图 UHD') { return ('首项不是 UHD：' + $order) }
+    return $true
+}
+
 # ---------------------------------------------------------------- 汇总
 Write-Host ''
 Write-Host ('-' * 50) -ForegroundColor DarkGray

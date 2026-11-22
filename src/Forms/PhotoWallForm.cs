@@ -205,8 +205,9 @@ namespace BingWallpaperLite
             };
             ticker.Start();
 
-            // Dock 按 Z 序从高到低分配空间：把 Fill 的 host 放到最底层，顶部/底部才不会被它压住
-            Controls.SetChildIndex(host, Controls.Count - 1);
+            // Dock 布局从 z 序末尾往前分配：Fill 必须排在 index 0 —— 先让顶部/底部切走各自高度，
+            // 否则 Fill 拿走整块客户区（实测 786 高），上下各被工具条 / 状态栏压掉一截，滚到顶底就露不全。
+            Controls.SetChildIndex(host, 0);
 
             try { openWallpaper = Program.CurrentWallpaperPath(); } catch { }
             try { Program.TrimThumbs(); } catch { }
@@ -382,8 +383,39 @@ namespace BingWallpaperLite
                                    Pad + row * (cellH + Gap),
                                    cellW, cellH);
             }
+            // 滚动范围显式给足：最后一行底部再留一个 Pad，滚到底不贴边
+            int rowsUsed = (cards.Count + cols - 1) / cols;
+            host.AutoScrollMinSize = new Size(0, Pad + rowsUsed * (cellH + Gap));
         }
 
+
+        /// <summary>单张卡片刷新：下载完一张就立刻上屏，不重建整个列表（滚动位置不跳）。</summary>
+        private void RefreshCardFor(string d8)
+        {
+            WallCard card = null;
+            foreach (WallCard c in cards) { if (c.Date8 == d8) { card = c; break; } }
+            if (card == null) { return; }
+
+            string src = FindLocal(d8);
+            if (src == null)
+            {
+                card.Loading = false;
+                card.Invalidate();
+                return;
+            }
+
+            bool wasMissing = !card.HasImage;
+            card.Tag = src;
+            card.HasImage = true;
+            card.Loading = false;
+            missing.Remove(d8);
+            if (wasMissing) { localCount++; }
+            usedThumbs.Add(src);
+            string tp = ThumbPath(d8);
+            if (File.Exists(tp)) { usedThumbs.Add(tp); }
+            AttachThumb(card, d8, src);
+            UpdateStatus();
+        }
 
         private void UpdateStatus()
         {
@@ -573,7 +605,7 @@ namespace BingWallpaperLite
                     BeginInvoke((MethodInvoker)delegate
                     {
                         working = false;
-                        LoadData();
+                        RefreshCardFor(d8);
                     });
                 }
                 catch { }
@@ -601,19 +633,24 @@ namespace BingWallpaperLite
                     {
                         BeginInvoke((MethodInvoker)delegate
                         {
-                            lblStatus.Text = string.Format(S.WallFetchingN, cur, todo.Count);
+                            lblStatus.Text = string.Format(S.WallFetchingPreview, cur, todo.Count);
                         });
                     }
                     catch { }
                     int code = Program.RunScriptExit("-WallDate " + d8);
                     if (code == 0 || code == 4 || code == 8) { ok++; }
+                    // 下完一张就地刷新一张，不再等整批结束
+                    string d8done = d8;
+                    try { BeginInvoke((MethodInvoker)delegate { RefreshCardFor(d8done); }); } catch { }
                 }
                 try
                 {
                     BeginInvoke((MethodInvoker)delegate
                     {
                         working = false;
-                        LoadData();
+                        // 缺图卡片在「只看本地有」下本来被过滤掉，这批补完才需要重建列表
+                        if (chkLocal.Checked) { LoadData(); }
+                        else { UpdateStatus(); }
                         lblStatus.Text = S.WallFetchDone(ok, todo.Count);
                     });
                 }
