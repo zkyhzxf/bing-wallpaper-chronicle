@@ -436,7 +436,7 @@ function Set-WallpaperStyle {
 # 备用源：niumoo/bing-wallpaper（2021-02 起，只有 ID，无标题）
 $ArchivePrimary = 'https://raw.githubusercontent.com/Zhu-junwei/bing-wallpaper-archive/master'
 $ArchiveBackup  = 'https://raw.githubusercontent.com/niumoo/bing-wallpaper/main/picture'
-$ArchiveMinDate = '20090713'
+$ArchiveMinDate = '20090712'
 
 # 归档抓取通道。实测（无代理直连）：
 #   raw.githubusercontent.com  → 100% 失败（TLS 阻断）
@@ -1760,65 +1760,67 @@ if ($AuditDates) {
 }
 
 
-# ---------------------------------------------------------------- 老索引体检
-
-if ($AuditOld) {
-    $oo = @()
-    try {
-        $tmpO = Get-Content (Join-Path $ArchiveDir 'old-index.json') -Raw -Encoding UTF8 | ConvertFrom-Json
-        $oo = @($tmpO)
-    } catch { }
-    if ($oo.Count -eq 0) { Write-Host '老索引读不出来'; exit 1 }
-    $ds = @()
-    $nm = @{}
-    $emptyT = 0
-    $outOfRange = 0
-    foreach ($e in $oo) {
-        $d = [string]$e.d
-        if ($d.Length -ne 8) { continue }
-        $ds += $d
-        if ($d -lt $ArchiveMinDate -or $d -gt '20160304') { $outOfRange++ }
-        $t8 = [string]$e.t
-        if (-not $t8) { $emptyT++ }
-        $n8 = [string]$e.n
-        if ($n8) {
-            if ($nm.ContainsKey($n8)) { $nm[$n8] = $nm[$n8] + ',' + $d } else { $nm[$n8] = $d }
-        }
-    }
-    $dsSorted = $ds | Sort-Object -Unique
-    Write-Host ('老索引 {0} 条，范围 {1} ~ {2}' -f $dsSorted.Count, $dsSorted[0], $dsSorted[-1])
-    $startD = [datetime]::ParseExact('20090713', 'yyyyMMdd', $null)
-    $endD = [datetime]::ParseExact('20160304', 'yyyyMMdd', $null)
-    $need = [int]($endD - $startD).TotalDays + 1
-    Write-Host ('应有 {0} 天，缺 {1} 天' -f $need, ($need - $dsSorted.Count))
-    Write-Host ('标题为空 {0} 条；日期越界 {1} 条' -f $emptyT, $outOfRange)
-    $titleBySlug = @{}
+# ---------------------------------------------------------------- 老索引体检
+
+if ($AuditOld) {
+    $oo = @()
+    try {
+        $tmpO = Get-Content (Join-Path $ArchiveDir 'old-index.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+        $oo = @($tmpO)
+    } catch { }
+    if ($oo.Count -eq 0) { Write-Host '老索引读不出来'; exit 1 }
+    $ds = @()
+    $nm = @{}
+    $emptyT = 0
+    $outOfRange = 0
     foreach ($e in $oo) {
-        $n9 = [string]$e.n
-        if (-not $n9) { continue }
-        if (-not $titleBySlug.ContainsKey($n9)) { $titleBySlug[$n9] = @() }
-        $titleBySlug[$n9] += [string]$e.t
+        $d = [string]$e.d
+        if ($d.Length -ne 8) { continue }
+        $ds += $d
+        if ($d -lt $ArchiveMinDate -or $d -gt '20160304') { $outOfRange++ }
+        if (-not [string]$e.t) { $emptyT++ }
+        $n8 = [string]$e.n
+        if ($n8) {
+            if ($nm.ContainsKey($n8)) { $nm[$n8] = $nm[$n8] + ',' + $d } else { $nm[$n8] = $d }
+        }
     }
-    $rePublish = @()
-    $suspect = @()
+    $dsSorted = @($ds | Sort-Object -Unique)
+    Write-Host ('老索引 {0} 条，范围 {1} ~ {2}' -f $dsSorted.Count, $dsSorted[0], $dsSorted[-1])
+    $startD = [datetime]::ParseExact('20090712', 'yyyyMMdd', $null)
+    $endD = [datetime]::ParseExact('20160304', 'yyyyMMdd', $null)
+    $need = [int]($endD - $startD).TotalDays + 1
+    Write-Host ('应有 {0} 天，缺 {1} 天' -f $need, ($need - $dsSorted.Count))
+    Write-Host ('标题为空 {0} 条；日期越界 {1} 条' -f $emptyT, $outOfRange)
+    # 已知的「同一张图被必应发布两次」名单。逐个回查过 wilii 原始日表：这四组在 wilii 里
+    # 本来就占了两个不同日期，是必应自己的重发（部分还改了标题），不是索引标错。
+    # 名单外的同图多日期才是要人工过目的新冲突。改动时与 test.ps1 的白名单保持一致。
+    $KnownDupFiles = @(
+        'Cuscus_ZH-CN2223740503_1920x1080.jpg',
+        'TurtleHatchling_ZH-CN407919738_1920x1080.jpg',
+        'DivingPlatform_ZH-CN1344034380_1920x1080.jpg',
+        'LondonAquaticsCentre_ZH-CN1563351439_1920x1080.jpg'
+    )
+    $known = @()
+    $fresh = @()
     foreach ($k in $nm.Keys) {
         if ($nm[$k] -notmatch ',') { continue }
         $line = $k + ' → ' + $nm[$k]
-        $ts = @($titleBySlug[$k] | Sort-Object -Unique)
-        if ($ts.Count -gt 1) { $rePublish += $line } else { $suspect += $line }
+        if ($KnownDupFiles -contains $k) { $known += $line } else { $fresh += $line }
     }
-    Write-Host ('同一张图出现在多个日期：{0} 组（必应重复发布 {1} 组 / 标题相同疑似错标 {2} 组）' -f ($rePublish.Count + $suspect.Count), $rePublish.Count, $suspect.Count)
-    foreach ($x in ($rePublish | Select-Object -First 8)) { Write-Host ('  [重复发布] ' + $x) }
-    foreach ($x in ($suspect | Select-Object -First 8)) { Write-Host ('  [疑似错标] ' + $x) }
-    $segCnt = @($dsSorted | Where-Object { $_ -ge '20100101' -and $_ -le '20141231' }).Count
-    $segNeed = [int](([datetime]::ParseExact('20141231', 'yyyyMMdd', $null) - [datetime]::ParseExact('20100101', 'yyyyMMdd', $null)).TotalDays) + 1
-    Write-Host ('2010-01-01 ~ 2014-12-31：{0} 条 / 应有 {1} 天 / 缺 {2} 天' -f $segCnt, $segNeed, ($segNeed - $segCnt))
-    Write-Host '体检完成（只读）'
-    exit 0
-}
-
-# ---------------------------------------------------------------- 修历史收藏的日期
-
+    Write-Host ('同一张图出现在多个日期：{0} 组（已知重复发布 {1} 组 / 新增冲突 {2} 组）' -f ($known.Count + $fresh.Count), $known.Count, $fresh.Count)
+    foreach ($x in ($known | Select-Object -First 8)) { Write-Host ('  [已知] ' + $x) }
+    foreach ($x in ($fresh | Select-Object -First 8)) { Write-Host ('  [新增] ' + $x) -ForegroundColor Yellow }
+    $segCnt = @($dsSorted | Where-Object { $_ -ge '20090712' -and $_ -le '20141231' }).Count
+    $segNeed = [int](([datetime]::ParseExact('20141231', 'yyyyMMdd', $null) - [datetime]::ParseExact('20090712', 'yyyyMMdd', $null)).TotalDays) + 1
+    Write-Host ('2009-07-12 ~ 2014-12-31：{0} 条 / 应有 {1} 天 / 缺 {2} 天' -f $segCnt, $segNeed, ($segNeed - $segCnt))
+    Write-Host '体检完成（只读）'
+    exit 0
+}
+
+# ---------------------------------------------------------------- 修历史收藏的日期
+
+
+
 if ($FixLegacyFav -or $FixLegacyDates) {
     # 名字以日期开头的文件，靠「slug → 新索引日期」纠正；只有日期的（故事缓存、保留名单）靠旧索引反查 slug
     $newBySlug = @{}
@@ -1982,7 +1984,8 @@ if ($FixLegacyFav -or $FixLegacyDates) {
     if (-not $DryRun) { Write-Host ('改名记录：' + $logPath) -ForegroundColor DarkGray }
     exit 0
 }
-
+
+
 # ---------------------------------------------------------------- 状态查询
 
 if ($Status) {

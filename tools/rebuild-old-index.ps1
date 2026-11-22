@@ -1,7 +1,7 @@
-# 重建 archive\old-index.json 的 2010-01-01 ~ 2014-12-31 段
-# 基准：_wilii-raw.json（逐日有序日表），官方日期 = wilii 日期 - 1 天
+﻿# 重建 archive\old-index.json 的 2009-07-12 ~ 2014-12-31 段
+# 基准：_wilii-raw.json（逐日有序日表）；2014-12-01 之前官方日期 = wilii 日期 - 1 天
 # wilii 里空 slug 的占位记录跳过，对应日期留空（不猜图）
-# 2009 段与 2015 之后的段落原样保留
+# 2015 年之后（含 2015-01-01）的段落原样保留
 #
 # 用法：
 #   pwsh -File tools\rebuild-old-index.ps1 -DryRun    # 只出清单
@@ -40,24 +40,24 @@ $cur = @(Get-Content $targetPath -Raw -Encoding UTF8 | ConvertFrom-Json)
 $kept = New-Object System.Collections.ArrayList
 foreach ($x in $cur) {
     $d = [string]$x.d
-    if ($d -ge '20100101' -and $d -le '20141231') { continue }
+    if ($d -ge '20090712' -and $d -le '20141231') { continue }
     [void]$kept.Add([pscustomobject]@{ d = $d; t = [string]$x.t; c = [string]$x.c; n = [string]$x.n; a = [string]$x.a })
 }
 
-# 2) 用 wilii 重建 2010-2014 段
-#    口径切换点：wilii 在 2014-11-30 起改用官方日期（此前每天晚一天）
-#    wilii.d <  2014-11-30 -> 官方日期 = wilii.d - 1
-#    wilii.d >= 2014-11-30 -> 官方日期 = wilii.d
-$switchDate = '20141130'
+# 2) 用 wilii 重建 2009-2014 段（wilii 从 2009-07-13 起有记录）
+#    口径切换点：wilii 在 2014-12-01 起改用官方日期（此前每天晚一天）
+#    wilii.d <  2014-12-01 -> 官方日期 = wilii.d - 1
+#    wilii.d >= 2014-12-01 -> 官方日期 = wilii.d
+$switchDate = '20141201'
 $rebuilt = New-Object System.Collections.ArrayList
 $skipped = New-Object System.Collections.ArrayList
 foreach ($x in $wilii) {
     $slug = Get-SlugName $x.f
     $wd = $x.d -replace '-', ''
-    if ($wd -lt '20100102' -or $wd -gt '20141231') { continue }
+    if ($wd -lt '20090713' -or $wd -gt '20141231') { continue }
     $d = [datetime]::ParseExact($x.d, 'yyyy-MM-dd', $null)
     if ($wd -lt $switchDate) { $ds = $d.AddDays(-1).ToString('yyyyMMdd') } else { $ds = $wd }
-    if ($ds -lt '20100101' -or $ds -gt '20141231') { continue }
+    if ($ds -lt '20090712' -or $ds -gt '20141231') { continue }
     if ($null -eq $slug) {
         [void]$skipped.Add($ds)
         continue
@@ -90,7 +90,7 @@ $add = @($changes | Where-Object { $_ -like 'ADD*' }).Count
 $gon = @($changes | Where-Object { $_ -like 'GONE*' }).Count
 
 Write-Host ''
-Write-Host '老索引重建（2010-01-01 ~ 2014-12-31）' -ForegroundColor Cyan
+Write-Host '老索引重建（2009-07-12 ~ 2014-12-31）' -ForegroundColor Cyan
 Write-Host ("  当前条数     : " + $cur.Count)
 Write-Host ("  重建后条数   : " + $final.Count)
 Write-Host ("  换图 CHG     : " + $chg)

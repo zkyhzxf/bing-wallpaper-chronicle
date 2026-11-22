@@ -1,6 +1,6 @@
 ﻿# 交接文档 · 必应壁纸编年史
 
-最后更新：2026-11-22 · v3.6.38
+最后更新：2026-11-22 · v3.6.39
 
 ---
 
@@ -29,7 +29,7 @@ Windows 上的必应每日壁纸工具。初衷是替代微软官方客户端—
 ┌─────────────────┐  │           │
 │ 托盘菜单        │──┘           ▼
 │ （用户手动）    │      bing-wallpaper.ps1
-└─────────────────┘      （3380 行，全部业务逻辑）
+└─────────────────┘      （3383 行，全部业务逻辑）
 ```
 
 **关键分工**：
@@ -64,11 +64,11 @@ Windows 上的必应每日壁纸工具。初衷是替代微软官方客户端—
 
 | 文件 | 说明 |
 |---|---|
-| `bing-wallpaper.ps1` | 3380 行，全部业务逻辑。改它之前先读 `Get-ArchiveRecord`、`Get-OldIndexRecord`、`Read-Pinned` |
+| `bing-wallpaper.ps1` | 3383 行，全部业务逻辑。改它之前先读 `Get-ArchiveRecord`、`Get-OldIndexRecord`、`Read-Pinned` |
 | `build.ps1` | 编译 + 打包，读源码版本号，刷新索引快照 |
 | `test.ps1` | 39 条回归断言 |
 | `assets\all-index.json` | 全量索引快照，编译时打进 exe 资源 |
-| `assets\old-index.json` | 老存档索引快照（2009-07-13 ~ 2016-03-04，2423 天），字段 `d/t/c/n/a` |
+| `assets\old-index.json` | 老存档索引快照（2009-07-12 ~ 2016-03-04，2424 天），字段 `d/t/c/n/a` |
 | `assets\wilii-index.json` | wilii 兜底文件名表（2016-03-05 起，3913 条），字段 `d/n` |
 | `assets\screenshot-desktop.jpg` | README 预览图 |
 
@@ -105,10 +105,16 @@ D:\tools\bing-wallpaper\build.ps1 -Version 3.6.10    # 指定版本
 ### 测试
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File test.ps1 -SkipBuild
+```powershell
+pwsh -File test.ps1 -SkipBuild
 ```
 
-21 条断言，必须全绿。
+39 条断言，必须全绿。
+
+**必须用 `pwsh`（7.x），不要用 `powershell.exe`（5.1）。**
+`test.ps1` 里多处写成 `@(输出 | ConvertFrom-Json)`，5.1 的 `ConvertFrom-Json` 不展开顶层数组，
+`@()` 只得到 1 个元素，会假失败 5 条（老索引条数、关键锚点、同图多日期、两条 `-Query` 断言）。
+实测：5.1 = 34/39，pwsh 7 = 39/39。
 
 ### 部署（本地）
 
@@ -286,7 +292,7 @@ PowerShell 里 `$T` 和 `$t` 是同一个变量。清理脚本曾经因为 `$tmp
 3. **没有离线索引** —— 每次搜索都要联网
 4. **中文标题缺失** —— 只取 `mkt=en-US`
 
-本项目在这四点上都做了，代价是代码量比同类大一个数量级（脚本 3380 行 + C# 28 个文件）。
+本项目在这四点上都做了，代价是代码量比同类大一个数量级（脚本 3383 行 + C# 28 个文件）。
 
 ---
 
@@ -370,7 +376,7 @@ README 里写清了"2019 年 5 月前的图偏小"、"安装后桌面立刻变"�
 cd D:\tools\bing-wallpaper
 git log --oneline -10          # 看最近改了什么
 .\build.ps1                    # 确认能编译
-powershell -File test.ps1 -SkipBuild   # 确认 21 条全绿
+pwsh -File test.ps1 -SkipBuild   # 确认 39 条全绿（必须 pwsh 7，5.1 会假失败）
 ```
 
 然后读这三个文件，基本就懂全貌了：
