@@ -426,6 +426,9 @@ namespace BingWallpaperLite
     older ones continue from the archive, back to 13 July 2009.
     With ""What is this image"" open, the left and right arrow keys work too, and the
     window and desktop wallpaper change together.
+    If one image cannot be fetched, the window retries up to 3 times on its own.
+    Tray menu -> ""This day in past years"" lists the same date across years and shows
+    the title even before the image is downloaded; click an entry to fetch it.
 
 3. Finding by date
     Tray menu -> ""Library"" -> ""Search by date"" opens a calendar.
@@ -462,6 +465,8 @@ namespace BingWallpaperLite
     「上一张 / 下一张」按天往前翻。最近 8 天走实时接口，更早的自动接续归档，
     最远可以翻到 2009 年 7 月 13 日。
     打开「这张图是哪儿」之后，按键盘 ← → 也能翻，窗口内容和桌面壁纸会一起变。
+    某一张一时取不到时，窗口里会自动再试 3 次，不用手动重开。
+    托盘菜单 →「往年的今天」列出历年同日的图；还没下载过的也会先显示标题，点一下才去取。
 
 三、按日期找
     托盘菜单 →「壁纸库」→「按日期搜索」打开日历。
@@ -492,7 +497,8 @@ namespace BingWallpaperLite
         public static string InfoBtnPrev     { get { return T("◀ 上一张", "◀ Older"); } }
         public static string InfoBtnNext     { get { return T("下一张 ▶", "Newer ▶"); } }
         public static string InfoSwitching   { get { return T("正在切换…", "Switching…"); } }
-        public static string InfoSwitchFail  { get { return T("切换失败：这一张取不到，窗口内容保持不变", "Switch failed: this image is unavailable"); } }
+        public static string InfoSwitchFail  { get { return T("试了 3 次仍取不到这张图：可能确实没有这一张，也可能网络暂时不通", "Still unavailable after 3 attempts: the image may not exist, or the network is down"); } }
+        public static string InfoRetrying    { get { return T("正在取图…（第 {0}/{1} 次）", "Fetching… (attempt {0}/{1})"); } }
         public static string StoryTitle      { get { return T("每日故事", "Daily story"); } }
         public static string StoryExpand     { get { return T("展开全文", "Read more"); } }
         public static string StoryLoading    { get { return T("正在获取故事…", "Loading story…"); } }

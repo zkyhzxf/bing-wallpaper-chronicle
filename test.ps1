@@ -248,6 +248,48 @@ Check '-Step 1 执行成功' {
     return $true
 }
 
+# ---------------------------------------------------------------- 4.5 取图鲁棒性
+Write-Host ''
+Write-Host '[4.5] 取图鲁棒性' -ForegroundColor Yellow
+
+Check '-ProbeLockWait 空闲时立刻拿到锁' {
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    $r = Run-Script @('-ProbeLockWait', '3')
+    $sw.Stop()
+    if ($r.Code -ne 0) { return ('退出码 ' + $r.Code) }
+    if ($r.Output -notmatch 'probeLock=True') { return ('输出没有拿到锁: ' + $r.Output) }
+    if ($sw.ElapsedMilliseconds -gt 5000) { return ('耗时 ' + $sw.ElapsedMilliseconds + ' ms，不该等这么久') }
+    return $true
+}
+
+Check '锁被占时 -ProbeLockWait 会等到超时才放弃' {
+    $lock = Join-Path $Root 'cache\.running'
+    $holder = Get-Process -Id $PID -ErrorAction SilentlyContinue
+    if (-not $holder) { return '拿不到自身进程，无法造锁' }
+    $stamp = (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
+    [System.IO.File]::WriteAllText($lock, ("$PID|" + $stamp), (New-Object System.Text.UTF8Encoding($false)))
+    try {
+        $sw = [System.Diagnostics.Stopwatch]::StartNew()
+        $r = Run-Script @('-ProbeLockWait', '3')
+        $sw.Stop()
+        if ($r.Code -ne 0) { return ('退出码 ' + $r.Code) }
+        if ($r.Output -notmatch 'probeLock=False') { return ('锁被占却报成功: ' + $r.Output) }
+        if ($sw.ElapsedMilliseconds -lt 2800) { return ('只等了 ' + $sw.ElapsedMilliseconds + ' ms，没有真正等待') }
+        return $true
+    } finally {
+        Remove-Item -LiteralPath $lock -Force -ErrorAction SilentlyContinue
+    }
+}
+
+Check '下载总预算参数与落点函数就位' {
+    $src = Get-Content $Script -Raw -Encoding UTF8
+    foreach ($need in @('function Get-DownloadDir', '$DownDir = Get-DownloadDir', '$BudgetSec',
+                        '-not $Gallery -and -not $script:NoApply')) {
+        if ($src.IndexOf($need) -lt 0) { return ('脚本里缺少: ' + $need) }
+    }
+    return $true
+}
+
 # ---------------------------------------------------------------- 5. 数据完整性
 Write-Host ''
 Write-Host '[5] 数据完整性' -ForegroundColor Yellow

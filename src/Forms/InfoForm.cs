@@ -329,9 +329,36 @@ namespace BingWallpaperLite
             Text = Program.AppName + " · " + S.InfoSwitching;
             System.Threading.ThreadPool.QueueUserWorkItem(delegate
             {
-                int code = Program.RunStep(dir);
+                // 单次翻页失败的真实来源：后台预取正占着脚本锁、或源站一时抖动。
+                // 这两种都能自己好，所以在会话内自动重试，只有耗尽预算才把失败交给用户。
+                const int MaxTries = 3;
+                const long BudgetMs = 100000;
+                System.Diagnostics.Stopwatch sw = System.Diagnostics.Stopwatch.StartNew();
+                int code = -1;
                 string[] st6 = null;
-                if (code == 0 || code == 4 || code == 8) { try { st6 = Program.ReadStateForInfo(); } catch { } }
+                for (int attempt = 1; attempt <= MaxTries; attempt++)
+                {
+                    int cur = attempt;
+                    if (cur > 1)
+                    {
+                        try
+                        {
+                            BeginInvoke((MethodInvoker)delegate
+                            {
+                                Text = Program.AppName + " · " + string.Format(S.InfoRetrying, cur, MaxTries);
+                            });
+                        }
+                        catch { }
+                    }
+                    code = Program.RunStep(dir);
+                    if (code == 0 || code == 4 || code == 8)
+                    {
+                        try { st6 = Program.ReadStateForInfo(); } catch { }
+                        break;
+                    }
+                    if (attempt >= MaxTries || sw.ElapsedMilliseconds > BudgetMs) { break; }
+                    System.Threading.Thread.Sleep(1200 * attempt);
+                }
                 try
                 {
                     BeginInvoke((MethodInvoker)delegate

@@ -81,7 +81,9 @@ param(
     [switch]$PrefetchClear,
     [string]$StoryFor = '',
     [switch]$CleanStories,
-    [switch]$Status
+    [switch]$Status,
+    [int]$BudgetSec = 0,
+    [int]$ProbeLockWait = 0
 )
 
 $ErrorActionPreference = 'Stop'
@@ -93,6 +95,20 @@ if ($PrefetchDate) {
     if ($PrefetchDate.Length -eq 8) {
         $Date = $PrefetchDate
         $script:NoApply = $true
+    }
+}
+
+# 单次进程的下载总预算：交互指令 100 秒、预取 20 秒，可用 -BudgetSec 覆盖
+if ($BudgetSec -le 0) { $BudgetSec = 100 }
+if ($script:NoApply -and -not $PSBoundParameters.ContainsKey('BudgetSec')) { $BudgetSec = 20 }
+$script:deadline = (Get-Date).AddSeconds($BudgetSec)
+
+# 交互指令（翻页 / 指定日期 / 收藏 / 随机）值得为另一实例的锁等一会儿：
+# 信息窗口一打开就会起后台预取，预取持锁期间翻页若立刻判失败，用户看到的就是「这张图取不到」
+$script:LockWaitSec = 0
+if (-not $script:NoApply) {
+    if ($Step -ne 0 -or $Date -or $Use -or $Favorite -or $Unfavorite -or $Random -or $PSBoundParameters.ContainsKey('Index')) {
+        $script:LockWaitSec = 25
     }
 }
 
@@ -134,11 +150,15 @@ $PinnedLegacyPath = Join-Path $Root 'cache\pinned.json'
 if (-not (Test-Path $CacheDir)) { New-Item -ItemType Directory -Path $CacheDir -Force | Out-Null }
 
 # 画廊模式：下载落点改到 cache\gallery，退出时整个清掉，不登记保护名单
-$DownDir = $CacheDir
-if ($Gallery) {
-    $DownDir = $GalleryDir
-    if (-not (Test-Path $DownDir)) { New-Item -ItemType Directory -Path $DownDir -Force | Out-Null }
+# 下载落点统一解析：预取 -> cache\prefetch，画廊 -> cache\gallery，其余 -> cache 根
+function Get-DownloadDir {
+    if ($script:NoApply) { $d = $PrefetchDir }
+    elseif ($Gallery) { $d = $GalleryDir }
+    else { $d = $CacheDir }
+    if ($d -and -not (Test-Path $d)) { try { New-Item -ItemType Directory -Path $d -Force | Out-Null } catch { } }
+    return $d
 }
+$DownDir = Get-DownloadDir
 
 # ---------------------------------------------------------------- 日志
 
@@ -162,7 +182,11 @@ function Write-Log {
 # ---------------------------------------------------------------- 并发锁
 
 function Enter-RunLock {
-    for ($attempt = 0; $attempt -lt 2; $attempt++) {
+    param([int]$WaitSec = 0)
+    $deadline = (Get-Date).AddSeconds([Math]::Max(0, $WaitSec))
+    $announced = $false
+    while ($true) {
+        $busy = $true
         try {
             $fs = [System.IO.File]::Open($LockPath, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
             $bytes = [System.Text.Encoding]::UTF8.GetBytes("$PID|" + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'))
@@ -170,7 +194,6 @@ function Enter-RunLock {
             $fs.Close()
             return $true
         } catch {
-            # 已存在：判断是有人正在跑，还是僵尸锁
             try {
                 $txt = [System.IO.File]::ReadAllText($LockPath, [System.Text.Encoding]::UTF8)
                 $parts = $txt -split '\|'
@@ -179,19 +202,27 @@ function Enter-RunLock {
                 $startAt = [datetime]::ParseExact($parts[1], 'yyyy-MM-dd HH:mm:ss', $null)
                 $alive = $null -ne (Get-Process -Id $otherPid -ErrorAction SilentlyContinue)
                 if ($alive -and ((Get-Date) - $startAt).TotalMinutes -lt 10) {
-                    Write-Log "已有实例在跑（PID $otherPid，$($parts[1])），本次退出" 'WARN'
-                    return $false
+                    if (-not $announced) {
+                        Write-Log ("已有实例在跑（PID " + $otherPid + "），等待其完成（最多 " + $WaitSec + " 秒）") 'WARN'
+                        $announced = $true
+                    }
+                } else {
+                    Write-Log ("清理僵尸锁（PID " + $otherPid + " 已不存在或超时）") 'WARN'
+                    Move-Item -LiteralPath $LockPath -Destination ($LockPath + '.stale') -Force -ErrorAction SilentlyContinue
+                    $busy = $false
                 }
-                Write-Log "清理僵尸锁（PID $otherPid 已不存在或超时）" 'WARN'
-                [System.IO.File]::Delete($LockPath)
             } catch {
                 # 读不到内容 = 正被独占 = 确实在跑
-                Write-Log '锁文件被占用，本次退出' 'WARN'
-                return $false
+                $busy = $true
             }
         }
+        if (-not $busy) { continue }
+        if ((Get-Date) -ge $deadline) {
+            if ($announced) { Write-Log '等待锁超时，本次退出' 'WARN' } else { Write-Log '锁文件被占用，本次退出' 'WARN' }
+            return $false
+        }
+        Start-Sleep -Milliseconds 300
     }
-    return $false
 }
 
 function Exit-RunLock {
@@ -200,6 +231,15 @@ function Exit-RunLock {
 
 # ---------------------------------------------------------------- 配置
 
+# 测试用：-ProbeLockWait N 只测一次抢锁等待耗时后退出，不参与业务
+if ($ProbeLockWait -gt 0) {
+    $swProbe = [System.Diagnostics.Stopwatch]::StartNew()
+    $probeGot = Enter-RunLock -WaitSec $ProbeLockWait
+    $swProbe.Stop()
+    Write-Output ("probeLock=" + $probeGot + " ms=" + $swProbe.ElapsedMilliseconds)
+    if ($probeGot) { Exit-RunLock }
+    exit 0
+}
 $defaults = [ordered]@{
     source         = 'bing'
     titleLanguage  = 'zh'
@@ -768,20 +808,31 @@ function Get-ZhTitleMap {
 # ---------------------------------------------------------------- 下载
 
 function Save-BingImage {
-    param([string]$Url, [string]$Dest, [int]$MinKB = 300)
+    param([string]$Url, [string]$Dest, [int]$MinKB = 300, [int]$Retry = 2)
     $tmp = "$Dest.tmp"
-    $p = Invoke-Web @{ Uri = $Url; OutFile = $tmp; TimeoutSec = 150; UseBasicParsing = $true }
-    Invoke-WebRequest @p
-    $size = (Get-Item $tmp).Length
-    if ($size -lt ($MinKB * 1024)) {
-        [System.IO.File]::Delete($tmp)
-        throw "体积异常 $size 字节"
+    $attempts = [Math]::Max(1, $Retry + 1)
+    $lastErr = ''
+    for ($i = 0; $i -lt $attempts; $i++) {
+        if ($script:deadline -and (Get-Date) -gt $script:deadline) { throw '本次预算已用尽' }
+        try {
+            $p = Invoke-Web @{ Uri = $Url; OutFile = $tmp; TimeoutSec = 60; UseBasicParsing = $true }
+            Invoke-WebRequest @p
+            $size = (Get-Item $tmp).Length
+            if ($size -lt ($MinKB * 1024)) { throw "体积异常 $size 字节" }
+            Move-Item -LiteralPath $tmp -Destination $Dest -Force
+            return $size
+        } catch {
+            $lastErr = $_.Exception.Message
+            # 半成品 .tmp 留在原地，下一次同名下载会被 OutFile 直接覆盖
+            if ($i -lt ($attempts - 1)) {
+                $pause = [int](800 * [Math]::Pow(2, $i))
+                Write-Log ("下载失败，重试 " + ($i + 1) + "/" + $Retry + "（" + $pause + " ms 后）：" + $lastErr) 'WARN'
+                Start-Sleep -Milliseconds $pause
+            }
+        }
     }
-    Move-Item -LiteralPath $tmp -Destination $Dest -Force
-    return $size
-}
-
-# ---------------------------------------------------------------- 设壁纸
+    throw $lastErr
+}# ---------------------------------------------------------------- 设壁纸
 
 function Set-DesktopWallpaper {
     param([string]$Path)
@@ -2171,7 +2222,7 @@ try {
         $pick = $pool | Get-Random
         $pickDate = ($pick.BaseName -split '_')[0]
 
-        $locked = Enter-RunLock
+        $locked = Enter-RunLock -WaitSec $script:LockWaitSec
         if (-not $locked) { exit 2 }
 
         Set-WallpaperStyle -Name $styleName
@@ -2240,7 +2291,7 @@ try {
             }
         }
         if ($hit) {
-            $locked = Enter-RunLock
+            $locked = Enter-RunLock -WaitSec $script:LockWaitSec
             if (-not $locked) { exit 2 }
             Set-WallpaperStyle -Name $styleName
             [void](Set-DesktopWallpaper -Path $hit.FullName)
@@ -2302,11 +2353,10 @@ try {
                     $slugO = [string]$rec.slug
                     $ymO   = $Date.Substring(0, 6)
                     $dirO  = Join-Path $OldDir $ymO
-                    if ($Gallery) { $dirO = $GalleryDir }
-                    if ($script:NoApply) { $dirO = $PrefetchDir }
+                    $dirO = Get-DownloadDir
                     if (-not (Test-Path $dirO)) { New-Item -ItemType Directory -Path $dirO -Force | Out-Null }
                     $destO = Join-Path $dirO ("${Date}_" + $slugO + '.jpg')
-                    $locked = Enter-RunLock
+                    $locked = Enter-RunLock -WaitSec $script:LockWaitSec
                     if (-not $locked) { exit 2 }
                     $szO = 0
                     $okO = $false
@@ -2361,7 +2411,7 @@ try {
                     $fileName = "${Date}_$shortId.jpg"
                     $dest = Join-Path $ArchiveImgDir $fileName
                     if ($script:NoApply) { $dest = Join-Path $PrefetchDir $fileName }
-                    $locked = Enter-RunLock
+                    $locked = Enter-RunLock -WaitSec $script:LockWaitSec
                     if (-not $locked) { exit 2 }
 
                     # 候选地址：UHD 原图 > 归档给出的直链
@@ -2407,8 +2457,7 @@ try {
             # 4) 兜底：微软 CDN 按日期直取，再不行用 wilii
             $fileName = "${Date}_CDN.jpg"
             $dest = Join-Path $DownDir $fileName
-            if ($script:NoApply) { $dest = Join-Path $PrefetchDir $fileName }
-            $locked = Enter-RunLock
+            $locked = Enter-RunLock -WaitSec $script:LockWaitSec
             if (-not $locked) { exit 2 }
             $tailCand = @()
             $tailCand += @{ url = "https://bingwallpaperimages.microsoft.com/Latest/3840x2400/$Date.jpg"; tag = '微软 CDN' }
@@ -2488,7 +2537,7 @@ try {
             Exit-Run 0
         }
 
-        $locked = Enter-RunLock
+        $locked = Enter-RunLock -WaitSec $script:LockWaitSec
         if (-not $locked) { exit 2 }
 
         Set-WallpaperStyle -Name $styleName
@@ -2527,11 +2576,17 @@ try {
         Exit-Run 0
     }
 
-    $wpJson = Get-WallpaperListJson -Count ([Math]::Max($keepDays, 8))
-    $wpObj = $wpJson | ConvertFrom-Json
-    $wallpapers = @($wpObj)
-    # ---- 联网模式
-    Write-Log "微软接口返回 $($wallpapers.Count) 天"
+    # 列表只用来定位 8 天窗口；取不到时降级成「按本地索引相对移动」，别让断网把翻页变成失败
+    $wallpapers = @()
+    try {
+        $wpJson = Get-WallpaperListJson -Count ([Math]::Max($keepDays, 8))
+        $wpObj = $wpJson | ConvertFrom-Json
+        $wallpapers = @($wpObj)
+        # ---- 联网模式
+        Write-Log "微软接口返回 $($wallpapers.Count) 天"
+    } catch {
+        Write-Log ("微软接口不可用，改按本地索引相对移动：" + $_.Exception.Message) 'WARN'
+    }
 
     $state = Read-State
 
@@ -2547,8 +2602,12 @@ try {
             $outOfWindow = Get-NeighborDate -From $curDate -Step $Step
             if ($outOfWindow) {
                 Write-Log ("当前日期不在窗口内（" + $curDate + "），从归档接续：" + $outOfWindow)
-                & $PSCommandPath -Date $outOfWindow
+                & $PSCommandPath -Date $outOfWindow -Gallery:$Gallery -BudgetSec $BudgetSec
                 exit $LASTEXITCODE
+            }
+            if ($wallpapers.Count -eq 0) {
+                Write-Log "列表为空，且索引里没有相邻日期：$curDate" 'ERROR'
+                Exit-Run 5
             }
             Write-Log "state 里没有当前日期（$curDate），从最新一张起算" 'WARN'
             $pos = 0
@@ -2577,7 +2636,7 @@ try {
         if ($beyondDate) {
             Write-Log ("相对移动（跨窗口）: " + $curDate + " Step=" + $Step + " -> " + $beyondDate)
             # 越界了：交给 -Date 分支处理（会走归档下载）
-            & $PSCommandPath -Date $beyondDate
+            & $PSCommandPath -Date $beyondDate -Gallery:$Gallery -BudgetSec $BudgetSec
             exit $LASTEXITCODE
         } else {
             Write-Log "相对移动: 当前第 $pos 位($curDate) Step=$Step -> 第 $target 位"
@@ -2684,7 +2743,7 @@ try {
         Exit-Run 0
     }
 
-    $locked = Enter-RunLock
+    $locked = Enter-RunLock -WaitSec $script:LockWaitSec
     if (-not $locked) { exit 2 }
 
     $size = 0
@@ -2712,14 +2771,14 @@ try {
                 Write-Log "失败($u): $($_.Exception.Message)" 'WARN'
             }
         }
-        if (-not $ok) { throw '所有候选地址都下载失败' }
+        if (-not $ok) { Write-Log '所有候选地址都下载失败' 'ERROR'; Exit-Run 7 }
     } else {
         $size = (Get-Item $dest).Length
         Write-Log ("缓存已存在，复用 " + (Split-Path $dest -Leaf) + " (" + [math]::Round($size / 1MB, 2) + " MB)")
     }
 
     # 索引：画廊模式的图不落在 cache 根目录，不写进 cache\index.json（否则会留下指向不存在文件的条目）
-    if (-not $Gallery) {
+    if (-not $Gallery -and -not $script:NoApply) {
         $catalog = @{}
         if (Test-Path $IndexPath) {
             try {

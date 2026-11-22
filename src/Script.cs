@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -162,7 +162,7 @@ namespace BingWallpaperLite
                 {
                     System.Threading.Tasks.Task<string> o1 = p.StandardOutput.ReadToEndAsync();
                     System.Threading.Tasks.Task<string> o2 = p.StandardError.ReadToEndAsync();
-                    if (!p.WaitForExit(120000)) { try { p.Kill(); } catch { } return -1; }
+                    if (!p.WaitForExit(180000)) { try { p.Kill(); } catch { } return -1; }
                     try { o1.Wait(2000); } catch { }
                     try { o2.Wait(2000); } catch { }
                     return p.ExitCode;

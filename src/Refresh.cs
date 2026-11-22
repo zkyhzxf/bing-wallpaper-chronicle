@@ -523,12 +523,41 @@ namespace BingWallpaperLite
         }
 
         /// <summary>把所有 archive\*.json 的标题合并成 {date: {title}}，供壁纸库显示。</summary>
+        /// <summary>四个索引文件的 大小+修改时间 指纹，任一变化就让缓存失效。</summary>
+        private static string ArchiveIdxStamp()
+        {
+            StringBuilder sb = new StringBuilder();
+            string[] files = new string[] {
+                Path.Combine(archiveDir, "all-index.json"),
+                Path.Combine(archiveDir, "old-index.json"),
+                Path.Combine(cacheDir, "index.json"),
+                Path.Combine(favDir, "index.json") };
+            foreach (string f in files)
+            {
+                try
+                {
+                    FileInfo fi = new FileInfo(f);
+                    sb.Append(fi.Exists ? (fi.Length.ToString() + ":" + fi.LastWriteTimeUtc.Ticks.ToString()) : "-");
+                }
+                catch { sb.Append("-"); }
+                sb.Append('|');
+            }
+            return sb.ToString();
+        }
+
         internal static Dictionary<string, object> LoadArchiveIndex()
         {
+            // 菜单每打开一次就会问一次；四个 JSON 合起来约 1 MB，不缓存的话每次都要重新解析
+            string stamp = ArchiveIdxStamp();
+            if (archIdxCache != null && stamp == archIdxStamp) { return archIdxCache; }
             Dictionary<string, object> all = new Dictionary<string, object>();
             try
             {
-                if (!Directory.Exists(archiveDir)) { return all; }
+                if (!Directory.Exists(archiveDir))
+                {
+                    archIdxCache = all; archIdxStamp = stamp;
+                    return all;
+                }
                 string allIdxFile = Path.Combine(archiveDir, "all-index.json");
                 foreach (string f in Directory.GetFiles(archiveDir, "*.json"))
                 {
@@ -652,6 +681,8 @@ namespace BingWallpaperLite
                 catch { }
             }
             catch { }
+            archIdxCache = all;
+            archIdxStamp = stamp;
             return all;
         }
 
@@ -937,6 +968,8 @@ namespace BingWallpaperLite
             bool archiveOn = GetCfgBool(ReadConfig(), "archive", true);
             Dictionary<string, object> favIdx = ReadJson(favIndexPath);
             Dictionary<string, object> cacheIdx = ReadJson(indexPath);
+            Dictionary<string, object> archiveIdx = null;
+            try { archiveIdx = LoadArchiveIndex(); } catch { }
 
             int shown = 0;
             for (int y = lastYear; y >= earliestYear; y--)
@@ -982,6 +1015,7 @@ namespace BingWallpaperLite
                     {
                         ttl = GetStr(cacheIdx[key] as Dictionary<string, object>, "title");
                     }
+                    if (ttl.Length == 0) { ttl = ArchiveTitleOf(archiveIdx, key); }
                     label = label + "  " + (ttl.Length > 0 ? ttl : Path.GetFileNameWithoutExtension(localFile));
                 }
                 else if (!archiveOn)
@@ -990,7 +1024,10 @@ namespace BingWallpaperLite
                 }
                 else
                 {
-                    label = label + S.ClickFetchSfx;
+                    // 标题在本地索引里（all-index 覆盖 2016-03 起、old-index 覆盖 2009-07 起），
+                    // 没下载过也能先把名字显示出来，用户不用点开才知道是什么
+                    string ttl = ArchiveTitleOf(archiveIdx, key);
+                    label = label + (ttl.Length > 0 ? ("  " + ttl) : "") + S.ClickFetchSfx;
                 }
 
                 ToolStripMenuItem it = new ToolStripMenuItem(label);
@@ -1018,6 +1055,22 @@ namespace BingWallpaperLite
 
             ym.DropDownItems.Add(new ToolStripSeparator());
             ym.DropDownItems.Add(MakeItem(S.OpenArchiveImg, delegate { OpenTarget(archiveImgDir); }));
+        }
+
+        private static Dictionary<string, object> archIdxCache;
+        private static string archIdxStamp;
+
+        /// <summary>归档索引的合并标题，key 为 8 位日期；不带就返回空串。</summary>
+        private static string ArchiveTitleOf(Dictionary<string, object> idx, string key)
+        {
+            try
+            {
+                if (idx == null || string.IsNullOrEmpty(key) || !idx.ContainsKey(key)) { return ""; }
+                string t = GetStr(idx[key] as Dictionary<string, object>, "title");
+                if (t.Length > 50) { t = t.Substring(0, 50) + "…"; }
+                return t;
+            }
+            catch { return ""; }
         }
 
         private static int cachedIdxCount = -1;
