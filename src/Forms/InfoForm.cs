@@ -80,7 +80,9 @@ namespace BingWallpaperLite
 
             lbl = new Label();
             lbl.AutoSize = false;
-            lbl.SetBounds(textLeft, y, textWidth, ThumbH);
+            // 高度必须装得下「日期/标题/版权/文件/体积」五段含空行，长路径还要换行；
+            // 原来用 ThumbH(135) 会把「文件」和「体积」裁掉
+            lbl.SetBounds(textLeft, y, textWidth, 210);
 
             StringBuilder sb = new StringBuilder();
             sb.AppendLine(S.InfoDate + date);
@@ -93,7 +95,7 @@ namespace BingWallpaperLite
             lbl.Text = sb.ToString().Trim();
             Controls.Add(lbl);
 
-            int by = 20 + ThumbH + 26;
+            int by = 20 + 210 + 26;
 
             // 翻页行（翻页 = 换桌面壁纸，窗口内容随之刷新）
             Button btnPrev = new Button();
@@ -140,6 +142,20 @@ namespace BingWallpaperLite
 
             AcceptButton = btnClose;
             CancelButton = btnClose;
+
+            // 键盘翻页：← 上一张（更早），→ 下一张（更新）
+            KeyPreview = true;
+            KeyDown += delegate(object sk, KeyEventArgs ek)
+            {
+                if (ek.KeyCode == Keys.Left)
+                {
+                    ek.Handled = true; ek.SuppressKeyPress = true; Step(1);
+                }
+                else if (ek.KeyCode == Keys.Right)
+                {
+                    ek.Handled = true; ek.SuppressKeyPress = true; Step(-1);
+                }
+            };
 
             // 窗口高度跟着内容走
             ClientSize = new Size(620, by + 32 + 20);
@@ -220,6 +236,8 @@ namespace BingWallpaperLite
         /// <summary>原地翻页：dir &gt; 0 更早，dir &lt; 0 更新。翻页会同时更换桌面壁纸。</summary>
         private void Step(int dir)
         {
+            // 翻页进行中：按钮已禁用，键盘也一并挡住
+            if (btnPrevNav != null && !btnPrevNav.Enabled) { return; }
             SetNavEnabled(false);
             string oldTitle = Text;
             Text = Program.AppName + " · " + S.InfoSwitching;
