@@ -147,6 +147,14 @@ Release 需要在 GitHub 网页手动创建，上传 `dist\BingWallpaperLite-v3.
 
 **注意**：`build.ps1` 和 `Refresh.cs` 曾经处于**无 BOM** 状态。用 pwsh 7 跑一直没事（7 默认 UTF-8），换成 `powershell.exe`（5.1）就按 GBK 解码，中文全乱、脚本解析失败。这两个文件现在已补 BOM，改动时别弄丢。
 
+### 1d. 脚本参数必须在 C# 调用入口注入，否则功能是空壳
+
+`-Gallery` 这个参数在 v3.6.13 就加进了脚本，落点、`Add-Pinned` 跳过、退出清理全都写好了，但 **C# 端从来没传过它**。表现是：`cache\gallery` 永远是空的，画廊模式点开关只改了个内存标志。
+
+教训：脚本层做完立刻用手动命令行测，只能证明脚本对；**必须再走一遍托盘的调用链**，否则很容易漏掉「参数没接上」。
+
+修法：`Script.cs` 的 `WithGallery()` 在每个调用入口统一注入，只放行 `-Step/-Index/-Date/-Random/-Force` 这类换图指令。
+
 ### 1c. 「受管目录」白名单漏一处就会出现幽灵提示
 
 `IsManagedWallpaper` 是判断「这张壁纸是不是我们自己换的」的唯一依据。任何新增的图片目录（当年加 `archive\old`、`cache\gallery` 时都漏过）都必须同步加进这个白名单，否则会出现：

@@ -18,9 +18,29 @@ namespace BingWallpaperLite
         // ---------------------------------------------------------------- 执行脚本
 
         /// <summary>同步执行脚本并返回退出码，供 --run 模式使用。</summary>
+        /// <summary>
+        /// 画廊模式下给「换图」类指令补上 -Gallery。
+        /// 只放行换图指令：搜索、状态、清理带上会误入画廊分支。
+        /// </summary>
+        private static string WithGallery(string args)
+        {
+            if (!GalleryMode || string.IsNullOrEmpty(args)) { return args; }
+            if (args.IndexOf("-Gallery", StringComparison.OrdinalIgnoreCase) >= 0) { return args; }
+            string[] swap = { "-Step", "-Index", "-Date", "-Random", "-Force" };
+            foreach (string k in swap)
+            {
+                if (args.IndexOf(k, StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    return args + " -Gallery";
+                }
+            }
+            return args;
+        }
+
         /// <summary>跑脚本并返回其标准输出（用于 -Query 这类只读取数据的调用）。</summary>
         internal static string RunScriptCapture(string arguments)
         {
+            arguments = WithGallery(arguments);
             string outFile = Path.Combine(Path.GetTempPath(), "bwl-output.json");
             try { File.WriteAllText(outFile, "", new UTF8Encoding(false)); } catch { }
 
@@ -125,6 +145,33 @@ namespace BingWallpaperLite
         }
 
         /// <summary>画廊清理专用：不受 busy 阻断（下载中点关闭也必须生效），也不占用 busy 标志。</summary>
+        /// <summary>同步执行 -Step，供信息窗口原地翻页用。返回脚本退出码。</summary>
+        internal static int RunStep(int dir)
+        {
+            try
+            {
+                string args = "-Step " + (dir >= 0 ? "1" : "-1");
+                args = WithGallery(args);
+                ProcessStartInfo psi = new ProcessStartInfo();
+                psi.FileName = PowerShellExe;
+                psi.Arguments = "-NoProfile -ExecutionPolicy Bypass -File \"" + scriptPath + "\" " + args;
+                psi.UseShellExecute = false;
+                psi.CreateNoWindow = true;
+                psi.RedirectStandardOutput = true;
+                psi.RedirectStandardError = true;
+                using (Process p = Process.Start(psi))
+                {
+                    System.Threading.Tasks.Task<string> o1 = p.StandardOutput.ReadToEndAsync();
+                    System.Threading.Tasks.Task<string> o2 = p.StandardError.ReadToEndAsync();
+                    if (!p.WaitForExit(120000)) { try { p.Kill(); } catch { } return -1; }
+                    try { o1.Wait(2000); } catch { }
+                    try { o2.Wait(2000); } catch { }
+                    return p.ExitCode;
+                }
+            }
+            catch { return -1; }
+        }
+
         private static void RunGalleryClear()
         {
             if (!File.Exists(scriptPath)) { return; }
@@ -151,6 +198,7 @@ namespace BingWallpaperLite
         private static void RunScriptEx(string arguments, string opMode)
         {
             if (busy) { return; }
+            arguments = WithGallery(arguments);
             if (!File.Exists(scriptPath))
             {
                 MessageBox.Show(S.WarnNoScript + "\r\n" + scriptPath + "\r\n\r\n" + S.WarnNoScript2,

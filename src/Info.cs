@@ -113,6 +113,63 @@ namespace BingWallpaperLite
                 f.ShowDialog(anchor);
             }
         }
+        /// <summary>按 state.json 组装信息窗口六个参数：日期/标题/版权/文件/体积/详情链接。失败返回 null。</summary>
+        internal static string[] ReadStateForInfo()
+        {
+            try
+            {
+                Dictionary<string, object> state = ReadJson(statePath);
+                if (state == null) { return null; }
+                string date = GetStr(state, "date");
+                if (date.Length != 8) { return null; }
+                string title = GetStr(state, "title");
+                string copyright = GetStr(state, "copyright");
+                string file = GetStr(state, "file");
+
+                Dictionary<string, object> index = null;
+                try { index = LoadArchiveIndex(); } catch { }
+                if (index != null && index.ContainsKey(date))
+                {
+                    Dictionary<string, object> entry = index[date] as Dictionary<string, object>;
+                    if (entry != null)
+                    {
+                        string t2 = GetStr(entry, "title");
+                        if (t2.Length > 0) { title = t2; }
+                        string c2 = GetStr(entry, "copyright");
+                        if (c2.Length > 0) { copyright = c2; }
+                    }
+                }
+
+                string sizeText = "";
+                try
+                {
+                    if (file.Length > 0 && File.Exists(file))
+                    {
+                        sizeText = ((new FileInfo(file).Length) / 1024.0 / 1024.0).ToString("0.00") + " MB";
+                    }
+                }
+                catch { }
+
+                string learnUrl = BuildSearchUrl(state);
+                try
+                {
+                    if (index != null && index.ContainsKey(date))
+                    {
+                        Dictionary<string, object> fe = index[date] as Dictionary<string, object>;
+                        if (fe != null && fe.ContainsKey("link"))
+                        {
+                            string lk = fe["link"] == null ? "" : fe["link"].ToString();
+                            if (lk.Length > 0) { learnUrl = lk; }
+                        }
+                    }
+                }
+                catch { }
+
+                return new string[] { date, title, copyright, file, sizeText, learnUrl };
+            }
+            catch { return null; }
+        }
+
         private static void StatDir(string dir, out int count, out double mb)
         {
             count = 0;

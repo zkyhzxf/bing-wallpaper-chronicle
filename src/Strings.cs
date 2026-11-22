@@ -409,6 +409,10 @@ namespace BingWallpaperLite
         public static string InfoBtnSearch   { get { return T("了解更多", "Learn more"); } }
         public static string InfoBtnFolder   { get { return T("文件夹中打开", "Show in folder"); } }
         public static string InfoBtnMore     { get { return T("浏览更多壁纸", "Browse more"); } }
+        public static string InfoBtnPrev     { get { return T("◀ 上一张", "◀ Older"); } }
+        public static string InfoBtnNext     { get { return T("下一张 ▶", "Newer ▶"); } }
+        public static string InfoSwitching   { get { return T("正在切换…", "Switching…"); } }
+        public static string InfoSwitchFail  { get { return T("切换失败：这一张取不到，窗口内容保持不变", "Switch failed: this image is unavailable"); } }
         public static string StoryTitle      { get { return T("每日故事", "Daily story"); } }
         public static string StoryExpand     { get { return T("展开全文", "Read more"); } }
         public static string StoryLoading    { get { return T("正在获取故事…", "Loading story…"); } }

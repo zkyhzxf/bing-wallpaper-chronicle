@@ -16,7 +16,17 @@ namespace BingWallpaperLite
         private const int ThumbW = 240;
         private const int ThumbH = 135;
 
-        private readonly Bitmap thumb;
+        private Bitmap thumb;
+        private PictureBox pic;
+        private Label lbl;
+        private Label lblStoryHd;
+        private Label lblStory;
+        private Button btnExpand;
+        private Button btnPrevNav;
+        private Button btnNextNav;
+        private string curDate = "";
+        private int storySeq = 0;
+        private int storyY = 0;
 
         /// <summary>读入内存再解码，避免 Image.FromFile 锁定壁纸文件。</summary>
         private static Bitmap MakeThumb(string file, int w, int h)
@@ -56,23 +66,21 @@ namespace BingWallpaperLite
             thumb = MakeThumb(file, ThumbW, ThumbH);
             int textLeft = 20;
             int textWidth = 580;
-            if (thumb != null)
-            {
-                PictureBox pic = new PictureBox();
-                pic.Image = thumb;
-                pic.SizeMode = PictureBoxSizeMode.Zoom;
-                pic.SetBounds(20, 20, ThumbW, ThumbH);
-                pic.BorderStyle = BorderStyle.FixedSingle;
-                Controls.Add(pic);
-                textLeft = 20 + ThumbW + 18;
-                textWidth = 580 - ThumbW - 18;
-            }
+            // 缩略图区固定占位：翻页换图时布局不跳
+            pic = new PictureBox();
+            pic.Image = thumb;
+            pic.SizeMode = PictureBoxSizeMode.Zoom;
+            pic.SetBounds(20, 20, ThumbW, ThumbH);
+            pic.BorderStyle = BorderStyle.FixedSingle;
+            Controls.Add(pic);
+            textLeft = 20 + ThumbW + 18;
+            textWidth = 580 - ThumbW - 18;
 
-            int y = thumb != null ? 20 : 16;
+            int y = 20;
 
-            Label lbl = new Label();
+            lbl = new Label();
             lbl.AutoSize = false;
-            lbl.SetBounds(textLeft, y, textWidth, thumb != null ? ThumbH : 220);
+            lbl.SetBounds(textLeft, y, textWidth, ThumbH);
 
             StringBuilder sb = new StringBuilder();
             sb.AppendLine(S.InfoDate + date);
@@ -86,7 +94,23 @@ namespace BingWallpaperLite
             Controls.Add(lbl);
 
             int by = 20 + ThumbH + 26;
-            if (thumb == null) { by = 268; }
+
+            // 翻页行（翻页 = 换桌面壁纸，窗口内容随之刷新）
+            Button btnPrev = new Button();
+            btnPrev.Text = S.InfoBtnPrev;
+            btnPrev.SetBounds(20, by, 96, 30);
+            btnPrev.Click += delegate { Step(1); };
+            Controls.Add(btnPrev);
+
+            Button btnNext = new Button();
+            btnNext.Text = S.InfoBtnNext;
+            btnNext.SetBounds(126, by, 96, 30);
+            btnNext.Click += delegate { Step(-1); };
+            Controls.Add(btnNext);
+            btnPrevNav = btnPrev;
+            btnNextNav = btnNext;
+
+            by += 40;
 
             Button btnLearn = new Button();
             btnLearn.Text = S.InfoBtnSearch;
@@ -123,59 +147,132 @@ namespace BingWallpaperLite
             // ---------------------------------------------------------------- 每日故事
             // 正文按需抓取（本地缓存优先），拿到才显示，拿不到整块隐藏
             int sy = by + 32 + 14;
-            Label lblStoryHd = new Label();
+            storyY = sy;
+            lblStoryHd = new Label();
             lblStoryHd.Text = S.StoryTitle;
             lblStoryHd.Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Bold);
             lblStoryHd.SetBounds(20, sy, 580, 20);
             lblStoryHd.Visible = false;
             Controls.Add(lblStoryHd);
 
-            Label lblStory = new Label();
+            lblStory = new Label();
             lblStory.AutoSize = false;
             lblStory.SetBounds(20, sy + 22, 580, 56);
             lblStory.Visible = false;
             Controls.Add(lblStory);
 
-            Button btnExpand = new Button();
+            btnExpand = new Button();
             btnExpand.Text = S.StoryExpand;
             btnExpand.SetBounds(20, sy + 82, 92, 26);
             btnExpand.Visible = false;
             Controls.Add(btnExpand);
 
-            string storyDate = (date ?? "").Replace("-", "").Replace("/", "").Trim();
-            if (storyDate.Length == 8 && Program.ShowStory)
+            curDate = date;
+            LoadStoryAsync(date);
+        }
+
+        /// <summary>按日期异步取故事并显示；没有故事时整块隐藏。</summary>
+        private void LoadStoryAsync(string storyDate)
+        {
+            if (storyDate == null) { return; }
+            string sd = storyDate.Replace("-", "").Replace("/", "").Trim();
+            if (sd.Length != 8 || !Program.ShowStory) { return; }
+            int seq = storySeq;
+            System.Threading.ThreadPool.QueueUserWorkItem(delegate
             {
-                System.Threading.ThreadPool.QueueUserWorkItem(delegate
+                string story = "";
+                try { story = Program.GetStory(sd); } catch { }
+                if (string.IsNullOrEmpty(story)) { return; }
+                try
                 {
-                    string story = "";
-                    try { story = Program.GetStory(storyDate); } catch { }
-                    if (string.IsNullOrEmpty(story)) { return; }
-                    try
+                    BeginInvoke((MethodInvoker)delegate
                     {
-                        BeginInvoke((MethodInvoker)delegate
+                        if (seq != storySeq) { return; }
+                        bool longText = story.Length > 150;
+                        string brief = longText ? story.Substring(0, 150) + "…" : story;
+                        lblStoryHd.Visible = true;
+                        lblStory.Text = brief;
+                        lblStory.Visible = true;
+                        ClientSize = new Size(620, storyY + 22 + (longText ? 92 : 62) + 16);
+                        if (longText)
                         {
-                            bool longText = story.Length > 150;
-                            string brief = longText ? story.Substring(0, 150) + "…" : story;
-                            lblStoryHd.Visible = true;
-                            lblStory.Text = brief;
-                            lblStory.Visible = true;
-                            ClientSize = new Size(620, sy + 22 + (longText ? 92 : 62) + 16);
-                            if (longText)
+                            btnExpand.Visible = true;
+                            btnExpand.Click += delegate
                             {
-                                btnExpand.Visible = true;
-                                btnExpand.Click += delegate
-                                {
-                                    lblStory.Text = story;
-                                    btnExpand.Visible = false;
-                                    lblStory.SetBounds(20, sy + 22, 580, 150);
-                                    ClientSize = new Size(620, sy + 22 + 150 + 16);
-                                };
-                            }
-                        });
-                    }
-                    catch { }
-                });
+                                lblStory.Text = story;
+                                btnExpand.Visible = false;
+                                lblStory.SetBounds(20, storyY + 22, 580, 150);
+                                ClientSize = new Size(620, storyY + 22 + 150 + 16);
+                            };
+                        }
+                    });
+                }
+                catch { }
+            });
+        }
+
+        private void SetNavEnabled(bool on)
+        {
+            if (btnPrevNav != null) { btnPrevNav.Enabled = on; }
+            if (btnNextNav != null) { btnNextNav.Enabled = on; }
+        }
+
+        /// <summary>原地翻页：dir &gt; 0 更早，dir &lt; 0 更新。翻页会同时更换桌面壁纸。</summary>
+        private void Step(int dir)
+        {
+            SetNavEnabled(false);
+            string oldTitle = Text;
+            Text = Program.AppName + " · " + S.InfoSwitching;
+            System.Threading.ThreadPool.QueueUserWorkItem(delegate
+            {
+                int code = Program.RunStep(dir);
+                string[] st6 = null;
+                if (code == 0 || code == 4 || code == 8) { try { st6 = Program.ReadStateForInfo(); } catch { } }
+                try
+                {
+                    BeginInvoke((MethodInvoker)delegate
+                    {
+                        Text = oldTitle;
+                        SetNavEnabled(true);
+                        if (st6 == null)
+                        {
+                            MessageBox.Show(S.InfoSwitchFail, Program.AppName, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                            return;
+                        }
+                        Reload(st6[0], st6[1], st6[2], st6[3], st6[4], st6[5]);
+                    });
+                }
+                catch { }
+            });
+        }
+
+        /// <summary>用新数据刷新窗口内容，布局保持不动。</summary>
+        private void Reload(string date, string title, string copyright, string file, string sizeText, string searchUrl)
+        {
+            curDate = date;
+            try
+            {
+                if (thumb != null) { thumb.Dispose(); thumb = null; }
+                thumb = MakeThumb(file, ThumbW, ThumbH);
+                if (pic != null) { pic.Image = thumb; }
             }
+            catch { }
+
+            StringBuilder sb = new StringBuilder();
+            sb.AppendLine(S.InfoDate + date);
+            sb.AppendLine();
+            if (!string.IsNullOrEmpty(title)) { sb.AppendLine(S.InfoTitleLine + title); sb.AppendLine(); }
+            if (!string.IsNullOrEmpty(copyright)) { sb.AppendLine(S.InfoCopy + copyright); sb.AppendLine(); }
+            if (!string.IsNullOrEmpty(file)) { sb.AppendLine(S.InfoFile + file); }
+            if (!string.IsNullOrEmpty(sizeText)) { sb.AppendLine(S.InfoSize + sizeText); }
+            lbl.Text = sb.ToString().Trim();
+
+            storySeq++;
+            if (lblStoryHd != null) { lblStoryHd.Visible = false; }
+            if (lblStory != null) { lblStory.Visible = false; }
+            if (btnExpand != null) { btnExpand.Visible = false; }
+            ClientSize = new Size(620, storyY + 16);
+            LoadStoryAsync(date);
         }
 
         protected override void Dispose(bool disposing)
