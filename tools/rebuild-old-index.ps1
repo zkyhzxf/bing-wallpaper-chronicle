@@ -1,7 +1,19 @@
-﻿# 重建 archive\old-index.json 的 2009-07-12 ~ 2014-12-31 段
-# 基准：_wilii-raw.json（逐日有序日表）；2014-12-01 之前官方日期 = wilii 日期 - 1 天
+﻿# 重建 archive\old-index.json 的 2009-07-13 ~ 2014-12-31 段
+# 基准：_wilii-raw.json（逐日有序日表），官方日期 = wilii 日期本身，不做任何偏移
+#
+# 为什么不做偏移：wilii 的文件名自带语义，日期与语义一一对齐，七条独立锚点全部吻合：
+#   Harbin_                       2010-01-05  第26届哈尔滨国际冰雪节开幕日（外部新闻三源一致）
+#   TeacherDay_                   2011-09-10  教师节
+#   MidAutumnDay_                 2011-09-12  2011 年中秋节
+#   DragonBoatFestival_           2013-06-12  2013 年端午节
+#   OlympicsClosingCeremonies_    2012-08-13  伦敦奥运闭幕式次日凌晨发布
+#   MaoBirthday_                  2009-12-26  毛泽东诞辰 116 周年
+#   SantaClaus_                   2009-12-24  平安夜
+# 2016 年后的 all-index（官方接口，口径无争议）也证明必应节日图在节日当天发布。
+# 因此「官方日期 = wilii 日期」，老索引在 2010-2014 段的 −1 偏移是错的。
+#
 # wilii 里空 slug 的占位记录跳过，对应日期留空（不猜图）
-# 2015 年之后（含 2015-01-01）的段落原样保留
+# 2015 年之后（含 2015-01-01）的段落原样保留，它们本来就是 wilii 原日期
 #
 # 用法：
 #   pwsh -File tools\rebuild-old-index.ps1 -DryRun    # 只出清单
@@ -45,24 +57,18 @@ foreach ($x in $cur) {
 }
 
 # 2) 用 wilii 重建 2009-2014 段（wilii 从 2009-07-13 起有记录）
-#    口径切换点：wilii 在 2014-12-01 起改用官方日期（此前每天晚一天）
-#    wilii.d <  2014-12-01 -> 官方日期 = wilii.d - 1
-#    wilii.d >= 2014-12-01 -> 官方日期 = wilii.d
-$switchDate = '20141201'
+#    官方日期 = wilii 日期，不做偏移（依据见文件头）
 $rebuilt = New-Object System.Collections.ArrayList
 $skipped = New-Object System.Collections.ArrayList
 foreach ($x in $wilii) {
     $slug = Get-SlugName $x.f
     $wd = $x.d -replace '-', ''
     if ($wd -lt '20090713' -or $wd -gt '20141231') { continue }
-    $d = [datetime]::ParseExact($x.d, 'yyyy-MM-dd', $null)
-    if ($wd -lt $switchDate) { $ds = $d.AddDays(-1).ToString('yyyyMMdd') } else { $ds = $wd }
-    if ($ds -lt '20090712' -or $ds -gt '20141231') { continue }
     if ($null -eq $slug) {
-        [void]$skipped.Add($ds)
+        [void]$skipped.Add($wd)
         continue
     }
-    [void]$rebuilt.Add([pscustomobject]@{ d = $ds; t = [string]$x.t; c = [string]$x.c; n = $slug; a = '' })
+    [void]$rebuilt.Add([pscustomobject]@{ d = $wd; t = [string]$x.t; c = [string]$x.c; n = $slug; a = '' })
 }
 
 # 3) 合并 + 去重（同日期只留一条，按 wilii 优先）
@@ -90,7 +96,7 @@ $add = @($changes | Where-Object { $_ -like 'ADD*' }).Count
 $gon = @($changes | Where-Object { $_ -like 'GONE*' }).Count
 
 Write-Host ''
-Write-Host '老索引重建（2009-07-12 ~ 2014-12-31）' -ForegroundColor Cyan
+Write-Host '老索引重建（2009-07-13 ~ 2014-12-31，wilii 原日期）' -ForegroundColor Cyan
 Write-Host ("  当前条数     : " + $cur.Count)
 Write-Host ("  重建后条数   : " + $final.Count)
 Write-Host ("  换图 CHG     : " + $chg)

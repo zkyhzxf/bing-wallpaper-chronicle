@@ -92,7 +92,8 @@ param(
     [switch]$WallArchive,
     [switch]$AuditOld,
     [switch]$FixLegacyFav,
-    [switch]$FixLegacyDates
+    [switch]$FixLegacyDates,
+    [switch]$FixDatedFiles
 )
 
 $ErrorActionPreference = 'Stop'
@@ -436,7 +437,7 @@ function Set-WallpaperStyle {
 # 备用源：niumoo/bing-wallpaper（2021-02 起，只有 ID，无标题）
 $ArchivePrimary = 'https://raw.githubusercontent.com/Zhu-junwei/bing-wallpaper-archive/master'
 $ArchiveBackup  = 'https://raw.githubusercontent.com/niumoo/bing-wallpaper/main/picture'
-$ArchiveMinDate = '20090712'
+$ArchiveMinDate = '20090713'
 
 # 归档抓取通道。实测（无代理直连）：
 #   raw.githubusercontent.com  → 100% 失败（TLS 阻断）
@@ -1786,7 +1787,7 @@ if ($AuditOld) {
     }
     $dsSorted = @($ds | Sort-Object -Unique)
     Write-Host ('老索引 {0} 条，范围 {1} ~ {2}' -f $dsSorted.Count, $dsSorted[0], $dsSorted[-1])
-    $startD = [datetime]::ParseExact('20090712', 'yyyyMMdd', $null)
+    $startD = [datetime]::ParseExact('20090713', 'yyyyMMdd', $null)
     $endD = [datetime]::ParseExact('20160304', 'yyyyMMdd', $null)
     $need = [int]($endD - $startD).TotalDays + 1
     Write-Host ('应有 {0} 天，缺 {1} 天' -f $need, ($need - $dsSorted.Count))
@@ -1810,9 +1811,9 @@ if ($AuditOld) {
     Write-Host ('同一张图出现在多个日期：{0} 组（已知重复发布 {1} 组 / 新增冲突 {2} 组）' -f ($known.Count + $fresh.Count), $known.Count, $fresh.Count)
     foreach ($x in ($known | Select-Object -First 8)) { Write-Host ('  [已知] ' + $x) }
     foreach ($x in ($fresh | Select-Object -First 8)) { Write-Host ('  [新增] ' + $x) -ForegroundColor Yellow }
-    $segCnt = @($dsSorted | Where-Object { $_ -ge '20090712' -and $_ -le '20141231' }).Count
-    $segNeed = [int](([datetime]::ParseExact('20141231', 'yyyyMMdd', $null) - [datetime]::ParseExact('20090712', 'yyyyMMdd', $null)).TotalDays) + 1
-    Write-Host ('2009-07-12 ~ 2014-12-31：{0} 条 / 应有 {1} 天 / 缺 {2} 天' -f $segCnt, $segNeed, ($segNeed - $segCnt))
+    $segCnt = @($dsSorted | Where-Object { $_ -ge '20090713' -and $_ -le '20141231' }).Count
+    $segNeed = [int](([datetime]::ParseExact('20141231', 'yyyyMMdd', $null) - [datetime]::ParseExact('20090713', 'yyyyMMdd', $null)).TotalDays) + 1
+    Write-Host ('2009-07-13 ~ 2014-12-31：{0} 条 / 应有 {1} 天 / 缺 {2} 天' -f $segCnt, $segNeed, ($segNeed - $segCnt))
     Write-Host '体检完成（只读）'
     exit 0
 }
@@ -1918,6 +1919,11 @@ if ($FixLegacyFav -or $FixLegacyDates) {
         }
     }
 
+    # 2) / 3) 只带日期、没有 slug 的文件（故事缓存、保留名单）：改写不幂等 ——
+    #    改完一轮后文件名已在新日期上，再次执行会被旧索引反查推得更后。
+    #    所以默认不动，需要时加 -FixDatedFiles 显式开启，且只跑一次。
+    if ($FixDatedFiles) {
+
     # 2) 每日故事缓存：文件名 = 日期.txt，没有 slug，靠旧索引反查
     $storyDir = Join-Path $ArchiveDir 'stories'
     if ((Test-Path $storyDir) -and $oldSlugByDate.Count -gt 0) {
@@ -1974,6 +1980,42 @@ if ($FixLegacyFav -or $FixLegacyDates) {
             }
         } catch {
             Write-Host '保留名单改写失败，已跳过' -ForegroundColor Yellow
+        }
+    }
+    }
+
+
+    # 4) 收藏索引：键必须跟文件名里的日期一致，否则壁纸库按日期找不到文件
+    if ((Test-Path $FavIndex) -and $FavDir -and (Test-Path $FavDir)) {
+        $favChanged = 0
+        try {
+            $favRaw = Get-Content $FavIndex -Raw -Encoding UTF8 | ConvertFrom-Json
+            if ($favRaw) {
+                $favPair = @{}
+                foreach ($prop in $favRaw.PSObject.Properties) { $favPair[$prop.Name] = $prop.Value }
+                $favNew = [ordered]@{}
+                foreach ($fk in @($favPair.Keys | Sort-Object)) {
+                    $rec = $favPair[$fk]
+                    $fName = [string]$rec.file
+                    $nKey = $fk
+                    if ($fName.Length -ge 8 -and $fName.Substring(0, 8) -match '^\d{8}$' -and $fName.Substring(0, 8) -ne $fk) {
+                        $nKey = $fName.Substring(0, 8)
+                        $favChanged++
+                    }
+                    $favNew[$nKey] = $rec
+                }
+                if ($favChanged -gt 0) {
+                    if ($DryRun) {
+                        Write-Host ('[DryRun] 收藏索引：同步 ' + $favChanged + ' 个日期键')
+                    } else {
+                        [System.IO.File]::WriteAllText($FavIndex, (ConvertTo-Json -InputObject $favNew -Depth 6), (New-Object System.Text.UTF8Encoding($false)))
+                        Write-Host ('收藏索引：同步 ' + $favChanged + ' 个日期键')
+                    }
+                    [void]$log.Add('favorites\index.json  改键 ' + $favChanged + ' 个')
+                }
+            }
+        } catch {
+            Write-Host '收藏索引同步失败，已跳过' -ForegroundColor Yellow
         }
     }
 

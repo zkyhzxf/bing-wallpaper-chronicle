@@ -1,0 +1,3 @@
+扫描 4680 个文件，修正 43 个日期
+跳过 4128 个：新索引里查不到 slug  或  目标文件名已存在
+改名记录：D:\tools\bing-wallpaper\_rename-log.txt

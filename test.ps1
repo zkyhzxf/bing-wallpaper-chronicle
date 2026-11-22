@@ -145,7 +145,7 @@ Check '-Query 结果的日期全部合法' {
     foreach ($it in $arr) {
         $d = [string]$it.date
         if ($d -notmatch '^\d{8}$') { return ('日期格式错误: [' + $d + ']') }
-        if ($d -lt '20090712') { return ('日期早于下界: ' + $d) }
+        if ($d -lt '20090713') { return ('日期早于下界: ' + $d) }
     }
     return $true
 }
@@ -210,7 +210,7 @@ Check '-Date 无效日期退出码 5/7' {
 Check '-Date 下界前一天应被拒绝' {
     $st = Get-Content (Join-Path $Root 'state.json') -Raw -Encoding UTF8 | ConvertFrom-Json
     $before = $st.date
-    $r = Run-Script @('-Date', '20090711')
+    $r = Run-Script @('-Date', '20090712')
     $after = (Get-Content (Join-Path $Root 'state.json') -Raw -Encoding UTF8 | ConvertFrom-Json).date
     if ($r.Code -eq 0 -or $r.Code -eq 4) { return ('退出码 ' + $r.Code + '，越界不该成功') }
     if ($before -ne $after) { return ('state 从 ' + $before + ' 变成 ' + $after) }
@@ -223,7 +223,7 @@ Check '-Status -Json 的 index.minDate 与代码下界一致' {
     if (-not $j.index) { return '缺 index 键' }
     if (-not $j.index.minDate) { return '缺 index.minDate 字段' }
     if ($j.index.minDate -notmatch '^[0-9]{8}$') { return ('minDate 不是 8 位数字: ' + $j.index.minDate) }
-    if ($j.index.minDate -ne '20090712') { return ('minDate 为 ' + $j.index.minDate + '，与代码下界 20090712 不符') }
+    if ($j.index.minDate -ne '20090713') { return ('minDate 为 ' + $j.index.minDate + '，与代码下界 20090713 不符') }
     return $true
 }
 
@@ -434,18 +434,16 @@ Check '老索引关键锚点' {
     $m = @{}
     foreach ($e in $oldArr) { $m[[string]$e.d] = [string]$e.n }
     $want = [ordered]@{
-        '20090712' = 'GreenTurtle_'
-        '20091231' = 'ANewDay_'
-        '20100101' = 'ANewLife_'
-        '20100104' = 'Harbin_'
-        '20100327' = 'EarthNight_'
-        '20100414' = 'Cuscus_'
-        '20100417' = 'ClareIsland_'
-        '20100420' = 'TurtleHatchling_'
-        '20100515' = 'Cuscus_'
-        '20100522' = 'TurtleHatchling_'
-        '20120831' = 'GoldenMonkey_'
-        '20141129' = 'ScottishWildcat_'
+        '20090713' = 'GreenTurtle_'
+        '20091224' = 'SantaClaus_'
+        '20091226' = 'MaoBirthday_'
+        '20100105' = 'Harbin_'
+        '20100327' = 'EarthDay_'
+        '20110910' = 'TeacherDay_'
+        '20110912' = 'MidAutumnDay_'
+        '20120813' = 'OlympicsClosingCeremonies_'
+        '20130612' = 'DragonBoatFestival_'
+        '20141130' = 'ScottishWildcat_'
     }
     foreach ($k in $want.Keys) {
         if (-not $m.ContainsKey($k)) { return ('缺日期 ' + $k) }
@@ -473,13 +471,13 @@ Check '同图多日期恰好 4 组且在白名单内' {
     return $true
 }
 
-Check '四天确认空缺' {
+Check '三天确认空缺（wilii 空 slug 日）' {
     $m = @{}
     foreach ($e in $oldArr) { $m[[string]$e.d] = $true }
-    foreach ($d in @('20100415', '20100416', '20120813', '20141130')) {
+    foreach ($d in @('20100416', '20100417', '20120814')) {
         if ($m.ContainsKey($d)) { return ($d + ' 不该有记录') }
     }
-    if (-not $m.ContainsKey('20141129')) { return '20141129 该有记录（苏格兰野猫）；口径切换点可能退回 20141130' }
+    if (-not $m.ContainsKey('20120813')) { return '20120813 该有记录（伦敦奥运闭幕式），日期口径可能又被整体前移' }
     return $true
 }
 
