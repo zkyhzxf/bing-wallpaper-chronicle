@@ -903,6 +903,17 @@ Check '归档索引的 l 字段也被认' {
     return $true
 }
 
+Check '浏览更多壁纸改成打开本机照片墙' {
+    $t = Get-Content (Join-Path $Root 'src\Forms\InfoForm.cs') -Raw
+    if ($t -match 'wdbyte') { return '仍指向第三方站点 wdbyte' }
+    if ($t -match 'MoreUrl') { return '仍保留 MoreUrl 常量' }
+    if ($t -notmatch 'btnMore\.Click \+= delegate \{ OpenSameDayWall\(\); \}') { return '按钮没改成打开照片墙' }
+    if ($t -notmatch 'new PhotoWallForm\(ds, S\.WallTitle\(mmdd\)\)') { return '没有按当前日期构造历年列表' }
+    $s = Get-Content (Join-Path $Root 'src\Strings.cs') -Raw
+    if ($s -notmatch 'InfoBtnMore[^}]*往年的今天') { return '按钮文案没改' }
+    return $true
+}
+
 # ---------------------------------------------------------------- 汇总
 Write-Host ''
 Write-Host ('-' * 50) -ForegroundColor DarkGray

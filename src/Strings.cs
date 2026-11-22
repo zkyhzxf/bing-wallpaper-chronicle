@@ -632,7 +632,7 @@ namespace BingWallpaperLite
         public static string InfoSize        { get { return T("大小：", "Size: "); } }
         public static string InfoBtnSearch   { get { return T("了解更多", "Learn more"); } }
         public static string InfoBtnFolder   { get { return T("文件夹中打开", "Show in folder"); } }
-        public static string InfoBtnMore     { get { return T("浏览更多壁纸", "Browse more"); } }
+        public static string InfoBtnMore     { get { return T("往年的今天", "Same day, other years"); } }
         public static string InfoBtnFav      { get { return T("☆ 收藏", "☆ Favorite"); } }
         public static string HelpItem       { get { return T("帮助…", "Help…"); } }
         public static string HelpTitle      { get { return T(" · 帮助", " · Help"); } }

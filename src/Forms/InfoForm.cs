@@ -12,7 +12,6 @@ namespace BingWallpaperLite
 {
     internal sealed class InfoForm : Form
     {
-        private const string MoreUrl = "https://bing.wdbyte.com/zh-cn/";
         private const int ThumbW = 240;
         private const int ThumbH = 135;
 
@@ -151,7 +150,7 @@ namespace BingWallpaperLite
             Button btnMore = new Button();
             btnMore.Text = S.InfoBtnMore;
             btnMore.SetBounds(280, by, 130, 32);
-            btnMore.Click += delegate { Program.OpenUrl(MoreUrl); };
+            btnMore.Click += delegate { OpenSameDayWall(); };
             Controls.Add(btnMore);
 
             Button btnClose = new Button();
@@ -451,6 +450,43 @@ namespace BingWallpaperLite
             ClientSize = new Size(620, storyY + 16);
             LoadStoryAsync(date);
             PrefetchAround(date);
+        }
+
+        /// <summary>
+        /// 打开「往年的今天」照片墙：按当前这张图的月日，列出历年同一天。
+        /// 以前这个按钮是把用户送到第三方站点（比本程序少 12 年数据，而且已经打不开），
+        /// 现在改成用本机已有的照片墙 —— 我们自己就是这条链上最全的一环。
+        /// </summary>
+        private void OpenSameDayWall()
+        {
+            string d = curDate;
+            if (string.IsNullOrEmpty(d) || d.Length != 8) { return; }
+            string mmdd = d.Substring(4, 4);
+            string[] ds = null;
+            try
+            {
+                Dictionary<string, object> idx = Program.LoadArchiveIndex();
+                if (idx != null)
+                {
+                    List<string> list = new List<string>();
+                    foreach (string k in idx.Keys)
+                    {
+                        if (!string.IsNullOrEmpty(k) && k.Length == 8 && k.Substring(4, 4) == mmdd) { list.Add(k); }
+                    }
+                    list.Sort();
+                    if (list.Count > 0) { ds = list.ToArray(); }
+                }
+            }
+            catch { }
+            if (ds == null || ds.Length == 0) { ds = new string[] { d }; }
+            try
+            {
+                using (PhotoWallForm f = new PhotoWallForm(ds, S.WallTitle(mmdd)))
+                {
+                    f.ShowDialog(this);
+                }
+            }
+            catch { }
         }
 
         protected override void Dispose(bool disposing)
