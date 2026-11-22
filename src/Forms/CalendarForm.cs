@@ -21,6 +21,7 @@ namespace BingWallpaperLite
         private readonly Label lblCopy;
         private Dictionary<string, object> idxCache;
         private CalendarHook hook;
+        private bool busy = false;
 
         public string SelectedDate { get; private set; }
 
@@ -268,6 +269,28 @@ namespace BingWallpaperLite
             catch { }
         }
 
+        /// <summary>
+        /// 重设加粗日期，并在句柄被重建后重新挂上双击钩子。
+        /// MonthCalendar 设置 BoldedDates 时会重建内部窗口，句柄一变，原来的子类化就失效了 ——
+        /// 表现就是「第一次双击有效，之后怎么点都没反应」。
+        /// </summary>
+        private void RefreshBolded()
+        {
+            IntPtr before = IntPtr.Zero;
+            try { before = cal.Handle; } catch { }
+            try { cal.BoldedDates = LocalDates().ToArray(); } catch { }
+            try
+            {
+                if (cal.Handle != before)
+                {
+                    if (hook != null) { try { hook.ReleaseHandle(); } catch { } }
+                    hook = new CalendarHook(this);
+                    hook.AssignHandle(cal.Handle);
+                }
+            }
+            catch { }
+        }
+
         protected override void OnLoad(EventArgs e)
         {
             base.OnLoad(e);
@@ -360,9 +383,11 @@ namespace BingWallpaperLite
         /// <summary>选中日期直接换图，窗口留着继续挑。</summary>
         private void AcceptPick()
         {
+            if (busy) { return; }   // 上一次换图还没跑完，再点只会撞锁
             string d = cal.SelectionStart.ToString("yyyyMMdd");
             if (string.IsNullOrEmpty(d)) { return; }
             SelectedDate = d;
+            busy = true;
             ok.Enabled = false;
             lblWhere.Text = S.SrchWorking;
             // 双击之后要跑一次取图（本地是 1080p 时还会先去拿 UHD），光标给个明确反馈
@@ -375,12 +400,14 @@ namespace BingWallpaperLite
                 {
                     BeginInvoke((MethodInvoker)delegate
                     {
+                        busy = false;
                         ok.Enabled = true;
                         Cursor = Cursors.Default;
                         bool done = (code == 0 || code == 8);
                         try { RefreshInfo(); } catch { }
-                        try { cal.BoldedDates = LocalDates().ToArray(); } catch { }
-                        if (code == 11) { lblWhere.Text = S.WallApplyFail; }
+                        try { RefreshBolded(); } catch { }
+                        if (code == 2) { lblWhere.Text = S.SrchWorking; }
+                        else if (code == 11) { lblWhere.Text = S.WallApplyFail; }
                         else if (code == 12) { lblWhere.Text = S.FutureDateHint; }
                         else { lblWhere.Text = done ? S.SrchSwitched(d8) : S.SrchSwitchFail; }
                     });

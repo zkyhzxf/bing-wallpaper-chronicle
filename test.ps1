@@ -874,6 +874,20 @@ Check '日历双击用系统双击时间' {
     return $true
 }
 
+Check '日历重设加粗日期后会重挂双击钩子' {
+    $t = Get-Content (Join-Path $Root 'src\Forms\CalendarForm.cs') -Raw
+    if ($t -notmatch 'private void RefreshBolded') { return '没有 RefreshBolded' }
+    if ($t -notmatch 'cal\.Handle != before') { return '没检测句柄变化 —— MonthCalendar 设 BoldedDates 会重建窗口' }
+    if ($t -notmatch 'hook\.AssignHandle\(cal\.Handle\)') { return '没有重新挂钩子' }
+    return $true
+}
+
+Check '日历双击不会叠加触发' {
+    $t = Get-Content (Join-Path $Root 'src\Forms\CalendarForm.cs') -Raw
+    if ($t -notmatch 'private void AcceptPick\(\)\s*\{\s*if \(busy\) \{ return; \}') { return 'AcceptPick 没有 busy 保护，连点会撞锁' }
+    return $true
+}
+
 # ---------------------------------------------------------------- 汇总
 Write-Host ''
 Write-Host ('-' * 50) -ForegroundColor DarkGray
