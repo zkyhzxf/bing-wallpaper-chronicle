@@ -147,6 +147,8 @@ Release 需要在 GitHub 网页手动创建，上传 `dist\BingWallpaperLite-v3.
 
 ### 1b. PowerShell 5.1 的 `ConvertFrom-Json` 在管道里不展开数组
 
+**这个坑踩了两次，第三次是 v3.6.14 才彻底清的**：换图失败（`urlbase` 拼接）和搜索失效都是它。
+
 ```powershell
 # 错：循环只跑一次，得到一个 Object[]，$x.d 是 $null
 foreach ($x in @(Get-Content $f -Raw | ConvertFrom-Json)) { ... }
@@ -196,6 +198,8 @@ PowerShell 里 `$T` 和 `$t` 是同一个变量。清理脚本曾经因为 `$tmp
 | `all-index.json` 707 KB | 首次打开菜单解析一次 | 已加静态缓存（`cachedIdxCount` / `cachedIdxSize`） |
 | `SearchForm` 硬编码 `(无标题)` | 小瑕疵 | 应改用 `S.PinNoTitle` |
 | exe 名仍带 Lite | 任务管理器里可见 | 改名要迁移计划任务/注册表/自启，见下 |
+| **多地区不可行** | 只能看当前出口 IP 对应的地区 | 实测 `mkt=ja-JP/en-US/de-DE` 与 `cc=jp/us/de` 全部返回同一张中文区图；历史图更拿不到（接口只给 8 天）。要别地区必须切代理节点，且拿不到历史 |
+| **索引刷新是惰性的** | 搜索用的索引可能旧几天 | 没有定时器：文件不到 7 天用缓存，超过 7 天才在下次调用时联网。搜索已改为「历史索引 + 最近 8 天实时补齐」规避 |
 
 ---
 

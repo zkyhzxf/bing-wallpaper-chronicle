@@ -126,6 +126,48 @@ Check '-Query 空关键词应报错（退出码 1，不换图）' {
     return $true
 }
 
+Check '-Query 命中项内容真的含关键词' {
+    $r = Run-Script @('-Query', '长城')
+    $s = $r.Output.Trim()
+    if (-not $s.StartsWith('[')) { return ('输出不是数组') }
+    $arr = @($s | ConvertFrom-Json -ErrorAction Stop)
+    if ($arr.Count -lt 3) { return ('只返回 ' + $arr.Count + ' 条，至少应 3 条') }
+    foreach ($it in $arr) {
+        $txt = [string]$it.title + ' ' + [string]$it.copyright
+        if ($txt.IndexOf('长城') -lt 0) { return ('条目不含关键词: ' + $it.date + ' ' + $it.title) }
+    }
+    return $true
+}
+
+Check '-Query 结果的日期全部合法' {
+    $r = Run-Script @('-Query', '长城')
+    $arr = @($r.Output.Trim() | ConvertFrom-Json -ErrorAction Stop)
+    foreach ($it in $arr) {
+        $d = [string]$it.date
+        if ($d -notmatch '^\d{8}$') { return ('日期格式错误: [' + $d + ']') }
+        if ($d -lt '20090713') { return ('日期早于下界: ' + $d) }
+    }
+    return $true
+}
+
+Check 'current.date 必须是单个 8 位日期' {
+    $r = Run-Script @('-Status', '-Json')
+    $j = $r.Output | ConvertFrom-Json
+    $d = [string]$j.current.date
+    if (-not $d) { return 'state 里没有 date' }
+    if ($d -notmatch '^\d{8}$') { return ('date 异常（可能是数组被拼接）: [' + $d + ']') }
+    return $true
+}
+
+Check 'current.file 指向的文件真实存在' {
+    $r = Run-Script @('-Status', '-Json')
+    $j = $r.Output | ConvertFrom-Json
+    $f = [string]$j.current.file
+    if (-not $f) { return 'state 里没有 file' }
+    if (-not (Test-Path $f)) { return ('记录的文件不存在: ' + $f) }
+    return $true
+}
+
 Check '-Status -Json 的 version 与 exe 一致' {
     $r = Run-Script @('-Status', '-Json')
     $j = $r.Output | ConvertFrom-Json

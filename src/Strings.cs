@@ -66,7 +66,7 @@ namespace BingWallpaperLite
         public static string SrchBtn          { get { return T("搜索", "Search"); } }
         public static string SrchApply        { get { return T("换这张", "Use this"); } }
         public static string SrchRefresh      { get { return T("刷新索引", "Refresh index"); } }
-        public static string SrchHint         { get { return T("索引覆盖 2016-03 至今；7 天自动更新一次。", "Index covers Mar 2016 onward; refreshed every 7 days."); } }
+        public static string SrchHint         { get { return T("索引覆盖 2016-03 至今；最近 8 天实时补齐。", "Index covers Mar 2016 onward; the latest 8 days are always fetched live."); } }
         public static string SrchSearching    { get { return T("搜索中…", "Searching…"); } }
         public static string SrchBtnRandom    { get { return T("随机", "Random"); } }
         public static string SrchEmptyAsk     { get { return T("没有填写关键词。\r\n要从图库里随机抽一组搜索结果吗？", "No keyword entered.\r\nPick a random batch of results from the library?"); } }

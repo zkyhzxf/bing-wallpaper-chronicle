@@ -377,6 +377,53 @@ function Get-WiliiCandidates {
     )
 }
 
+# 增量刷新 wilii 兜底索引：只拉最近 3 页（48 条），按日期合并进现有文件
+function Update-WiliiIndex {
+    $map = @{}
+    if (Test-Path $WiliiIndexPath) {
+        try {
+            $arrW = Get-Content $WiliiIndexPath -Raw -Encoding UTF8 | ConvertFrom-Json
+            foreach ($x in $arrW) {
+                $k = [string]$x.d
+                if ($k.Length -eq 8) { $map[$k] = [string]$x.n }
+            }
+        } catch {
+            Write-Log ("兜底索引读取失败，将重建：" + $_.Exception.Message) 'WARN'
+        }
+    }
+    $added = 0
+    for ($p = 1; $p -le 3; $p++) {
+        try {
+            $pwUri = "https://bing.wilii.cn/api/bing?page=$p&pageSize=16"
+            $pwParams = @{ Uri = $pwUri; TimeoutSec = 20; UseBasicParsing = $true; Headers = @{'User-Agent' = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'} }
+            if ($proxy) { $pwParams['Proxy'] = $proxy }
+            $pw = Invoke-WebRequest @pwParams
+            if (-not $pw -or -not $pw.Content) { throw ('第 ' + $p + ' 页响应为空') }
+            $jw = $pw.Content | ConvertFrom-Json
+            if (-not $jw -or -not $jw.response) { throw ('第 ' + $p + ' 页 JSON 无 response') }
+            foreach ($it in @($jw.response.data)) {
+                $d = ([string]$it.date) -replace '[^0-9]', ''
+                if ($d.Length -ne 8) { continue }
+                $fn = ([string]$it.filepath -split '/')[-1]
+                if (-not $fn) { continue }
+                if ($fn -match '^_\d+x\d+\.jpg$') { continue }
+                $base = $fn -replace '_\d+x\d+\.jpg$', ''
+                if (-not $map.ContainsKey($d)) { $added++ }
+                $map[$d] = $base
+            }
+        } catch {
+            Write-Log ("兜底索引第 " + $p + " 页失败：" + $_.Exception.Message) 'WARN'
+        }
+        Start-Sleep -Milliseconds 120
+    }
+    if ($map.Count -eq 0) { throw '兜底索引为空，保留原文件不动' }
+    $outW = @()
+    foreach ($k in ($map.Keys | Sort-Object -Descending)) { $outW += [ordered]@{ d = $k; n = $map[$k] } }
+    [System.IO.File]::WriteAllText($WiliiIndexPath, ($outW | ConvertTo-Json -Depth 2 -Compress), (New-Object System.Text.UTF8Encoding($false)))
+    $script:WiliiMap = $null    # 清内存缓存，下次重读
+    return $added
+}
+
 # 老存档索引（2009-07 ~ 2016-03）：字段 d/t/c/n/a，n 是 wilii 文件名，a 是镜像站 slug
 # 数据来自 bingwallpaper.anerg.com，按月度页从新到旧反推日期，条数必须等于当月天数才收
 $script:OldMap = $null
@@ -420,7 +467,10 @@ function Get-OldIndexRecord {
 
     # 文件名取短的：优先 anerg slug，没有就用 wilii 文件名去掉分辨率后缀
     $core = $slug
-    if (-not $core) { $core = ($fn -replace '\.jpg$', '') }
+    if (-not $core) {
+        $core = $fn -replace '_\d+x\d+\.jpg$', ''
+        $core = $core -replace '\.jpg$', ''
+    }
 
     return @{
         id        = ''
@@ -617,7 +667,13 @@ function Get-WallpaperList {
     $json = Get-WallpaperListJson -Count $Count
     # PS 5.1 的 ConvertFrom-Json 在管道里不展开数组，必须先落到变量
     $obj = $json | ConvertFrom-Json
-    return @($obj)
+    $arr = @($obj)
+    # 运行时护栏：真拿到「装着一个数组的数组」时强制展开，避免 urlbase 被拼成一串
+    if ($arr.Count -eq 1 -and $arr[0] -is [array]) {
+        Write-Log 'Get-WallpaperList 返回嵌套数组，已强制展开' 'WARN'
+        $arr = @($arr[0])
+    }
+    return $arr
 }
 
 function Get-ZhTitleMap {
@@ -752,6 +808,37 @@ function Search-Archive {
     if ($kws.Count -eq 0) { return @() }
 
     $idx = Get-FullIndex
+
+    # 索引缓存可能是几天前的（惰性过期 7 天），直接搜会漏掉最新的图。
+    # 这里用实时接口补最近 8 天，接口免费且本来就在调，等于给搜索加个「永不过期」的头。
+    try {
+        $recentJson = Get-WallpaperListJson -Count 8
+        $recentObj = $recentJson | ConvertFrom-Json
+        $recent = @($recentObj)
+        if ($recent.Count -gt 0) {
+            $seen = @{}
+            $merged = @()
+            foreach ($it in $recent) {
+                $dd = [string]$it.startdate
+                $seen[$dd] = $true
+                $merged += [ordered]@{
+                    d = $dd
+                    t = [string]$it.title
+                    c = [string]$it.copyright
+                    l = [string]$it.copyrightlink
+                    i = [string]$it.imageId
+                }
+            }
+            foreach ($it in $idx) {
+                if (-not $seen.ContainsKey([string]$it.d)) { $merged += $it }
+            }
+            $idx = $merged
+            Write-Log ("搜索索引：最近 " + $recent.Count + " 天实时补齐，合计 " + $idx.Count + " 条")
+        }
+    } catch {
+        Write-Log ("实时补齐失败，仅用本地索引：" + $_.Exception.Message) 'WARN'
+    }
+
     $hits = @()
     foreach ($item in $idx) {
         $text = [string]$item.t + ' ' + [string]$item.c
@@ -1393,6 +1480,13 @@ if ($UpdateIndex) {
         $idx = @(Get-FullIndex -Force)
         $n = $idx.Count
         Write-Log ("索引已更新，共 " + $n + " 条")
+        # 兜底索引用同一入口增量刷新，失败不影响主索引结果
+        try {
+            $addedW = Update-WiliiIndex
+            Write-Log ("兜底索引已刷新，新增 " + $addedW + " 天")
+        } catch {
+            Write-Log ("兜底索引刷新失败：" + $_.Exception.Message) 'WARN'
+        }
         Write-Output ('{"ok":true,"entries":' + $n + '}')
         exit 0
     } catch {
