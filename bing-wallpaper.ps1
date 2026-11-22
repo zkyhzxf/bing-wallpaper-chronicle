@@ -68,6 +68,8 @@ param(
     [string]$RangeFrom = '',
     [string]$RangeTo = '',
     [string]$DestDir = '',
+    [ValidateSet('auto','cdn','anerg')]
+    [string]$Source = 'auto',
     [string]$FavDate = '',
     [switch]$ExportLinks,
     [string]$UnfavDate = '',
@@ -744,16 +746,29 @@ function Get-OldIndexRecord {
         $core = $core -replace '\.jpg$', ''
     }
 
+    # 镜像的图片名有自己的规则：短 slug + 可选分辨率后缀，跟我们的 _ZH-CNxxxx 尾巴无关
+    $aNames = @()
+    $shortName = ''
+    if ($core) { $shortName = ($core -split '_')[0] }
+    if ($slug) { $aNames += $slug }
+    if ($shortName) {
+        $aNames += $shortName
+        $aNames += ($shortName + '_1366x768')
+        $aNames += ($shortName + '_1920x1080')
+    }
+    $aNames = @($aNames | Where-Object { $_ } | Select-Object -Unique)
+
     return @{
-        id        = ''
-        title     = [string]$x.t
-        copyright = [string]$x.c
-        url       = $wiliiUrl
-        slug      = $core
-        anergUrl  = $anergUrl
-        wiliiUrl  = $wiliiUrl
-        source    = 'old'
-        searchUrl = ''
+        id         = ''
+        title      = [string]$x.t
+        copyright  = [string]$x.c
+        url        = $wiliiUrl
+        slug       = $core
+        anergUrl   = $anergUrl
+        anergNames = $aNames
+        wiliiUrl   = $wiliiUrl
+        source     = 'old'
+        searchUrl  = ''
     }
 }
 
@@ -2421,7 +2436,9 @@ if ($ExportLinks) {
 }
 
 if ($ExportRange) {
-    # 按日期范围批量下载：目标目录已有同名则跳过，索引里没有记失败
+    # 按日期范围批量下载：目标已有同名则跳过（可断点续跑）
+    # 源：cdn = Bing 官方（只有 2018-09 之后还有效）；anerg = bingwallpaper.anerg.com 的图库（2009-2018 都能用）
+    # 命名统一为 {日期}_{slug}.jpg —— 接管模式靠 GetFiles(dir, "日期_*.jpg") 找图，前缀必须是 8 位日期
     $d1 = ([string]$RangeFrom) -replace '[^0-9]', ''
     $d2 = ([string]$RangeTo)   -replace '[^0-9]', ''
     if ($d1.Length -ne 8 -or $d2.Length -ne 8) {
@@ -2451,10 +2468,36 @@ if ($ExportRange) {
     $byDate = @{}
     foreach ($it in $idx) { $byDate[[string]$it.d] = $it }
 
+    # 老索引（2009-2016）：文件名 n、备用名 a
+    $oldMap = @{}
+    $pOld = Join-Path $ArchiveDir 'old-index.json'
+    if (Test-Path $pOld) {
+        try {
+            $tmpOld = Get-Content $pOld -Raw -Encoding UTF8 | ConvertFrom-Json
+            foreach ($x in @($tmpOld)) { $oldMap[[string]$x.d] = $x }
+        } catch { }
+    }
+
+    function Get-ShortSlug([string]$date, $oldRec, $newRec) {
+        $slug = ''
+        if ($oldRec) {
+            $slug = [string]$oldRec.n
+            $slug = $slug -replace '_1920x1080\.jpg$', '' -replace '\.jpg$', ''
+        }
+        if (-not $slug -and $newRec) {
+            $slug = [string]$newRec.i
+            $slug = $slug -replace '_[A-Za-z]{2}-[A-Za-z]{2}\d+$', ''
+        }
+        if (-not $slug) { return '' }
+        return ($slug -split '_')[0]
+    }
+
     $okN = 0
     $skipN = 0
     $failN = 0
     $firstErr = ''
+    $failList = New-Object System.Collections.ArrayList
+    $resLog = @{}
 
     $day = [datetime]::ParseExact($d1, 'yyyyMMdd', $null)
     $end = [datetime]::ParseExact($d2, 'yyyyMMdd', $null)
@@ -2465,32 +2508,84 @@ if ($ExportRange) {
         $had = @(Get-ChildItem $DestDir -Filter "${cur}_*.jpg" -File -ErrorAction SilentlyContinue) | Select-Object -First 1
         if ($had) { $skipN++; continue }
 
-        $rec = $byDate[$cur]
-        if (-not $rec) {
+        $oldRec = $oldMap[$cur]
+        $newRec = $byDate[$cur]
+        if (-not $oldRec -and -not $newRec) {
             $failN++
+            [void]$failList.Add("$cur`t索引里没有这一天")
             if (-not $firstErr) { $firstErr = "$cur 索引里没有这一天" }
             continue
         }
-        $imgId = [string]$rec.i
-        if (-not $imgId) {
+        $short = Get-ShortSlug $cur $oldRec $newRec
+        if (-not $short) {
             $failN++
-            if (-not $firstErr) { $firstErr = "$cur 缺少 imageId" }
+            [void]$failList.Add("$cur`t拿不到 slug")
+            if (-not $firstErr) { $firstErr = "$cur 缺少 slug" }
             continue
         }
 
-        $shortId = $imgId -replace '_[A-Za-z]{2}-[A-Za-z]{2}\d+$', ''
-        $destFile = Join-Path $DestDir "${cur}_$shortId.jpg"
-        try {
-            [void](Save-BingImage -Url "https://www.bing.com/th?id=${imgId}_UHD.jpg" -Dest $destFile -MinKB 300)
-            $okN++
-        } catch {
-            $failN++
-            if (-not $firstErr) { $firstErr = ($_.Exception.Message) -replace '"', "'" }
+        # 选源：auto 时 2018-09 之后走 Bing，之前走 anerg，失败就换另一个
+        $order = @()
+        if ($Source -eq 'cdn') { $order = @('cdn', 'anerg') }
+        elseif ($Source -eq 'anerg') { $order = @('anerg', 'cdn') }
+        else { if ($cur -ge '20180901') { $order = @('cdn', 'anerg') } else { $order = @('anerg', 'cdn') } }
+
+        $destFile = Join-Path $DestDir "${cur}_$short.jpg"
+        $saved = $false
+        $lastMsg = ''
+        foreach ($src in $order) {
+            if ($saved) { break }
+            if ($src -eq 'cdn') {
+                if (-not $newRec -or -not ([string]$newRec.i)) { $lastMsg = '没有 imageId'; continue }
+                # 2018 年的图只有 1920x1080，2019 起才有 UHD；按画质从高到低试
+                foreach ($suf in @('_UHD', '_1920x1080')) {
+                    $u = "https://www.bing.com/th?id=$($newRec.i)$suf.jpg"
+                    try {
+                        [void](Save-BingImage -Url $u -Dest $destFile -MinKB 60 -Retry 1)
+                        $saved = $true
+                        $resLog[$cur] = ('cdn' + $suf)
+                        break
+                    } catch { $lastMsg = ($_.Exception.Message) -replace '"', "'" }
+                }
+            } else {
+                $base = $cur.Substring(0, 6)
+                $cands = @()
+                if ($oldRec -and ([string]$oldRec.a)) { $cands += [string]$oldRec.a }
+                if ($oldRec -and ([string]$oldRec.n)) { $cands += (([string]$oldRec.n) -replace '_1920x1080\.jpg$', '') }
+                $cands += ($short + '_1366x768')
+                $cands += ($short + '_1920x1080')
+                $cands += $short
+                $cands = @($cands | Where-Object { $_ } | Select-Object -Unique)
+                foreach ($nm in $cands) {
+                    $u = "https://img.nanxiongnandi.com/$base/$nm.jpg"
+                    try {
+                        [void](Save-BingImage -Url $u -Dest $destFile -MinKB 60 -Retry 1)
+                        $saved = $true
+                        $resLog[$cur] = ('anerg:' + $nm)
+                        break
+                    } catch { $lastMsg = ($_.Exception.Message) -replace '"', "'" }
+                }
+            }
         }
-        Start-Sleep -Milliseconds 350
+
+        if ($saved) { $okN++ }
+        else {
+            $failN++
+            [void]$failList.Add("$cur`t$lastMsg")
+            if (-not $firstErr) { $firstErr = "$cur $lastMsg" }
+            if (Test-Path $destFile) { try { Remove-Item -LiteralPath $destFile -Force -ErrorAction SilentlyContinue } catch { } }
+        }
+        Start-Sleep -Milliseconds 250
     }
 
-    Write-Log ("批量下载完成：成功 $okN，跳过 $skipN，失败 $failN")
+    $failPath = Join-Path $DestDir '_export-fail.txt'
+    if ($failList.Count -gt 0) {
+        try { $failList | Set-Content $failPath -Encoding UTF8 } catch { }
+    } elseif (Test-Path $failPath) {
+        try { Remove-Item -LiteralPath $failPath -Force -ErrorAction SilentlyContinue } catch { }
+    }
+
+    Write-Log ("批量下载完成：成功 $okN，跳过 $skipN，失败 $failN（源：$Source）")
     Write-Output ('{"ok":' + $okN + ',"skip":' + $skipN + ',"fail":' + $failN + ',"error":"' + $firstErr + '"}')
     exit 0
 }
@@ -3103,13 +3198,11 @@ try {
                             $wList += @{ url = ($rec.wiliiUrl -replace '_\d+x\d+\.jpg$', '.jpg'); tag = '老存档·wilii(无后缀)' }
                         }
                     }
-                    $preferAnerg = ($Date -ge '20130101' -and $Date -le '20151231')
-                    if ($preferAnerg) {
-                        if ($rec.anergUrl) { $candO += @{ url = $rec.anergUrl; tag = '老存档·镜像' } }
-                        foreach ($w in $wList) { $candO += $w }
-                    } else {
-                        foreach ($w in $wList) { $candO += $w }
-                        if ($rec.anergUrl) { $candO += @{ url = $rec.anergUrl; tag = '老存档·镜像' } }
+                    # wilii 在前（2014 前不带后缀、2016 起带后缀，$wList 两种都给），镜像兜底
+                    foreach ($w in $wList) { $candO += $w }
+                    $aBase = $Date.Substring(0, 6)
+                    foreach ($nm in @($rec.anergNames)) {
+                        $candO += @{ url = ('https://img.nanxiongnandi.com/' + $aBase + '/' + $nm + '.jpg'); tag = '老存档·镜像' }
                     }
                     foreach ($cO in $candO) {
                         if ($okO) { break }
@@ -3155,7 +3248,9 @@ try {
 
                     # 候选地址：UHD 原图 > 归档给出的直链
                     $cand = @()
-                    $cand += @{ url = "https://www.bing.com/th?id=${archId}_UHD.jpg"; tag = '归档原图'; minKb = 300 }
+                    $cand += @{ url = "https://www.bing.com/th?id=${archId}_UHD.jpg"; tag = '归档原图 UHD'; minKb = 300 }
+                    # 2016-2018 的图 Bing 只留了 1080p，UHD 会 404
+                    $cand += @{ url = "https://www.bing.com/th?id=${archId}_1920x1080.jpg"; tag = '归档原图 1080p'; minKb = 60 }
                     if ($rec.url) {
                         $u2 = [string]$rec.url
                         if ($u2.StartsWith('/')) { $u2 = 'https://www.bing.com' + $u2 }
