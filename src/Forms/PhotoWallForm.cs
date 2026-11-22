@@ -41,10 +41,13 @@ namespace BingWallpaperLite
         private bool working = false;
         private int localCount = 0;
 
-        public PhotoWallForm()
+        public PhotoWallForm() : this(null, null) { }
+
+        /// <summary>customDates 非空时用给定日期列表（按节日筛选走这条），否则用往日同月同日。</summary>
+        public PhotoWallForm(string[] customDates, string customTitle)
         {
             try { WallTheme.Apply(); } catch { }
-            Text = Program.AppName + " · " + S.WallTitle(DateTime.Today.ToString("MMdd"));
+            Text = Program.AppName + " · " + (string.IsNullOrEmpty(customTitle) ? S.WallTitle(DateTime.Today.ToString("MMdd")) : customTitle);
             FormBorderStyle = FormBorderStyle.Sizable;
             StartPosition = FormStartPosition.CenterScreen;
             MaximizeBox = true;
@@ -72,14 +75,24 @@ namespace BingWallpaperLite
             catch { }
             ClientSize = new Size(startW, Math.Max(600, Math.Min(820, capH)));
 
-            int yearNow = DateTime.Today.Year;
-            for (int y = yearNow - 1; y >= Program.ArchiveMinDateValue.Year; y--)
+            if (customDates != null && customDates.Length > 0)
             {
-                DateTime dt;
-                try { dt = new DateTime(y, DateTime.Today.Month, DateTime.Today.Day); }
-                catch { continue; }
-                if (dt < Program.ArchiveMinDateValue) { continue; }
-                dates.Add(dt.ToString("yyyyMMdd"));
+                foreach (string cd in customDates)
+                {
+                    if (cd != null && cd.Length == 8) { dates.Add(cd); }
+                }
+            }
+            else
+            {
+                int yearNow = DateTime.Today.Year;
+                for (int y = yearNow - 1; y >= Program.ArchiveMinDateValue.Year; y--)
+                {
+                    DateTime dt;
+                    try { dt = new DateTime(y, DateTime.Today.Month, DateTime.Today.Day); }
+                    catch { continue; }
+                    if (dt < Program.ArchiveMinDateValue) { continue; }
+                    dates.Add(dt.ToString("yyyyMMdd"));
+                }
             }
 
             // ---------------------------------------------------------------- 顶部工具条

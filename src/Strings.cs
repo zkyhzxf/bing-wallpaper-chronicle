@@ -409,6 +409,35 @@ namespace BingWallpaperLite
             return string.Format(tpl, root);
         }
         public static string TkBrokenState { get { return T("当前：接管目录不见了（已自动回到原模式）", "Current: takeover folder missing (reverted)"); } }
+        /// <summary>按节日筛选：菜单名、空态、照片墙标题、节日英文名。</summary>
+        public static string FestivalMenu { get { return T("按节日筛选", "Filter by festival"); } }
+        public static string FestivalEmpty(string name)
+        {
+            string tpl = _en ? "No image available for {0} yet." : "「{0}」还没有可用的图";
+            return string.Format(tpl, name);
+        }
+        public static string FestivalWallTitle(string name, int n)
+        {
+            string tpl = _en ? "{0} · {1} years" : "{0} · {1} 张";
+            return string.Format(tpl, name, n);
+        }
+        public static string FestivalName(string cn)
+        {
+            if (!_en) { return cn; }
+            switch (cn)
+            {
+                case "春节": return "Spring Festival";
+                case "元宵节": return "Lantern Festival";
+                case "清明节": return "Qingming";
+                case "端午节": return "Dragon Boat";
+                case "中秋节": return "Mid-Autumn";
+                case "重阳节": return "Double Ninth";
+                case "国庆节": return "National Day";
+                case "元旦": return "New Year's Day";
+                case "除夕": return "New Year's Eve";
+            }
+            return cn;
+        }
         public static string TkBrokenBody(string root)
         {
             string tpl = _en ? "Folder not found: {0}" : "找不到目录：{0}";

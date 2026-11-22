@@ -485,6 +485,44 @@ Check '沙盒清理不碰真实归档目录' {
 
 try { if (Test-Path $sbRoot) { Remove-Item $sbRoot -Recurse -Force -ErrorAction SilentlyContinue } } catch { }
 
+Write-Host '[6.6] 按节日筛选' -ForegroundColor Yellow
+
+Check '-Festivals 列出九个节日' {
+    $r = Run-Script @('-Festivals')
+    $lines = @($r.Output -split "`n" | Where-Object { $_ -match '天\s*$' })
+    if ($lines.Count -ne 9) { return ('列出 ' + $lines.Count + ' 个，应为 9 个') }
+    return $true
+}
+
+Check '中秋日期由农历算出且含关键年份' {
+    $r = Run-Script @('-Festival', '中秋节')
+    if ($r.Output -notmatch '"count":(\d+)') { return ('输出不是预期 JSON') }
+    $n = [int]$Matches[1]
+    if ($n -lt 15) { return ('只有 ' + $n + ' 天，农历算法可能算错') }
+    foreach ($d in @('20100922', '20150927', '20201001', '20260925')) {
+        if ($r.Output -notmatch $d) { return ('缺关键年份 ' + $d) }
+    }
+    return $true
+}
+
+Check '春节与除夕日期正确且除夕早一天' {
+    $r = Run-Script @('-Festival', '春节')
+    foreach ($d in @('20100214', '20250129', '20260217')) {
+        if ($r.Output -notmatch $d) { return ('春节缺 ' + $d) }
+    }
+    $r2 = Run-Script @('-Festival', '除夕')
+    foreach ($d in @('20100213', '20250128', '20260216')) {
+        if ($r2.Output -notmatch $d) { return ('除夕缺 ' + $d) }
+    }
+    return $true
+}
+
+Check '-Festival 不存在的节日应报错' {
+    $r = Run-Script @('-Festival', '圣诞节')
+    if ($r.Code -ne 1) { return ('退出码 ' + $r.Code + '，应为 1') }
+    return $true
+}
+
 Write-Host '[7] 老索引一致性' -ForegroundColor Yellow
 
 $oldIdxPath = Join-Path $Root 'archive\old-index.json'

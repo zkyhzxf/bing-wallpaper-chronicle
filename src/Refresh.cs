@@ -40,6 +40,39 @@ namespace BingWallpaperLite
         }
 
         /// <summary>照片墙：把历年同一天的图一次摆出来。</summary>
+        private static PhotoWallForm festForm;
+
+        /// <summary>按节日筛选：脚本算日期，照片墙只负责画。</summary>
+        private static void DoFestival(string name)
+        {
+            if (festForm != null && !festForm.IsDisposed) { festForm.Activate(); return; }
+            string outText = "";
+            try { outText = RunScriptCapture("-Festival " + name); } catch { }
+            List<string> ds = new List<string>();
+            try
+            {
+                System.Text.RegularExpressions.Match m = System.Text.RegularExpressions.Regex.Match(
+                    outText, "\"dates\"\\s*:\\s*\\[([^\\]]*)\\]");
+                if (m.Success)
+                {
+                    foreach (System.Text.RegularExpressions.Match mm in System.Text.RegularExpressions.Regex.Matches(m.Groups[1].Value, "\\d{8}"))
+                    {
+                        ds.Add(mm.Value);
+                    }
+                }
+            }
+            catch { }
+            if (ds.Count == 0)
+            {
+                MessageBox.Show(S.FestivalEmpty(name), Program.AppName, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            ds.Sort();
+            festForm = new PhotoWallForm(ds.ToArray(), S.FestivalWallTitle(S.FestivalName(name), ds.Count));
+            festForm.FormClosed += delegate { festForm = null; };
+            festForm.Show();
+        }
+
         private static void DoPhotoWall()
         {
             if (wallForm != null && !wallForm.IsDisposed) { wallForm.Activate(); return; }

@@ -129,6 +129,17 @@ namespace BingWallpaperLite
 
             m.Items.Add(new ToolStripSeparator());
             m.Items.Add(MakeItem(S.PickDate, delegate { DoPickDate(); }));
+            // 按节日筛选：日期由脚本用农历算法算出来，这里只负责传节名
+            ToolStripMenuItem festMenu = new ToolStripMenuItem(S.FestivalMenu);
+            festMenu.Name = "festival";
+            foreach (string fn in new string[] { "春节", "元宵节", "清明节", "端午节", "中秋节", "重阳节", "国庆节", "元旦", "除夕" })
+            {
+                string capFn = fn;
+                ToolStripMenuItem fi = new ToolStripMenuItem(S.FestivalName(capFn));
+                fi.Click += delegate { DoFestival(capFn); };
+                festMenu.DropDownItems.Add(fi);
+            }
+            m.Items.Add(festMenu);
             m.Items.Add(MakeItem(S.SearchMenu, delegate { DoSearch(); }));
             m.Items.Add(MakeItem(S.AiMenu, delegate { DoAi(); }));
 
