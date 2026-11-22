@@ -102,7 +102,8 @@ param(
     [switch]$TestArchiveDir,
     [int]$TestArchiveSweep = 0,
     [switch]$Festivals,
-    [string]$Festival = ''
+    [string]$Festival = '',
+    [switch]$MigrateOld
 )
 
 $ErrorActionPreference = 'Stop'
@@ -1421,6 +1422,8 @@ function Clear-OldCache {
     $pinnedSet = Read-Pinned
     Get-ChildItem $CacheDir -Filter '*.jpg' -File -ErrorAction SilentlyContinue | ForEach-Object {
         # 收藏里已有同名副本：这份是安全移动的残留，直接清掉
+        # 当前壁纸优先于一切判断：先保住正在用的这张，再考虑删重复副本
+        if ($cur -and $_.FullName -ieq $cur) { $protected++; return }
         if (Test-Path -LiteralPath (Join-Path $FavDir $_.Name)) {
             if ($DryRun) { Write-Log "[DryRun] 将删除重复副本 $($_.Name)" }
             else { try { [System.IO.File]::Delete($_.FullName); $removed++ } catch { } }
@@ -1729,7 +1732,7 @@ if ($WallDrop) {
     $droppedW = 0
     if (Test-Path $WallDir) {
         foreach ($f in @(Get-ChildItem $WallDir -Filter '*.jpg' -File -ErrorAction SilentlyContinue)) {
-            try { Remove-Item -LiteralPath $f.FullName -Force -ErrorAction SilentlyContinue; $droppedW++ } catch { }
+            try { Remove-Item -LiteralPath $f.FullName -Force -ErrorAction Stop; $droppedW++ } catch { }
         }
     }
     Write-Host ("已丢弃 $droppedW 张照片墙临时图")
@@ -1781,6 +1784,56 @@ if ($RebuildCacheIndex) {
     }
     [System.IO.File]::WriteAllText($IndexPath, ($catalog | ConvertTo-Json -Depth 6), (New-Object System.Text.UTF8Encoding($false)))
     Write-Host ("补写 $added 条，已有 $kept 条，跳过 $skipped 个文件")
+    exit 0
+}
+
+# ---------------------------------------------------------------- 老存档归位
+
+# 3.6.48 及更早版本有个 bug：老存档（2009-08 ~ 2016-02）的落盘目录被 Get-DownloadDir 覆盖，
+# 图混进了 cache 根或 archive\images。这个开关把认得出的老存档图挪回 archive\old\<YYYYMM>\。
+if ($MigrateOld) {
+    $oldIdxP = Join-Path $ArchiveDir 'old-index.json'
+    if (-not (Test-Path $oldIdxP)) { Write-Host '缺 archive\old-index.json，先正常启动一次让它释放'; exit 1 }
+    $oldSet = @{}
+    try {
+        $tmpMig = Get-Content $oldIdxP -Raw -Encoding UTF8 | ConvertFrom-Json
+        foreach ($e in @($tmpMig)) { $kM = [string]$e.d; if ($kM.Length -eq 8) { $oldSet[$kM] = $true } }
+    } catch { }
+    if ($oldSet.Count -eq 0) { Write-Host '老索引读不出来'; exit 1 }
+
+    $movedM = 0
+    $skipM = 0
+    $dupM = 0
+    $keepM = 0
+    # 正在用的壁纸与 state 指向的那张原地不动：移走会让桌面和「这张图是哪儿」同时断掉
+    $curM = ''
+    try { $curM = [string](Get-ItemProperty 'HKCU:\Control Panel\Desktop' -Name Wallpaper -ErrorAction SilentlyContinue).Wallpaper } catch { }
+    $curM2 = ''
+    try { $stM = Read-State; if ($stM -and $stM.file) { $curM2 = [string]$stM.file } } catch { }
+    foreach ($srcDir in @($CacheDir, $ArchiveImgDir)) {
+        if (-not (Test-Path $srcDir)) { continue }
+        foreach ($f in @(Get-ChildItem $srcDir -Filter '*.jpg' -File -ErrorAction SilentlyContinue)) {
+            $mm = [regex]::Match($f.Name, '^(\d{8})_')
+            if (-not $mm.Success) { $skipM++; continue }
+            $d8m = $mm.Groups[1].Value
+            if (-not $oldSet.ContainsKey($d8m)) { continue }
+            if ($curM -and $f.FullName -ieq $curM) { $keepM++; continue }
+            if ($curM2 -and $f.FullName -ieq $curM2) { $keepM++; continue }
+            $dstDir = Join-Path $OldDir $d8m.Substring(0, 6)
+            $dst = Join-Path $dstDir $f.Name
+            if (Test-Path -LiteralPath $dst) { $dupM++; continue }
+            if ($DryRun) {
+                Write-Host ("[DryRun] " + $f.FullName + " → " + $dst)
+                $movedM++
+                continue
+            }
+            if (-not (Test-Path $dstDir)) { New-Item -ItemType Directory -Path $dstDir -Force | Out-Null }
+            try { Move-Item -LiteralPath $f.FullName -Destination $dst; $movedM++ }
+            catch { Write-Host ("移动失败：" + $f.Name + " - " + $_.Exception.Message) }
+        }
+    }
+    $tagM = if ($DryRun) { '[DryRun] ' } else { '' }
+    Write-Host ($tagM + "老存档归位：移动 $movedM 个，同名已存在 $dupM 个，正在使用跳过 $keepM 个，非日期文件名跳过 $skipM 个")
     exit 0
 }
 
@@ -3105,7 +3158,7 @@ try {
         $dt = $null
         try { $dt = [datetime]::ParseExact($Date, 'yyyyMMdd', $null) } catch { }
         if (-not $dt) { Write-Log "日期格式错误（要 YYYYMMDD）：$Date" 'ERROR'; exit 1 }
-        if ($dt.Date -gt (Get-Date).Date) { Write-Log '不能选择未来日期' 'ERROR'; exit 5 }
+        if ($dt.Date -gt (Get-Date).Date) { Write-Log '不能选择未来日期（要 YYYYMMDD 且不晚于今天）' 'ERROR'; exit 12 }
 
         Write-Log "--- 指定日期：$Date ---"
 
@@ -3147,7 +3200,7 @@ try {
             $locked = Enter-RunLock -WaitSec $script:LockWaitSec
             if (-not $locked) { exit 2 }
             Set-WallpaperStyle -Name $styleName
-            [void](Set-DesktopWallpaper -Path $hit.FullName)
+            if (-not (Set-DesktopWallpaper -Path $hit.FullName)) { Write-Log '壁纸设置后注册表未更新' 'WARN'; Exit-Run 11 }
             # 标题优先级：state（同一天）→ 归档索引 → 空
             $st = Read-State
             $tTitle = ''
@@ -3186,8 +3239,8 @@ try {
         }
 
         # 2) 接口 8 天内 → 走正常下载（带元信息）
-        $list8obj = (Get-WallpaperListJson -Count 8) | ConvertFrom-Json
-        $list8 = @($list8obj)
+        $list8obj = try { Get-WallpaperListJson -Count 8 } catch { Write-Log ("接口不可用，按归档索引继续：" + $_.Exception.Message) 'WARN'; '[]' }
+        $list8 = @($list8obj | ConvertFrom-Json | Where-Object { $_ })
         $pos8 = -1
         for ($i = 0; $i -lt $list8.Count; $i++) {
             if ([string]$list8[$i].startdate -eq $Date) { $pos8 = $i; break }
@@ -3207,7 +3260,7 @@ try {
                     $slugO = [string]$rec.slug
                     $ymO   = $Date.Substring(0, 6)
                     $dirO  = Join-Path $OldDir $ymO
-                    $dirO = Get-DownloadDir
+                    # 老存档按月单独放：不能用 Get-DownloadDir（会落到缓存根，30 天后被清掉）
                     if (-not (Test-Path $dirO)) { New-Item -ItemType Directory -Path $dirO -Force | Out-Null }
                     $destO = Join-Path $dirO ("${Date}_" + $slugO + '.jpg')
                     if ($DryRun) {
@@ -3247,7 +3300,7 @@ try {
                     }
                     if ($okO) {
                         Set-WallpaperStyle -Name $styleName
-                        if (Set-DesktopWallpaper -Path $destO) { Write-Log "壁纸已设置: $destO" }
+                        if (Set-DesktopWallpaper -Path $destO) { Write-Log "壁纸已设置: $destO" } else { Write-Log '壁纸设置后注册表未更新' 'WARN'; Exit-Run 11 }
                         $tO = [string]$rec.title
                         if ($tO.Length -gt 60) { $tO = $tO.Substring(0, 60) }
                         Add-Pinned -Date $Date
@@ -3308,7 +3361,7 @@ try {
 
                     if ($got) {
                         Set-WallpaperStyle -Name $styleName
-                        if (Set-DesktopWallpaper -Path $dest) { Write-Log "壁纸已设置: $dest" }
+                        if (Set-DesktopWallpaper -Path $dest) { Write-Log "壁纸已设置: $dest" } else { Write-Log '壁纸设置后注册表未更新' 'WARN'; Exit-Run 11 }
                         if ($archTtl.Length -gt 60) { $archTtl = $archTtl.Substring(0, 60) }
                         Add-Pinned -Date $Date
                         Write-State -Date $Date -File $dest -Title $archTtl -Copyright $archCpr -SearchUrl ([string]$rec.searchUrl) -ImageId $archId -AppliedDate $Date
@@ -3363,7 +3416,7 @@ try {
                 Exit-Run 5
             }
             Set-WallpaperStyle -Name $styleName
-            if (Set-DesktopWallpaper -Path $dest) { Write-Log "壁纸已设置: $dest" }
+            if (Set-DesktopWallpaper -Path $dest) { Write-Log "壁纸已设置: $dest" } else { Write-Log '壁纸设置后注册表未更新' 'WARN'; Exit-Run 11 }
             Add-Pinned -Date $Date
             # 降级 CDN 时也尽量带上标题，避免托盘显示空白
             $cdTtl = [string]$archTtl
@@ -3441,7 +3494,7 @@ try {
 
         Set-WallpaperStyle -Name $styleName
         if (Set-DesktopWallpaper -Path $file) { Write-Log "壁纸已设置: $file" }
-        else { Write-Log '壁纸设置后注册表未更新' 'WARN' }
+        else { Write-Log '壁纸设置后注册表未更新' 'WARN'; Exit-Run 11 }
         # 本地图也尽量补标题：先查缓存索引，再查归档索引
         $uTtl = ''
         $uCpr = ''
@@ -3707,7 +3760,7 @@ try {
     } else {
         Set-WallpaperStyle -Name $styleName
         if (Set-DesktopWallpaper -Path $dest) { Write-Log "壁纸已设置: $dest" }
-        else { Write-Log '壁纸设置后注册表未更新' 'WARN' }
+        else { Write-Log '壁纸设置后注册表未更新' 'WARN'; Exit-Run 11 }
         Write-State -Date $dateStr -File $dest -Title $title -Copyright $copy -SearchUrl ([string]$img.copyrightlink) -ImageId $fullId -AppliedDate $dateStr
         if ($lockedNow) { Write-Log "锁定中，手动切换已更新保持对象：$title" }
     }

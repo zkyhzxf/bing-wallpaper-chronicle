@@ -1,4 +1,4 @@
-﻿# 必应壁纸编年史 · 回归测试
+# 必应壁纸编年史 · 回归测试
 # 用法：pwsh -File test.ps1
 # 设计原则：幂等、不碰桌面壁纸、不依赖网络（用本地索引与缓存）
 
@@ -693,6 +693,83 @@ Check '2019 年前的日期不尝试升级' {
 Check '日历与信息窗口能看到照片墙的图' {
     $t = Get-Content (Join-Path $Root 'src\Refresh.cs') -Raw
     if ($t -notmatch 'Directory\.GetFiles\(WallDirPath') { return 'FindImageFilePath 没查 wall 目录' }
+    return $true
+}
+
+# ---------------------------------------------------------------- [9] 兜底链与失败上报
+Write-Host ''
+Write-Host '[9] 兜底链与失败上报'
+
+Check '老存档按月份落盘，不再被 Get-DownloadDir 覆盖' {
+    $t = Get-Content $Script -Raw
+    if ($t -match '\$dirO\s*=\s*Get-DownloadDir') { return '老存档目录仍被 Get-DownloadDir 覆盖' }
+    if ($t -notmatch '\$dirO\s*=\s*Join-Path \$OldDir \$ymO') { return '没找到按月归档的 $dirO 赋值' }
+    return $true
+}
+
+Check '-Date 取 8 天列表有断网降级' {
+    $t = Get-Content $Script -Raw
+    if ($t -notmatch '\$list8obj = try \{ Get-WallpaperListJson') { return '8 天列表调用没有 try/catch' }
+    if ($t -notmatch '\$list8 = @\(\$list8obj \| ConvertFrom-Json') { return 'list8 解析没有跟着改' }
+    return $true
+}
+
+Check '设壁纸失败会返回 11 而不是报成功' {
+    $t = Get-Content $Script -Raw
+    $n = ([regex]::Matches($t, 'Exit-Run 11')).Count
+    if ($n -lt 5) { return ('只有 ' + $n + ' 处上报 11，应不少于 5（命中本地/老存档/归档/降级/-Use/主流程）') }
+    if ($t -match '\[void\]\(Set-DesktopWallpaper -Path \$hit\.FullName') { return '命中本地路径仍在丢弃返回值' }
+    return $true
+}
+
+Check '未来日期不再伪装成「这一天没图」' {
+    $t = Get-Content $Script -Raw
+    if ($t -notmatch '不能选择未来日期[^\r\n]*exit 12') { return '未来日期仍返回 5' }
+    return $true
+}
+
+Check '清理缓存先保当前壁纸再删重复副本' {
+    $t = Get-Content $Script -Raw
+    $curP = 'if ($cur -and $_.FullName -ieq $cur) { $protected++; return }'
+    $favP = 'Join-Path $FavDir $_.Name'
+    $iCur = $t.IndexOf($curP)
+    $iFav = $t.IndexOf($favP)
+    if ($iCur -lt 0) { return '没找到当前壁纸保护判断' }
+    if ($iFav -lt 0) { return '没找到收藏副本判断' }
+    if ($iCur -gt $iFav) { return '当前壁纸判断排在收藏副本之后' }
+    return $true
+}
+
+Check '-WallDrop 删除失败不计数' {
+    $t = Get-Content $Script -Raw
+    if ($t -match 'Remove-Item -LiteralPath \$f\.FullName -Force -ErrorAction SilentlyContinue') {
+        return '仍是 SilentlyContinue，删失败也会计数'
+    }
+    return $true
+}
+
+Check '照片墙关窗不冻结界面且会中断取图' {
+    $t = Get-Content $wallCs -Raw
+    if ($t -notmatch 'private bool closing') { return '没有 closing 标志' }
+    if ($t -notmatch 'abortFetch = true') { return '关窗没有中断批量取图' }
+    if ($t -notmatch 'S\.WallKeeping') { return '关窗补高清没有状态栏提示' }
+    if ($t -notmatch 'if \(abortFetch\) \{ break; \}') { return '取图循环没有检查中断标志' }
+    return $true
+}
+
+Check '照片墙取图结果分三类计数' {
+    $t = Get-Content $wallCs -Raw
+    if ($t -notmatch 'else if \(code == 4 \|\| code == 5\) \{ none\+\+; \}') { return '没把「这一天没有图」单独计数' }
+    if ($t -notmatch 'WallFetchDone2') { return '没有用 WallFetchDone2' }
+    if ($t -match 'if \(code == 0 \|\| code == 4 \|\| code == 8\) \{ ok\+\+; \}') { return '仍把边界码算成取图成功' }
+    return $true
+}
+
+Check '帮助与关于都写了兜底链与三层封顶' {
+    $t = Get-Content (Join-Path $Root 'src\Strings.cs') -Raw
+    foreach ($k in @('十一、这张图是从哪来的', '十二、占用为什么不会一直涨', '5 级自动回退', '三层封顶', 'Where the image comes from', 'Why storage stays put')) {
+        if ($t.IndexOf($k) -lt 0) { return ('Strings.cs 缺「' + $k + '」') }
+    }
     return $true
 }
 

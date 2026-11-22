@@ -374,10 +374,12 @@ namespace BingWallpaperLite
                     BeginInvoke((MethodInvoker)delegate
                     {
                         ok.Enabled = true;
-                        bool done = (code == 0 || code == 4 || code == 8);
+                        bool done = (code == 0 || code == 8);
                         try { RefreshInfo(); } catch { }
                         try { cal.BoldedDates = LocalDates().ToArray(); } catch { }
-                        lblWhere.Text = done ? S.SrchSwitched(d8) : S.SrchSwitchFail;
+                        if (code == 11) { lblWhere.Text = S.WallApplyFail; }
+                        else if (code == 12) { lblWhere.Text = S.FutureDateHint; }
+                        else { lblWhere.Text = done ? S.SrchSwitched(d8) : S.SrchSwitchFail; }
                     });
                 }
                 catch { }

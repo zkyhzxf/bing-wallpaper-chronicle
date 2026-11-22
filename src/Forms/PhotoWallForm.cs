@@ -42,6 +42,8 @@ namespace BingWallpaperLite
         private string selected = "";
         private readonly string openWallpaper = "";
         private bool working = false;
+        private volatile bool abortFetch = false;
+        private bool closing = false;
         private int localCount = 0;
 
         public PhotoWallForm() : this(null, null) { }
@@ -505,7 +507,7 @@ namespace BingWallpaperLite
                 {
                     txt = txt + "  " + S.WallIdleHint;
                 }
-                if (selected.Length == 0 && CountPreviewQuality() > 0)
+                if (CountPreviewQuality() > 0)
                 {
                     txt = txt + "  " + S.WallPreviewHint;
                 }
@@ -551,19 +553,32 @@ namespace BingWallpaperLite
 
         private void OnCardDoubleClick(WallCard card)
         {
-            if (card == null) { return; }
+            if (card == null || working) { return; }
             string src = card.Tag as string;
             if (string.IsNullOrEmpty(src)) { FetchOne(card); return; }
-            src = EnsureFullQuality(card.Date8, src);
+            working = true;
+            UpdateStatus();
+            lblStatus.Text = S.WallUpgrading;
+            lblStatus.Refresh();
             try
             {
+                src = EnsureFullQuality(card.Date8, src);
                 int code = Program.RunScriptExit("-Use \"" + src + "\"");
-                if (code == 0 || code == 4 || code == 8)
+                if (code == 0 || code == 8)
                 {
                     MessageBox.Show(S.WallApplied, Program.AppName, MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
+                else if (code == 11)
+                {
+                    MessageBox.Show(S.WallApplyFail, Program.AppName, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
             }
             catch { }
+            finally
+            {
+                working = false;
+                UpdateStatus();
+            }
         }
 
         private WallCard SelectedCard()
@@ -581,13 +596,19 @@ namespace BingWallpaperLite
             if (string.IsNullOrEmpty(src)) { return; }
             working = true;
             UpdateStatus();
+            lblStatus.Text = S.WallUpgrading;
+            lblStatus.Refresh();
             try
             {
                 src = EnsureFullQuality(c.Date8, src);
                 int code = Program.RunScriptExit("-Use \"" + src + "\"");
-                if (code == 0 || code == 4 || code == 8)
+                if (code == 0 || code == 8)
                 {
                     MessageBox.Show(S.WallApplied, Program.AppName, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+                else if (code == 11)
+                {
+                    MessageBox.Show(S.WallApplyFail, Program.AppName, MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 }
             }
             finally
@@ -612,7 +633,7 @@ namespace BingWallpaperLite
             {
                 src = EnsureFullQuality(c.Date8, src);
                 int code = Program.RunScriptExit("-Use \"" + src + "\"");
-                if (code != 0 && code != 4 && code != 8)
+                if (code != 0 && code != 8)
                 {
                     MessageBox.Show(S.WallFavFail, Program.AppName, MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     return;
@@ -702,8 +723,11 @@ namespace BingWallpaperLite
             ThreadPool.QueueUserWorkItem(delegate
             {
                 int ok = 0;
+                int none = 0;
+                int degraded = 0;
                 for (int i = 0; i < todo.Count; i++)
                 {
+                    if (abortFetch) { break; }
                     string d8 = todo[i];
                     int cur = i + 1;
                     try
@@ -717,7 +741,9 @@ namespace BingWallpaperLite
                     string args = "-WallDate " + d8;
                     if (PreviewAsUhd) { args += " -WallFull"; }
                     int code = Program.RunScriptExit(args);
-                    if (code == 0 || code == 4 || code == 8) { ok++; }
+                    if (code == 0) { ok++; }
+                    else if (code == 8) { ok++; degraded++; }
+                    else if (code == 4 || code == 5) { none++; }
                     // 下完一张就地刷新一张，不再等整批结束
                     string d8done = d8;
                     try { BeginInvoke((MethodInvoker)delegate { RefreshCardFor(d8done); }); } catch { }
@@ -730,7 +756,9 @@ namespace BingWallpaperLite
                         // 缺图卡片在「只看本地有」下本来被过滤掉，这批补完才需要重建列表
                         if (chkLocal.Checked) { LoadData(); }
                         else { UpdateStatus(); }
-                        lblStatus.Text = S.WallFetchDone(ok, todo.Count);
+                        lblStatus.Text = abortFetch
+                            ? S.WallFetchAborted(ok, todo.Count)
+                            : S.WallFetchDone2(ok, degraded, none, todo.Count);
                     });
                 }
                 catch { }
@@ -790,6 +818,9 @@ namespace BingWallpaperLite
             base.OnFormClosing(e);
             if (e.Cancel) { return; }
 
+            abortFetch = true;         // 还在批量取图的话先让它停下，别再往临时目录里写
+            if (closing) { return; }   // 补高清已完成，这次是真正关闭
+
             try
             {
                 int nWall = CountWall();
@@ -816,9 +847,27 @@ namespace BingWallpaperLite
 
                 if (choice == "keep")
                 {
-                    Program.RunScriptExit("-WallKeep");
-                    MessageBox.Show(S.WallResultKeep(nWall), Program.AppName,
-                        MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    // 补 UHD 最长 60 秒：放后台跑，窗口立刻可拖动，状态栏给提示，不再冻住界面
+                    e.Cancel = true;
+                    closing = true;
+                    lblStatus.Text = S.WallKeeping;
+                    lblStatus.Refresh();
+                    int nKeep = nWall;
+                    ThreadPool.QueueUserWorkItem(delegate
+                    {
+                        Program.RunScriptExit("-WallKeep");
+                        try
+                        {
+                            BeginInvoke((MethodInvoker)delegate
+                            {
+                                MessageBox.Show(S.WallResultKeep(nKeep), Program.AppName,
+                                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                                Close();
+                            });
+                        }
+                        catch { }
+                    });
+                    return;
                 }
                 else
                 {

@@ -387,6 +387,14 @@ namespace BingWallpaperLite
                     {
                         Balloon(S.BNoImage, S.NoImageHint);
                     }
+                    else if (code == 11)
+                    {
+                        Balloon(S.BWallFail, S.WallApplyFail);
+                    }
+                    else if (code == 12)
+                    {
+                        Balloon(S.BFutureDate, S.FutureDateHint);
+                    }
                     else if (code == 3)
                     {
                         Balloon(S.BNoFav, S.NoFavHint);

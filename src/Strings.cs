@@ -371,6 +371,32 @@ namespace BingWallpaperLite
             string tpl = _en ? "Fetched {0} of {1}" : "已取回 {0}/{1} 张";
             return string.Format(tpl, ok, total);
         }
+        /// <summary>取图结果分三类报：成功（含降级）、无图、总数。不把「这一天没有图」算成成功。</summary>
+        public static string WallFetchDone2(int ok, int degraded, int none, int total)
+        {
+            if (_en)
+            {
+                string e = string.Format("Fetched {0} of {1}", ok, total);
+                if (degraded > 0) { e += string.Format(" ({0} stayed at 1080p)", degraded); }
+                if (none > 0) { e += string.Format(", {0} day(s) have no image", none); }
+                return e;
+            }
+            string c = string.Format("已取回 {0}/{1} 张", ok, total);
+            if (degraded > 0) { c += string.Format("（其中 {0} 张只拿到 1080p）", degraded); }
+            if (none > 0) { c += string.Format("，{0} 天本来就没有图", none); }
+            return c;
+        }
+        public static string WallFetchAborted(int ok, int total)
+        {
+            return _en
+                ? string.Format("Stopped after {0} of {1} (window closed)", ok, total)
+                : string.Format("已中止：取回 {0}/{1} 张（窗口已关闭）", ok, total);
+        }
+        public static string WallApplyFail { get { return T("图已经拿到，但桌面壁纸没换上。可能是系统策略或权限限制，也可能这张图正被别的程序占用；右键 →「系统」→「打开日志」能看到具体原因。", "The image is ready but the desktop did not update. The system policy, permissions, or another program holding the file may be the cause; right-click → System → Open log for details."); } }
+        public static string BWallFail    { get { return T("图取到了，桌面没换上", "Image ready, desktop not updated"); } }
+        public static string BFutureDate  { get { return T("不能选未来日期", "Future dates are not allowed"); } }
+        public static string FutureDateHint { get { return T("换成今天或更早的日期", "Pick today or an earlier date"); } }
+        public static string WallKeeping  { get { return T("正在把这批图补成高清原图，稍等…", "Upgrading these images to the original quality…"); } }
         public static string WallStatusFmt
         {
             get { return T("本地已有 {0} 张 / 共 {1} 个年份，还缺 {2} 张（双击格子设为壁纸）",
@@ -682,7 +708,33 @@ namespace BingWallpaperLite
     every image to UHD again, so the archive still keeps the original.
     Favoriting or setting a wallpaper also upgrades to the original first, so a
     1080p preview never ends up in your favorites or on your desktop.
-    Set ""wallPreview"": ""uhd"" in config.json (or pass -WallFull) to take UHD directly."
+    Set ""wallPreview"": ""uhd"" in config.json (or pass -WallFull) to take UHD directly.
+
+11. Where the image comes from
+    Five steps, each falling back to the next automatically:
+      1. Bing original  th?id={ID}_UHD.jpg          3840x2160  about 3.5 MB
+      2. Bing scaled    th?id={ID}&w=3840&h=2160    3840x2160  about 0.8 MB
+      3. Microsoft CDN  Latest/3840x2400/{date}.jpg
+      4. Bing 1080p     th?id={ID}_1920x1080.jpg    1920x1080  about 0.33 MB
+      5. Third-party mirror from 2009-08, 1366x768 or 958x512
+    For 2009-2016 images two more steps exist: the wilii filename table and the
+    anerg monthly mirror. The index ships inside the exe, so titles and paging
+    work offline; only the image itself needs the network.
+    If the Microsoft list API is down, paging falls back to the local index
+    instead of failing.
+
+12. Why storage stays put
+    Three caps, none of which can grow without bound:
+      - Cache       30 days, cleaned on a rolling basis
+      - Archive     capped at 500 MB; clears in two rounds (unlisted first,
+                    then listed entries if still over)
+      - Thumbnails  at most 800 files and 100 MB; orphans go first
+    Favorites, hand-picked dates and the current wallpaper are skipped by all
+    three rules. Gallery, photo wall and prefetch folders are wiped when you
+    close them or switch modes.
+    A typical steady state: 20-30 MB of cache, an archive near its cap, and
+    under 0.3 MB of thumbnails.
+    Daily stories have their own entry: tray menu -> Clean cache."
                     : @"一、每天怎么换图
     默认在 00:10 自动换成当天的必应图，8:10 / 12:10 各补查一次。
     想立刻回到今天：托盘菜单 →「换成今天」。
@@ -735,7 +787,28 @@ namespace BingWallpaperLite
     下完一张就显示一张，不用等整墙下完。
     关窗选「暂存到归档」时会自动补一次 UHD，所以归档里仍然是原图。
     收藏或设为壁纸前也会先补原图，不会把 1080p 存进收藏夹、也不会拿它当桌面。
-    想整墙直接拿 UHD：config.json 里把 wallPreview 设成 ""uhd""，或用脚本参数 -WallFull。";
+    想整墙直接拿 UHD：config.json 里把 wallPreview 设成 ""uhd""，或用脚本参数 -WallFull。
+
+十一、这张图是从哪来的
+    取图有固定顺序，前一级失败自动退到下一级，不用你换源：
+    1. Bing 原图    th?id={ID}_UHD.jpg          3840×2160  约 3.5 MB
+    2. Bing 缩放    th?id={ID}&w=3840&h=2160    3840×2160  约 0.8 MB
+    3. 微软 CDN     Latest/3840x2400/{date}.jpg
+    4. Bing 1080p   th?id={ID}_1920x1080.jpg    1920×1080  约 0.33 MB
+    5. 第三方镜像   2009-08 起的老图，1366×768 或 958×512
+    翻 2009 到 2016 的图时还有两级：wilii 文件名表和 anerg 月度镜像。
+    索引内嵌在 exe 里，断网也能查标题、能翻页，只是图本身要联网。
+    微软的列表接口不通时，翻页会改按本地索引相对移动，不会卡在今天。
+
+十二、占用为什么不会一直涨
+    三层封顶，任何一层都不会无限增长：
+    ・日常缓存  保留 30 天，滚动清理
+    ・历史归档  上限 500 MB，满了分两轮清：先清没进保留名单的，还不够再动名单里的
+    ・缩略图    最多 800 张且不超过 100 MB，源图已经不在的先清
+    收藏的、手动挑过的、当前正在用的，这三条规则都跳过。
+    画廊、照片墙、预取这三个临时目录，关窗或切模式就清空。
+    稳态大致是：缓存 20-30 MB、归档接近上限、缩略图 0.3 MB 以下。
+    每日故事另有独立入口：托盘菜单 →「清理缓存」。";
             }
         }
         public static string InfoBtnFaved    { get { return T("★ 已收藏", "★ Favorited"); } }
@@ -756,11 +829,11 @@ namespace BingWallpaperLite
         public static string CleanStoriesHint { get { return T("删掉的是本地缓存，下次查看时按需重新抓取；不影响壁纸与索引", "Removes the local cache only; stories are re-fetched on demand"); } }
 
         // ---------------- 关于正文
-        public static string AboutFeat1      { get { return T("· 每天 00:10 自动换当天的图，8:10 / 12:10 补查", "· Switches to today's image at 00:10, with retries at 08:10 / 12:10"); } }
-        public static string AboutFeat2      { get { return T("· 往回翻：最近 8 天直接取，更早的接续归档，可一路翻到 2009-07", "· Browse back: last 8 days from the API, older ones continue from the archive, all the way to Jul 2009"); } }
-        public static string AboutFeat2b     { get { return T("· 日历跳到 2009-07 以来的任意一天（2016-03 前是存档图，分辨率较低）", "· Jump to any day since Jul 2009 (before Mar 2016 comes from an older archive at lower resolution)"); } }
-        public static string AboutFeat3      { get { return T("· 收藏喜欢的图，收藏与缓存清理互不影响", "· Favorite images; favorites survive cache cleanup"); } }
-        public static string AboutFeat4      { get { return T("· 关掉托盘也照常换图（计划任务直接调脚本）", "· Keeps working with the tray closed (the task runs the script)"); } }
+        public static string AboutFeat1      { get { return T("· 覆盖 6339 天：2009-07-13 至今，一天不缺（空缺 3 天，来源本身就缺）", "· 6339 days covered: 2009-07-13 to today, one per day (3 days missing at the source)"); } }
+        public static string AboutFeat2      { get { return T("· 往回翻到 2009 年 7 月：最近 8 天走实时接口，更早自动接续归档；日历可跳任意一天", "· Browse back to Jul 2009: last 8 days from the API, older from the archive; the calendar jumps anywhere"); } }
+        public static string AboutFeat2b     { get { return T("· 取图 5 级自动回退：UHD → 缩放 → 微软 CDN → 1080p → 第三方镜像", "· 5-step fallback: UHD → scaled → MS CDN → 1080p → third-party mirror"); } }
+        public static string AboutFeat3      { get { return T("· 三层封顶不攒垃圾：缓存 30 天 / 归档 500 MB / 缩略图 800 张", "· Three caps keep storage flat: 30-day cache / 500 MB archive / 800 thumbnails"); } }
+        public static string AboutFeat4      { get { return T("· 关掉托盘也照常换图；索引内嵌在 exe 里，断网也能查标题", "· Works with the tray closed; the index is embedded, so titles stay searchable offline"); } }
         public static string AboutCanDo      { get { return T("【能做什么】", "[What it does]"); } }
         public static string AboutSources    { get { return T("【数据来源】", "[Data sources]"); } }
         public static string AboutComponents { get { return T("【运行组件】", "[Components]"); } }

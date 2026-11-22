@@ -351,7 +351,7 @@ namespace BingWallpaperLite
                         catch { }
                     }
                     code = Program.RunStep(dir);
-                    if (code == 0 || code == 4 || code == 8)
+                    if (code == 0 || code == 4 || code == 8 || code == 11)
                     {
                         try { st6 = Program.ReadStateForInfo(); } catch { }
                         break;
