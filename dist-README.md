@@ -9,7 +9,7 @@
 
 ### 方式一：单文件（推荐）
 
-拿到只有一个 `BingWallpaperLite.exe`（约 84 KB），双击它会弹出安装向导：
+拿到只有一个 `BingWallpaperLite.exe`（约 2 MB），双击它会弹出安装向导：
 
 ```
 必应壁纸Lite · 安装
