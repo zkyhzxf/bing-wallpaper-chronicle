@@ -409,6 +409,14 @@ namespace BingWallpaperLite
         public static string InfoBtnSearch   { get { return T("了解更多", "Learn more"); } }
         public static string InfoBtnFolder   { get { return T("文件夹中打开", "Show in folder"); } }
         public static string InfoBtnMore     { get { return T("浏览更多壁纸", "Browse more"); } }
+        public static string StoryTitle      { get { return T("每日故事", "Daily story"); } }
+        public static string StoryExpand     { get { return T("展开全文", "Read more"); } }
+        public static string StoryLoading    { get { return T("正在获取故事…", "Loading story…"); } }
+        public static string CleanStories    { get { return T("清理每日故事缓存", "Clear story cache"); } }
+        public static string CleanStoriesN   { get { return T("清理每日故事缓存（{0} 条）", "Clear story cache ({0})"); } }
+        public static string ShowStoryOn     { get { return T("● 显示每日故事", "● Show daily story"); } }
+        public static string ShowStoryOff    { get { return T("显示每日故事（关）", "Daily story (off)"); } }
+        public static string CleanStoriesHint { get { return T("删掉的是本地缓存，下次查看时按需重新抓取；不影响壁纸与索引", "Removes the local cache only; stories are re-fetched on demand"); } }
 
         // ---------------- 关于正文
         public static string AboutFeat1      { get { return T("· 每天 00:10 自动换当天的图，8:30 / 12:00 补查", "· Switches to today's image at 00:10, with retries at 08:30 / 12:00"); } }

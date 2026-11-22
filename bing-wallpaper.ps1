@@ -77,6 +77,8 @@ param(
     [switch]$Gallery,
     [switch]$GalleryClear,
     [switch]$IncludeOld,
+    [string]$StoryFor = '',
+    [switch]$CleanStories,
     [switch]$Status
 )
 
@@ -107,6 +109,8 @@ $ArchiveImgDir = Join-Path $ArchiveDir 'images';
 $OldDir        = Join-Path $ArchiveDir 'old'
 $OldIndexPath  = Join-Path $ArchiveDir 'old-index.json'
 $WiliiIndexPath = Join-Path $ArchiveDir 'wilii-index.json'
+$StoriesDir    = Join-Path $ArchiveDir 'stories'
+$StoryMapPath  = Join-Path $ArchiveDir 'story-map.json'
 $GalleryDir    = Join-Path $CacheDir 'gallery'
 $PinnedPath = Join-Path $Root 'pinned.json'
 $PinnedLegacyPath = Join-Path $Root 'cache\pinned.json'
@@ -375,6 +379,59 @@ function Get-WiliiCandidates {
         ($root + $base + '_1920x1080.jpg'),
         ($root + $base + '.jpg')
     )
+}
+
+# 每日故事：正文按需抓取并缓存在 archive\stories\{YYYYMMDD}.txt
+# 映射表 story-map.json 只有「日期 -> todaybing slug」，正文不进安装包
+$script:StoryMap = $null
+function Get-StoryMap {
+    if ($null -ne $script:StoryMap) { return $script:StoryMap }
+    $script:StoryMap = @{}
+    if (-not (Test-Path $StoryMapPath)) { return $script:StoryMap }
+    try {
+        $o = Get-Content $StoryMapPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        foreach ($pp in $o.PSObject.Properties) { $script:StoryMap[$pp.Name] = [string]$pp.Value }
+    } catch {
+        Write-Log "故事映射表解析失败: $($_.Exception.Message)" 'WARN'
+    }
+    return $script:StoryMap
+}
+
+function Get-Story {
+    param([string]$Date, [switch]$NoFetch)
+    $Date = ([string]$Date) -replace '[^0-9]', ''
+    if ($Date.Length -ne 8) { return '' }
+    $f = Join-Path $StoriesDir ($Date + '.txt')
+    if (Test-Path $f) {
+        try {
+            $s = (Get-Content $f -Raw -Encoding UTF8)
+            if ($s) { return $s.Trim() }
+            return ''
+        } catch { return '' }
+    }
+    if ($NoFetch) { return '' }
+    $map = Get-StoryMap
+    if (-not $map.ContainsKey($Date)) { return '' }
+    $slug = [string]$map[$Date]
+    if (-not $slug) { return '' }
+    try {
+        $resp = Invoke-WebRequest -Uri ('https://www.todaybing.com/bing/' + $slug) -TimeoutSec 20 -UseBasicParsing `
+            -Headers @{'User-Agent' = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'; 'Referer' = 'https://www.todaybing.com/'}
+        $html = [string]$resp.Content
+        $m = [regex]::Match($html, 'data-text-zh="([^"]{10,})"')
+        if (-not $m.Success) { $m = [regex]::Match($html, 'data-text="([^"]{10,})"') }
+        if (-not $m.Success) { return '' }
+        $story = $m.Groups[1].Value
+        $story = $story -replace '&quot;', '"' -replace '&#39;', "'" -replace '&lt;', '<' -replace '&gt;', '>' -replace '&amp;', '&' -replace '&nbsp;', ' '
+        $story = $story.Trim()
+        if ($story.Length -lt 10) { return '' }
+        if (-not (Test-Path $StoriesDir)) { New-Item -ItemType Directory -Path $StoriesDir -Force | Out-Null }
+        [System.IO.File]::WriteAllText($f, $story, (New-Object System.Text.UTF8Encoding($false)))
+        return $story
+    } catch {
+        Write-Log ("故事抓取失败（" + $Date + "）：" + $_.Exception.Message) 'WARN'
+        return ''
+    }
 }
 
 # 增量刷新 wilii 兜底索引：只拉最近 3 页（48 条），按日期合并进现有文件
@@ -1950,6 +2007,26 @@ try {
         }
         Write-Log ("退出画廊模式：清理 " + $nG + " 张")
         Write-Output ('{"removed":' + $nG + '}')
+        Exit-Run 0
+    }
+
+    if ($StoryFor) {
+        $sv = Get-Story -Date $StoryFor
+        $objS = [ordered]@{ date = ([string]$StoryFor) -replace '[^0-9]', ''; story = $sv }
+        Write-Output ($objS | ConvertTo-Json -Compress)
+        Exit-Run 0
+    }
+
+    if ($CleanStories) {
+        $nS = 0
+        if (Test-Path $StoriesDir) {
+            Get-ChildItem $StoriesDir -Filter '*.txt' -File -ErrorAction SilentlyContinue | ForEach-Object {
+                if ($DryRun) { Write-Log "[DryRun] 将删除故事 $($_.Name)"; $nS++ }
+                elseif (Remove-OneFile -Path $_.FullName -Mode $CleanMode) { $nS++ }
+            }
+        }
+        Write-Log ("清理每日故事：" + $nS + " 条")
+        Write-Output ('{"removed":' + $nS + '}')
         Exit-Run 0
     }
 

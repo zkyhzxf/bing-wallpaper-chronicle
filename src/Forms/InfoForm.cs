@@ -119,6 +119,63 @@ namespace BingWallpaperLite
 
             // 窗口高度跟着内容走
             ClientSize = new Size(620, by + 32 + 20);
+
+            // ---------------------------------------------------------------- 每日故事
+            // 正文按需抓取（本地缓存优先），拿到才显示，拿不到整块隐藏
+            int sy = by + 32 + 14;
+            Label lblStoryHd = new Label();
+            lblStoryHd.Text = S.StoryTitle;
+            lblStoryHd.Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Bold);
+            lblStoryHd.SetBounds(20, sy, 580, 20);
+            lblStoryHd.Visible = false;
+            Controls.Add(lblStoryHd);
+
+            Label lblStory = new Label();
+            lblStory.AutoSize = false;
+            lblStory.SetBounds(20, sy + 22, 580, 56);
+            lblStory.Visible = false;
+            Controls.Add(lblStory);
+
+            Button btnExpand = new Button();
+            btnExpand.Text = S.StoryExpand;
+            btnExpand.SetBounds(20, sy + 82, 92, 26);
+            btnExpand.Visible = false;
+            Controls.Add(btnExpand);
+
+            string storyDate = (date ?? "").Replace("-", "").Replace("/", "").Trim();
+            if (storyDate.Length == 8 && Program.ShowStory)
+            {
+                System.Threading.ThreadPool.QueueUserWorkItem(delegate
+                {
+                    string story = "";
+                    try { story = Program.GetStory(storyDate); } catch { }
+                    if (string.IsNullOrEmpty(story)) { return; }
+                    try
+                    {
+                        BeginInvoke((MethodInvoker)delegate
+                        {
+                            bool longText = story.Length > 150;
+                            string brief = longText ? story.Substring(0, 150) + "…" : story;
+                            lblStoryHd.Visible = true;
+                            lblStory.Text = brief;
+                            lblStory.Visible = true;
+                            ClientSize = new Size(620, sy + 22 + (longText ? 92 : 62) + 16);
+                            if (longText)
+                            {
+                                btnExpand.Visible = true;
+                                btnExpand.Click += delegate
+                                {
+                                    lblStory.Text = story;
+                                    btnExpand.Visible = false;
+                                    lblStory.SetBounds(20, sy + 22, 580, 150);
+                                    ClientSize = new Size(620, sy + 22 + 150 + 16);
+                                };
+                            }
+                        });
+                    }
+                    catch { }
+                });
+            }
         }
 
         protected override void Dispose(bool disposing)

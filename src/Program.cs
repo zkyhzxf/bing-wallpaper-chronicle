@@ -64,6 +64,28 @@ namespace BingWallpaperLite
         internal static string FavDirPath { get { return favDir; } }
         internal static string OldDirPath { get { return Path.Combine(archiveDir, "old"); } }
         internal static string GalleryDirPath { get { return Path.Combine(cacheDir, "gallery"); } }
+        internal static string StoriesDirPath { get { return Path.Combine(archiveDir, "stories"); } }
+        /// <summary>是否在「这张图是哪儿」里显示每日故事，配置项 showStory，默认开。</summary>
+        internal static bool ShowStory { get { try { return GetCfgBool(ReadConfig(), "showStory", true); } catch { return true; } } }
+
+        /// <summary>取某天的每日故事：本地缓存命中直接返回，否则由脚本按需抓取并落盘。取不到返回空串。</summary>
+        internal static string GetStory(string date)
+        {
+            try
+            {
+                string d = date == null ? "" : date.Replace("-", "").Trim();
+                if (d.Length != 8) { return ""; }
+                string json = RunScriptCapture("-StoryFor " + d);
+                if (string.IsNullOrEmpty(json)) { return ""; }
+                int i = json.IndexOf('{');
+                if (i < 0) { return ""; }
+                JavaScriptSerializer ser = new JavaScriptSerializer();
+                Dictionary<string, object> o = ser.DeserializeObject(json.Substring(i)) as Dictionary<string, object>;
+                if (o == null || !o.ContainsKey("story")) { return ""; }
+                return o["story"] == null ? "" : o["story"].ToString();
+            }
+            catch { return ""; }
+        }
 
         /// <summary>老存档按月分目录：archive\old\YYYYMM，日期不是 8 位时返回 null。</summary>
         internal static string OldMonthDir(string date)
@@ -520,6 +542,29 @@ namespace BingWallpaperLite
                                 byte[] buf = new byte[8192];
                                 int n;
                                 while ((n = wsr.Read(buf, 0, buf.Length)) > 0) { fs.Write(buf, 0, n); }
+                            }
+                        }
+                    }
+                }
+            }
+            catch { }
+
+            // 每日故事映射表（日期 -> slug）。正文不打包，按需抓取
+            try
+            {
+                string sm = Path.Combine(archiveDir, "story-map.json");
+                if (!File.Exists(sm))
+                {
+                    if (!Directory.Exists(archiveDir)) { Directory.CreateDirectory(archiveDir); }
+                    using (Stream smr = asm.GetManifestResourceStream("story-map.json"))
+                    {
+                        if (smr != null)
+                        {
+                            using (FileStream fs = new FileStream(sm, FileMode.Create, FileAccess.Write, FileShare.None))
+                            {
+                                byte[] buf = new byte[8192];
+                                int n;
+                                while ((n = smr.Read(buf, 0, buf.Length)) > 0) { fs.Write(buf, 0, n); }
                             }
                         }
                     }
