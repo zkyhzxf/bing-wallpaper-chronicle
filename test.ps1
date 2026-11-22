@@ -404,6 +404,97 @@ Check '-CleanFavorites -DryRun 不删文件' {
     return $true
 }
 
+# ---------------------------------------------------------------- 5. 老索引一致性（v3.6.38）
+
+Write-Host '[7] 老索引一致性' -ForegroundColor Yellow
+
+$oldIdxPath = Join-Path $Root 'archive\old-index.json'
+$snapIdxPath = Join-Path $Root 'assets\old-index.json'
+$oldArr = @()
+try { $oldArr = @(Get-Content $oldIdxPath -Raw -Encoding UTF8 | ConvertFrom-Json) } catch { }
+
+Check '老索引与快照哈希一致' {
+    if (-not (Test-Path $oldIdxPath)) { return '缺 archive\old-index.json' }
+    if (-not (Test-Path $snapIdxPath)) { return '缺 assets\old-index.json' }
+    $a = (Get-FileHash $oldIdxPath -Algorithm SHA256).Hash
+    $b = (Get-FileHash $snapIdxPath -Algorithm SHA256).Hash
+    if ($a -ne $b) { return '两处索引不一致：build.ps1 未刷新 assets 快照' }
+    return $true
+}
+
+Check '老索引 2423 条且日期唯一' {
+    if ($oldArr.Count -eq 0) { return '老索引读不出来' }
+    if ($oldArr.Count -ne 2423) { return ('条数 ' + $oldArr.Count + '，应为 2423') }
+    $uniq = @($oldArr | ForEach-Object { [string]$_.d } | Sort-Object -Unique)
+    if ($uniq.Count -ne $oldArr.Count) { return ('日期重复：' + $oldArr.Count + ' 条只有 ' + $uniq.Count + ' 个日期') }
+    return $true
+}
+
+Check '老索引关键锚点' {
+    $m = @{}
+    foreach ($e in $oldArr) { $m[[string]$e.d] = [string]$e.n }
+    $want = [ordered]@{
+        '20100104' = 'Harbin_'
+        '20100327' = 'EarthNight_'
+        '20100414' = 'Cuscus_'
+        '20100417' = 'ClareIsland_'
+        '20100420' = 'TurtleHatchling_'
+        '20100515' = 'Cuscus_'
+        '20100522' = 'TurtleHatchling_'
+        '20120831' = 'GoldenMonkey_'
+        '20141130' = 'ScottishWildcat_'
+    }
+    foreach ($k in $want.Keys) {
+        if (-not $m.ContainsKey($k)) { return ('缺日期 ' + $k) }
+        if (-not $m[$k].StartsWith($want[$k])) { return ($k + ' = ' + $m[$k] + '，应为 ' + $want[$k]) }
+    }
+    return $true
+}
+
+Check '同图多日期恰好 4 组且在白名单内' {
+    $g = @{}
+    foreach ($e in $oldArr) {
+        $n = [string]$e.n
+        if (-not $g.ContainsKey($n)) { $g[$n] = @() }
+        $g[$n] += [string]$e.d
+    }
+    $dups = @($g.Keys | Where-Object { $g[$_].Count -gt 1 })
+    $wl = @(
+        'Cuscus_ZH-CN2223740503_1920x1080.jpg',
+        'TurtleHatchling_ZH-CN407919738_1920x1080.jpg',
+        'DivingPlatform_ZH-CN1344034380_1920x1080.jpg',
+        'LondonAquaticsCentre_ZH-CN1563351439_1920x1080.jpg'
+    )
+    if ($dups.Count -ne $wl.Count) { return ('组数 ' + $dups.Count + '，应为 ' + $wl.Count) }
+    foreach ($d in $dups) { if ($wl -notcontains $d) { return ('白名单外：' + $d) } }
+    return $true
+}
+
+Check '三天确认空缺' {
+    $m = @{}
+    foreach ($e in $oldArr) { $m[[string]$e.d] = $true }
+    foreach ($d in @('20100415', '20100416', '20120813')) {
+        if ($m.ContainsKey($d)) { return ($d + ' 不该有记录') }
+    }
+    return $true
+}
+
+Check '2015 段未被本次改动波及' {
+    $bakPath = Join-Path $Root '_old-index-v3637.json'
+    if (-not (Test-Path $bakPath)) { return '缺备份 _old-index-v3637.json' }
+    $m = @{}
+    foreach ($e in $oldArr) { $m[[string]$e.d] = [string]$e.n }
+    $bak = @(Get-Content $bakPath -Raw -Encoding UTF8 | ConvertFrom-Json)
+    $diff = 0
+    foreach ($e in $bak) {
+        $d = [string]$e.d
+        if ($d -lt '20150101' -or $d -gt '20160304') { continue }
+        if (-not $m.ContainsKey($d)) { $diff++; continue }
+        if ($m[$d] -ne [string]$e.n) { $diff++ }
+    }
+    if ($diff -ne 0) { return ('2015-01-01 起有 ' + $diff + ' 处变化') }
+    return $true
+}
 # ---------------------------------------------------------------- 汇总
 Write-Host ''
 Write-Host ('-' * 50) -ForegroundColor DarkGray

@@ -91,7 +91,8 @@ param(
     [switch]$WallDrop,
     [switch]$WallArchive,
     [switch]$AuditOld,
-    [switch]$FixLegacyFav
+    [switch]$FixLegacyFav,
+    [switch]$FixLegacyDates
 )
 
 $ErrorActionPreference = 'Stop'
@@ -1791,62 +1792,196 @@ if ($AuditOld) {
     $need = [int]($endD - $startD).TotalDays + 1
     Write-Host ('应有 {0} 天，缺 {1} 天' -f $need, ($need - $dsSorted.Count))
     Write-Host ('标题为空 {0} 条；日期越界 {1} 条' -f $emptyT, $outOfRange)
-    $dups = @()
-    foreach ($k in $nm.Keys) { if ($nm[$k] -match ',') { $dups += ($k + ' → ' + $nm[$k]) } }
-    Write-Host ('同一张图标了多个日期：{0} 组' -f $dups.Count)
-    foreach ($x in ($dups | Select-Object -First 8)) { Write-Host ('  ' + $x) }
+    $titleBySlug = @{}
+    foreach ($e in $oo) {
+        $n9 = [string]$e.n
+        if (-not $n9) { continue }
+        if (-not $titleBySlug.ContainsKey($n9)) { $titleBySlug[$n9] = @() }
+        $titleBySlug[$n9] += [string]$e.t
+    }
+    $rePublish = @()
+    $suspect = @()
+    foreach ($k in $nm.Keys) {
+        if ($nm[$k] -notmatch ',') { continue }
+        $line = $k + ' → ' + $nm[$k]
+        $ts = @($titleBySlug[$k] | Sort-Object -Unique)
+        if ($ts.Count -gt 1) { $rePublish += $line } else { $suspect += $line }
+    }
+    Write-Host ('同一张图出现在多个日期：{0} 组（必应重复发布 {1} 组 / 标题相同疑似错标 {2} 组）' -f ($rePublish.Count + $suspect.Count), $rePublish.Count, $suspect.Count)
+    foreach ($x in ($rePublish | Select-Object -First 8)) { Write-Host ('  [重复发布] ' + $x) }
+    foreach ($x in ($suspect | Select-Object -First 8)) { Write-Host ('  [疑似错标] ' + $x) }
+    $segCnt = @($dsSorted | Where-Object { $_ -ge '20100101' -and $_ -le '20141231' }).Count
+    $segNeed = [int](([datetime]::ParseExact('20141231', 'yyyyMMdd', $null) - [datetime]::ParseExact('20100101', 'yyyyMMdd', $null)).TotalDays) + 1
+    Write-Host ('2010-01-01 ~ 2014-12-31：{0} 条 / 应有 {1} 天 / 缺 {2} 天' -f $segCnt, $segNeed, ($segNeed - $segCnt))
     Write-Host '体检完成（只读）'
     exit 0
 }
 
 # ---------------------------------------------------------------- 修历史收藏的日期
 
-if ($FixLegacyFav) {
-    $oo2 = @()
-    try {
-        $tmpO2 = Get-Content (Join-Path $ArchiveDir 'old-index.json') -Raw -Encoding UTF8 | ConvertFrom-Json
-        $oo2 = @($tmpO2)
-    } catch { }
-    $slugMap = @{}
-    foreach ($e in $oo2) {
-        $n8 = [string]$e.n
-        if (-not $n8) { continue }
-        $key = $n8 -replace '\.jpg$', ''
-        if ($key -and -not $slugMap.ContainsKey($key)) { $slugMap[$key] = [string]$e.d }
-    }
-    $fixed = 0
-    $scanned = 0
-    foreach ($dir in @($FavDir, $CacheDir)) {
-        if (-not (Test-Path $dir)) { continue }
-        foreach ($f in @(Get-ChildItem $dir -Filter '*.jpg' -File -ErrorAction SilentlyContinue)) {
-            $scanned++
-            $m2 = [regex]::Match($f.Name, '^(\d{8})_(.+)\.jpg$')
-            if (-not $m2.Success) { continue }
-            $curD = $m2.Groups[1].Value
-            $slug = $m2.Groups[2].Value
-            if (-not $slugMap.ContainsKey($slug)) { continue }
-            $rightD = [string]$slugMap[$slug]
-            if ($rightD.Length -ne 8 -or $rightD -eq $curD) { continue }
-            $newName = $rightD + '_' + $slug + '.jpg'
-            $newPath = Join-Path $dir $newName
-            if (Test-Path -LiteralPath $newPath) { continue }
-            if ($DryRun) {
-                Write-Log ("[DryRun] 将改名：" + $f.Name + " → " + $newName)
-            } else {
-                try {
-                    Move-Item -LiteralPath $f.FullName -Destination $newPath -Force
-                    Write-Log ("改名：" + $f.Name + " → " + $newName)
-                } catch {
-                    Write-Log ("改名失败：" + $f.Name + " " + $_.Exception.Message) 'WARN'
-                    continue
-                }
-            }
-            $fixed++
-        }
-    }
-    Write-Host ("扫描 $scanned 个文件，修正 $fixed 个日期（旧索引纠正：索引 vs 文件名）")
-    exit 0
-}
+if ($FixLegacyFav -or $FixLegacyDates) {
+    # 名字以日期开头的文件，靠「slug → 新索引日期」纠正；只有日期的（故事缓存、保留名单）靠旧索引反查 slug
+    $newBySlug = @{}
+    $oo2 = @()
+    try {
+        $tmpO2 = Get-Content (Join-Path $ArchiveDir 'old-index.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+        $oo2 = @($tmpO2)
+    } catch { }
+    if ($oo2.Count -eq 0) { Write-Host '老索引读不出来，先正常启动一次让它从 exe 释放'; exit 1 }
+    foreach ($e in $oo2) {
+        $n8 = [string]$e.n
+        if (-not $n8) { continue }
+        $key = $n8 -replace '\.jpg$', ''
+        if (-not $key) { continue }
+        if (-not $newBySlug.ContainsKey($key)) { $newBySlug[$key] = New-Object System.Collections.ArrayList }
+        [void]$newBySlug[$key].Add([string]$e.d)
+    }
+
+    # 同一张图可能被必应在两个日期各发布一次，取离原日期最近的那个
+    function Get-NearestNewDate([string]$key, [string]$refD) {
+        $ds = @($newBySlug[$key])
+        if ($ds.Count -eq 0) { return '' }
+        if ($ds.Count -eq 1) { return [string]$ds[0] }
+        $ref = [datetime]::ParseExact($refD, 'yyyyMMdd', $null)
+        $best = ''
+        $bestDiff = [double]::MaxValue
+        foreach ($dd in $ds) {
+            $t = [datetime]::ParseExact([string]$dd, 'yyyyMMdd', $null)
+            $diff = [math]::Abs(($t - $ref).TotalDays)
+            if ($diff -lt $bestDiff) { $bestDiff = $diff; $best = [string]$dd }
+        }
+        return $best
+    }
+
+    $oldIdxPath = Join-Path $Root '_old-index-v3637.json'
+    $oldSlugByDate = @{}
+    if (Test-Path $oldIdxPath) {
+        try {
+            $oldArr = @(Get-Content $oldIdxPath -Raw -Encoding UTF8 | ConvertFrom-Json)
+            foreach ($e in $oldArr) {
+                $n8 = [string]$e.n
+                if (-not $n8) { continue }
+                $oldSlugByDate[[string]$e.d] = ($n8 -replace '\.jpg$', '')
+            }
+        } catch { }
+    }
+
+    $logPath = Join-Path $Root '_rename-log.txt'
+    $log = New-Object System.Collections.ArrayList
+    $fixed = 0
+    $scanned = 0
+    $skipped = 0
+
+    # 1) 收藏 / 缓存 / 归档老图：文件名 = 日期_slug.jpg
+    $jpgDirs = @($FavDir, $CacheDir)
+    $oldRoot = Join-Path $ArchiveDir 'old'
+    if (Test-Path $oldRoot) {
+        foreach ($md in @(Get-ChildItem $oldRoot -Directory -ErrorAction SilentlyContinue)) { $jpgDirs += $md.FullName }
+    }
+    foreach ($dir in $jpgDirs) {
+        if (-not (Test-Path $dir)) { continue }
+        foreach ($f in @(Get-ChildItem $dir -Filter '*.jpg' -File -ErrorAction SilentlyContinue)) {
+            $scanned++
+            $m2 = [regex]::Match($f.Name, '^(\d{8})_(.+)\.jpg$')
+            if (-not $m2.Success) { continue }
+            $curD = $m2.Groups[1].Value
+            $slug = $m2.Groups[2].Value
+            # 归档老图文件名不带分辨率后缀，收藏/缓存带，两种都要能查到
+            $key = $slug
+            if (-not $newBySlug.ContainsKey($key)) { $key = $slug + '_1920x1080' }
+            if (-not $newBySlug.ContainsKey($key)) { $skipped++; continue }
+            $rightD = Get-NearestNewDate $key $curD
+            if ($rightD.Length -ne 8 -or $rightD -eq $curD) { continue }
+            $newName = $rightD + '_' + $slug + '.jpg'
+            $destDir = $dir
+            if ($dir.StartsWith($oldRoot)) { $destDir = Join-Path $oldRoot $rightD.Substring(0, 6) }
+            $newPath = Join-Path $destDir $newName
+            if (Test-Path -LiteralPath $newPath) { $skipped++; continue }
+            $relOld = $f.FullName.Replace($Root + '\', '')
+            $relNew = $newPath.Replace($Root + '\', '')
+            if ($DryRun) {
+                Write-Host ('[DryRun] 改名：' + $relOld + '  →  ' + $relNew)
+                [void]$log.Add($relOld + '  ->  ' + $relNew)
+            } else {
+                if (-not (Test-Path $destDir)) { New-Item -ItemType Directory -Path $destDir -Force | Out-Null }
+                try {
+                    Move-Item -LiteralPath $f.FullName -Destination $newPath -Force
+                    [void]$log.Add($relOld + '  ->  ' + $relNew)
+                } catch {
+                    Write-Host ('改名失败：' + $f.Name + ' ' + $_.Exception.Message) -ForegroundColor Yellow
+                    continue
+                }
+            }
+            $fixed++
+        }
+    }
+
+    # 2) 每日故事缓存：文件名 = 日期.txt，没有 slug，靠旧索引反查
+    $storyDir = Join-Path $ArchiveDir 'stories'
+    if ((Test-Path $storyDir) -and $oldSlugByDate.Count -gt 0) {
+        foreach ($f in @(Get-ChildItem $storyDir -Filter '*.txt' -File -ErrorAction SilentlyContinue)) {
+            $scanned++
+            $oldD = $f.BaseName
+            if ($oldD -notmatch '^\d{8}$') { continue }
+            if (-not $oldSlugByDate.ContainsKey($oldD)) { $skipped++; continue }
+            $slug = $oldSlugByDate[$oldD]
+            if (-not $newBySlug.ContainsKey($slug)) { $skipped++; continue }
+            $rightD = Get-NearestNewDate $slug $oldD
+            if ($rightD.Length -ne 8 -or $rightD -eq $oldD) { continue }
+            $newPath = Join-Path $storyDir ($rightD + '.txt')
+            if (Test-Path -LiteralPath $newPath) { $skipped++; continue }
+            if ($DryRun) {
+                Write-Host ('[DryRun] 故事：' + $f.Name + '  →  ' + ($rightD + '.txt'))
+                [void]$log.Add($f.Name + '  ->  ' + ($rightD + '.txt'))
+            } else {
+                try {
+                    Move-Item -LiteralPath $f.FullName -Destination $newPath -Force
+                    [void]$log.Add($f.Name + '  ->  ' + ($rightD + '.txt'))
+                } catch { continue }
+            }
+            $fixed++
+        }
+    }
+
+    # 3) 保留名单：pinned.json 的键是日期
+    if ((Test-Path $PinnedPath) -and $oldSlugByDate.Count -gt 0) {
+        try {
+            $pinRaw = Get-Content $PinnedPath -Raw -Encoding UTF8 | ConvertFrom-Json
+            $pinNew = [ordered]@{}
+            $pinChanged = 0
+            $pinDrop = 0
+            foreach ($p in $pinRaw.PSObject.Properties) {
+                $k = $p.Name
+                $rightD = $k
+                if ($k -match '^\d{8}$' -and $oldSlugByDate.ContainsKey($k)) {
+                    $slug = $oldSlugByDate[$k]
+                    if ($newBySlug.ContainsKey($slug)) { $rightD = Get-NearestNewDate $slug $k }
+                }
+                if ($pinNew.Contains($rightD)) { $pinDrop++; continue }
+                $pinNew[$rightD] = $true
+                if ($rightD -ne $k) { $pinChanged++ }
+            }
+            if ($pinChanged -gt 0 -or $pinDrop -gt 0) {
+                if ($DryRun) {
+                    Write-Host ('[DryRun] 保留名单：改键 ' + $pinChanged + ' 个，合并重复 ' + $pinDrop + ' 个')
+                } else {
+                    ($pinNew | ConvertTo-Json) | Set-Content $PinnedPath -Encoding UTF8
+                    [void]$log.Add('pinned.json  改键 ' + $pinChanged + ' 个，合并重复 ' + $pinDrop + ' 个')
+                }
+                $fixed += $pinChanged
+            }
+        } catch {
+            Write-Host '保留名单改写失败，已跳过' -ForegroundColor Yellow
+        }
+    }
+
+    if (-not $DryRun -and $log.Count -gt 0) { $log | Set-Content $logPath -Encoding UTF8 }
+    Write-Host ('扫描 ' + $scanned + ' 个文件，修正 ' + $fixed + ' 个日期' + $(if ($DryRun) { '（DryRun：本次不改任何文件）' } else { '' }))
+    if ($skipped -gt 0) { Write-Host ('跳过 ' + $skipped + ' 个：新索引里查不到 slug  或  目标文件名已存在') -ForegroundColor DarkGray }
+    if (-not (Test-Path $oldIdxPath)) { Write-Host '提示：缺 _old-index-v3637.json，故事缓存与保留名单未参与' -ForegroundColor DarkGray }
+    if (-not $DryRun) { Write-Host ('改名记录：' + $logPath) -ForegroundColor DarkGray }
+    exit 0
+}
 
 # ---------------------------------------------------------------- 状态查询
 
