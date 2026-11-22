@@ -683,6 +683,21 @@ namespace BingWallpaperLite
                     // 注册延后到消息循环启动后执行，避免阻塞启动
                     try { RefreshAll(); } catch { }
 
+                    // 画廊模式不跨会话：上次异常退出（崩溃/关机）留下的残留在这里清掉
+                    try
+                    {
+                        string gd = GalleryDirPath;
+                        if (Directory.Exists(gd) && Directory.GetFiles(gd, "*.jpg").Length > 0)
+                        {
+                            System.Threading.ThreadPool.QueueUserWorkItem(delegate
+                            {
+                                RunGalleryClear();
+                                try { anchor.BeginInvoke((MethodInvoker)delegate { RefreshAll(); }); } catch { }
+                            });
+                        }
+                    }
+                    catch { }
+
                     // 每秒校正一次忙碌图标：脚本结束、锁文件消失后自动恢复，不依赖回调
                     lockWatch = new System.Windows.Forms.Timer();
                     lockWatch.Interval = 1000;

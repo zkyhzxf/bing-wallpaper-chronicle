@@ -1619,10 +1619,12 @@ try {
         }
         $name = Split-Path $cur -Leaf
         $srcDir = (Split-Path $cur -Parent).TrimEnd('\')
-        $inCache = ($srcDir -ieq $CacheDir.TrimEnd('\'))
+        # 画廊里的图也算缓存：看完想留下就收藏，收藏后退出画廊不会被清
+        $inGallery = ($srcDir -ieq $GalleryDir.TrimEnd('\'))
+        $inCache = ($srcDir -ieq $CacheDir.TrimEnd('\')) -or $inGallery
         $inFav   = ($srcDir -ieq $FavDir.TrimEnd('\'))
         if ($Favorite -and -not $inCache) {
-            Write-Log "只有缓存目录里的壁纸才能收藏：$cur" 'ERROR'
+            Write-Log "只有缓存或画廊里的壁纸才能收藏：$cur" 'ERROR'
             Exit-Run 3
         }
         if ($Unfavorite -and -not $inFav) {
@@ -1808,8 +1810,39 @@ try {
 
     if ($GalleryClear) {
         $nG = 0
+        $curG = ''
+        try { $curG = [string](Get-ItemProperty 'HKCU:\Control Panel\Desktop' -Name Wallpaper -ErrorAction SilentlyContinue).Wallpaper } catch { }
+        $curInGallery = ($curG -and $curG.StartsWith($GalleryDir, [StringComparison]::OrdinalIgnoreCase))
+
+        # 当前壁纸就在画廊里：先切回一张正常的图，否则清完桌面会空
+        if ($curInGallery) {
+            $pool = @()
+            $pool += @(Get-ChildItem $CacheDir -Filter '*.jpg' -File -ErrorAction SilentlyContinue | Sort-Object Name -Descending)
+            if (Test-Path $ArchiveImgDir) {
+                $pool += @(Get-ChildItem $ArchiveImgDir -Filter '*.jpg' -File -ErrorAction SilentlyContinue | Sort-Object Name -Descending)
+            }
+            if (Test-Path $FavDir) {
+                $pool += @(Get-ChildItem $FavDir -Filter '*.jpg' -File -ErrorAction SilentlyContinue | Sort-Object Name -Descending)
+            }
+            if ($pool.Count -gt 0) {
+                $fb = $pool[0]
+                if (-not $DryRun) {
+                    [void](Set-DesktopWallpaper -Path $fb.FullName)
+                    $fbDate = ($fb.BaseName -split '_')[0]
+                    if ($fbDate -notmatch '^\d{8}$') { $fbDate = (Get-Date -Format 'yyyyMMdd') }
+                    Write-State -Date $fbDate -File $fb.FullName -Title '' -Copyright '' -ImageId '' -AppliedDate $fbDate
+                    Write-Log ("画廊退出：壁纸切回 " + $fb.Name)
+                }
+                $curG = $fb.FullName
+            } else {
+                Write-Log '画廊退出：没有可切回的图，保留当前这一张不删' 'WARN'
+            }
+        }
+
         if (Test-Path $GalleryDir) {
             Get-ChildItem $GalleryDir -Filter '*.jpg' -File -ErrorAction SilentlyContinue | ForEach-Object {
+                # 兜底：任何情况下都不删当前壁纸
+                if ($curG -and $_.FullName -ieq $curG) { return }
                 if ($DryRun) { Write-Log "[DryRun] 将删除画廊 $($_.Name)"; $nG++ }
                 elseif (Remove-OneFile -Path $_.FullName -Mode $CleanMode) { $nG++ }
             }
@@ -2459,23 +2492,25 @@ try {
         Write-Log ("缓存已存在，复用 " + (Split-Path $dest -Leaf) + " (" + [math]::Round($size / 1MB, 2) + " MB)")
     }
 
-    # 索引
-    $catalog = @{}
-    if (Test-Path $IndexPath) {
-        try {
-            $old = Get-Content $IndexPath -Raw -Encoding UTF8 | ConvertFrom-Json
-            foreach ($pp in $old.PSObject.Properties) { $catalog[$pp.Name] = $pp.Value }
-        } catch { }
+    # 索引：画廊模式的图不落在 cache 根目录，不写进 cache\index.json（否则会留下指向不存在文件的条目）
+    if (-not $Gallery) {
+        $catalog = @{}
+        if (Test-Path $IndexPath) {
+            try {
+                $old = Get-Content $IndexPath -Raw -Encoding UTF8 | ConvertFrom-Json
+                foreach ($pp in $old.PSObject.Properties) { $catalog[$pp.Name] = $pp.Value }
+            } catch { }
+        }
+        $catalog[$dateStr] = [ordered]@{
+            title     = $title
+            titleEn   = $titleEn
+            copyright = $copy
+            file      = $fileName
+            imageId   = $fullId
+            sizeBytes = $size
+        }
+        [System.IO.File]::WriteAllText($IndexPath, ($catalog | ConvertTo-Json -Depth 6), (New-Object System.Text.UTF8Encoding($false)))
     }
-    $catalog[$dateStr] = [ordered]@{
-        title     = $title
-        titleEn   = $titleEn
-        copyright = $copy
-        file      = $fileName
-        imageId   = $fullId
-        sizeBytes = $size
-    }
-    [System.IO.File]::WriteAllText($IndexPath, ($catalog | ConvertTo-Json -Depth 6), (New-Object System.Text.UTF8Encoding($false)))
 
     # 设壁纸（锁定 + 自动触发时只下载不切换）
     if ($autoMode -and $lockedNow) {

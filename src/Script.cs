@@ -124,6 +124,30 @@ namespace BingWallpaperLite
             catch { return 0; }
         }
 
+        /// <summary>画廊清理专用：不受 busy 阻断（下载中点关闭也必须生效），也不占用 busy 标志。</summary>
+        private static void RunGalleryClear()
+        {
+            if (!File.Exists(scriptPath)) { return; }
+            try
+            {
+                ProcessStartInfo psi = new ProcessStartInfo();
+                psi.FileName = PowerShellExe;
+                psi.Arguments = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File \"" + scriptPath + "\" -GalleryClear";
+                psi.UseShellExecute = false;
+                psi.CreateNoWindow = true;
+                psi.RedirectStandardOutput = true;
+                psi.RedirectStandardError = true;
+                using (Process p = Process.Start(psi))
+                {
+                    System.Threading.Tasks.Task<string> gOut = p.StandardOutput.ReadToEndAsync();
+                    System.Threading.Tasks.Task<string> gErr = p.StandardError.ReadToEndAsync();
+                    if (!p.WaitForExit(60000)) { try { p.Kill(); } catch { } }
+                    else { try { gOut.Wait(2000); } catch { } try { gErr.Wait(2000); } catch { } }
+                }
+            }
+            catch { }
+        }
+
         private static void RunScriptEx(string arguments, string opMode)
         {
             if (busy) { return; }
