@@ -1017,6 +1017,21 @@ namespace BingWallpaperLite
                                 if (fn.Length >= 8 && pins.ContainsKey(fn.Substring(0, 8))) { protN++; }
                             }
                         }
+                        // 老存档（archive\old\YYYYMM）算作归档的一部分，不单列
+                        string oldRoot2 = OldDirPath;
+                        if (Directory.Exists(oldRoot2))
+                        {
+                            foreach (string om in Directory.GetDirectories(oldRoot2))
+                            {
+                                foreach (string img in Directory.GetFiles(om, "*.jpg"))
+                                {
+                                    imgN++;
+                                    imgBytes += new FileInfo(img).Length;
+                                    string fn = Path.GetFileName(img);
+                                    if (fn.Length >= 8 && pins.ContainsKey(fn.Substring(0, 8))) { protN++; }
+                                }
+                            }
+                        }
                     }
                     catch { }
 

@@ -36,7 +36,7 @@ namespace BingWallpaperLite
         private const string RunValue    = "BingWallpaperChronicle";
 
         // 归档取数下界：与 bing-wallpaper.ps1 的 $ArchiveMinDate 必须一致（脚本第 223 行）
-        internal static readonly DateTime ArchiveMinDateValue = new DateTime(2009, 8, 1);
+        internal static readonly DateTime ArchiveMinDateValue = new DateTime(2009, 7, 13);
         private const string RunKeyPath  = @"Software\Microsoft\Windows\CurrentVersion\Run";
         private const string UninstKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\BingWallpaperChronicle";
 
@@ -497,6 +497,29 @@ namespace BingWallpaperLite
                                 byte[] buf = new byte[8192];
                                 int n;
                                 while ((n = osr.Read(buf, 0, buf.Length)) > 0) { fs.Write(buf, 0, n); }
+                            }
+                        }
+                    }
+                }
+            }
+            catch { }
+
+            // wilii 兜底索引（2016-03 起），同样只在缺失时释放
+            try
+            {
+                string wil = Path.Combine(archiveDir, "wilii-index.json");
+                if (!File.Exists(wil))
+                {
+                    if (!Directory.Exists(archiveDir)) { Directory.CreateDirectory(archiveDir); }
+                    using (Stream wsr = asm.GetManifestResourceStream("wilii-index.json"))
+                    {
+                        if (wsr != null)
+                        {
+                            using (FileStream fs = new FileStream(wil, FileMode.Create, FileAccess.Write, FileShare.None))
+                            {
+                                byte[] buf = new byte[8192];
+                                int n;
+                                while ((n = wsr.Read(buf, 0, buf.Length)) > 0) { fs.Write(buf, 0, n); }
                             }
                         }
                     }

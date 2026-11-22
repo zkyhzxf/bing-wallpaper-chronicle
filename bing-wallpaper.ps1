@@ -106,6 +106,7 @@ $ArchiveDir = Join-Path $Root 'archive'
 $ArchiveImgDir = Join-Path $ArchiveDir 'images';
 $OldDir        = Join-Path $ArchiveDir 'old'
 $OldIndexPath  = Join-Path $ArchiveDir 'old-index.json'
+$WiliiIndexPath = Join-Path $ArchiveDir 'wilii-index.json'
 $GalleryDir    = Join-Path $CacheDir 'gallery'
 $PinnedPath = Join-Path $Root 'pinned.json'
 $PinnedLegacyPath = Join-Path $Root 'cache\pinned.json'
@@ -246,7 +247,7 @@ function Set-WallpaperStyle {
 # 备用源：niumoo/bing-wallpaper（2021-02 起，只有 ID，无标题）
 $ArchivePrimary = 'https://raw.githubusercontent.com/Zhu-junwei/bing-wallpaper-archive/master'
 $ArchiveBackup  = 'https://raw.githubusercontent.com/niumoo/bing-wallpaper/main/picture'
-$ArchiveMinDate = '20090801'
+$ArchiveMinDate = '20090713'
 
 # 归档抓取通道。实测（无代理直连）：
 #   raw.githubusercontent.com  → 100% 失败（TLS 阻断）
@@ -342,7 +343,41 @@ function Save-ArchiveVia {
     } catch { }
 }
 
-# 老存档索引（2009-08 ~ 2016-02）：字段 d/t/i，i 是镜像站的图片 slug，没有 Bing id
+# wilii 全量文件名表（2016-03-05 起）：字段 d/n，n 是不带分辨率后缀的基础名
+# 用途：Bing 官方与 CDN 都取不到时的最后一道兜底
+$script:WiliiMap = $null
+function Get-WiliiMap {
+    if ($null -ne $script:WiliiMap) { return $script:WiliiMap }
+    $script:WiliiMap = @{}
+    if (-not (Test-Path $WiliiIndexPath)) { return $script:WiliiMap }
+    try {
+        $arr = Get-Content $WiliiIndexPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        foreach ($x in $arr) {
+            $k = [string]$x.d
+            if ($k.Length -eq 8) { $script:WiliiMap[$k] = [string]$x.n }
+        }
+    } catch {
+        Write-Log "wilii 索引解析失败: $($_.Exception.Message)" 'WARN'
+    }
+    return $script:WiliiMap
+}
+
+function Get-WiliiCandidates {
+    param([string]$Date)
+    $Date = ([string]$Date) -replace '[^0-9]', ''
+    if ($Date.Length -ne 8) { return @() }
+    $map = Get-WiliiMap
+    if (-not $map.ContainsKey($Date)) { return @() }
+    $base = [string]$map[$Date]
+    if (-not $base) { return @() }
+    $root = 'https://img.wilii.cn/bingimages/' + $Date.Substring(0,4) + '/' + $Date.Substring(4,2) + '/' + $Date.Substring(6,2) + '/'
+    return @(
+        ($root + $base + '_1920x1080.jpg'),
+        ($root + $base + '.jpg')
+    )
+}
+
+# 老存档索引（2009-07 ~ 2016-03）：字段 d/t/c/n/a，n 是 wilii 文件名，a 是镜像站 slug
 # 数据来自 bingwallpaper.anerg.com，按月度页从新到旧反推日期，条数必须等于当月天数才收
 $script:OldMap = $null
 function Get-OldIndexMap {
@@ -369,15 +404,32 @@ function Get-OldIndexRecord {
     $map = Get-OldIndexMap
     if (-not $map.ContainsKey($Date)) { return $null }
     $x = $map[$Date]
-    $slug = [string]$x.i
-    if (-not $slug) { return $null }
-    $ym = $Date.Substring(0, 6)
+    $slug = [string]$x.a           # anerg 的图片 slug
+    $fn   = [string]$x.n           # wilii 的文件名
+    if (-not $slug -and -not $fn) { return $null }
+
+    $y4 = $Date.Substring(0, 4)
+    $m2 = $Date.Substring(4, 2)
+    $d2 = $Date.Substring(6, 2)
+    $ym = $y4 + $m2
+
+    $anergUrl = ''
+    if ($slug) { $anergUrl = 'https://img.nanxiongnandi.com/' + $ym + '/' + $slug + '.jpg' }
+    $wiliiUrl = ''
+    if ($fn) { $wiliiUrl = 'https://img.wilii.cn/bingimages/' + $y4 + '/' + $m2 + '/' + $d2 + '/' + $fn }
+
+    # 文件名取短的：优先 anerg slug，没有就用 wilii 文件名去掉分辨率后缀
+    $core = $slug
+    if (-not $core) { $core = ($fn -replace '\.jpg$', '') }
+
     return @{
         id        = ''
         title     = [string]$x.t
-        copyright = ''
-        url       = ('https://img.nanxiongnandi.com/' + $ym + '/' + $slug + '.jpg')
-        slug      = $slug
+        copyright = [string]$x.c
+        url       = $wiliiUrl
+        slug      = $core
+        anergUrl  = $anergUrl
+        wiliiUrl  = $wiliiUrl
         source    = 'old'
         searchUrl = ''
     }
@@ -2002,13 +2054,34 @@ try {
                     if (-not $locked) { exit 2 }
                     $szO = 0
                     $okO = $false
-                    try {
-                        Write-Log "下载 $($rec.url)"
-                        $szO = Save-BingImage -Url $rec.url -Dest $destO -MinKB 30
-                        $okO = $true
-                        Write-Log ("下载完成 " + [math]::Round($szO / 1KB) + ' KB（老存档镜像）')
-                    } catch {
-                        Write-Log "老存档下载失败：$($_.Exception.Message)" 'WARN'
+                    # 2013-2015：wilii 那段图基本没有，镜像优先；其余年份 wilii 优先
+                    $candO = @()
+                    # wilii 有两种命名：2014 前不带分辨率后缀，2015 起带。两种都试。
+                    $wList = @()
+                    if ($rec.wiliiUrl) {
+                        $wList += @{ url = $rec.wiliiUrl; tag = '老存档·wilii' }
+                        if ($rec.wiliiUrl -match '_\d+x\d+\.jpg$') {
+                            $wList += @{ url = ($rec.wiliiUrl -replace '_\d+x\d+\.jpg$', '.jpg'); tag = '老存档·wilii(无后缀)' }
+                        }
+                    }
+                    $preferAnerg = ($Date -ge '20130101' -and $Date -le '20151231')
+                    if ($preferAnerg) {
+                        if ($rec.anergUrl) { $candO += @{ url = $rec.anergUrl; tag = '老存档·镜像' } }
+                        foreach ($w in $wList) { $candO += $w }
+                    } else {
+                        foreach ($w in $wList) { $candO += $w }
+                        if ($rec.anergUrl) { $candO += @{ url = $rec.anergUrl; tag = '老存档·镜像' } }
+                    }
+                    foreach ($cO in $candO) {
+                        if ($okO) { break }
+                        try {
+                            Write-Log ("下载 " + $cO.url)
+                            $szO = Save-BingImage -Url $cO.url -Dest $destO -MinKB 30
+                            $okO = $true
+                            Write-Log ("下载完成 " + [math]::Round($szO / 1KB) + ' KB（' + $cO.tag + '）')
+                        } catch {
+                            Write-Log ("老存档候选失败（" + $cO.tag + "）：" + $_.Exception.Message) 'WARN'
+                        }
                     }
                     if ($okO) {
                         Set-WallpaperStyle -Name $styleName
@@ -2074,16 +2147,27 @@ try {
                 }
             }
 
-            # 4) 兜底：微软 CDN 按日期直取
-            $url = "https://bingwallpaperimages.microsoft.com/Latest/3840x2400/$Date.jpg"
+            # 4) 兜底：微软 CDN 按日期直取，再不行用 wilii
             $fileName = "${Date}_CDN.jpg"
             $dest = Join-Path $DownDir $fileName
             $locked = Enter-RunLock
             if (-not $locked) { exit 2 }
-            try {
-                $size = Save-BingImage -Url $url -Dest $dest
-                Write-Log ("下载完成 " + [math]::Round($size / 1MB, 2) + (if ($archTried) { ' MB（微软 CDN，降级）' } else { ' MB（微软 CDN 3840x2400）' }))
-            } catch {
+            $tailCand = @()
+            $tailCand += @{ url = "https://bingwallpaperimages.microsoft.com/Latest/3840x2400/$Date.jpg"; tag = '微软 CDN' }
+            foreach ($wu in @(Get-WiliiCandidates -Date $Date)) { $tailCand += @{ url = $wu; tag = 'wilii' } }
+            $tailOk = $false
+            $size = 0
+            foreach ($tc in $tailCand) {
+                if ($tailOk) { break }
+                try {
+                    $size = Save-BingImage -Url $tc.url -Dest $dest
+                    $tailOk = $true
+                    Write-Log ("下载完成 " + [math]::Round($size / 1MB, 2) + ' MB（' + $tc.tag + '）')
+                } catch {
+                    Write-Log ("兜底候选失败（" + $tc.tag + "）：" + $_.Exception.Message) 'WARN'
+                }
+            }
+            if (-not $tailOk) {
                 if ($Date -lt '20250301') {
                     if (-not $useArchive) {
                         Write-Log "该日期需要增强数据源（归档已关闭）：$Date" 'ERROR'
@@ -2324,6 +2408,7 @@ try {
     } else {
         $candidates = @($bingUhd, $bingWh, $msUrl2, $msUrl, $bing1080)
     }
+    $candidates = @($candidates) + @(Get-WiliiCandidates -Date $dateStr)
     $candidates = $candidates | Where-Object { $_ } | Select-Object -Unique
 
     $lockedNow = [bool]$config['locked']

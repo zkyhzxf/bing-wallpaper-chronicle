@@ -53,6 +53,7 @@ $iconBusy  = Join-Path $resDir 'bing-busy.ico'
 $cfgFile   = Join-Path $resDir 'config.json'
 $snapFile  = Join-Path $resDir 'assets\all-index.json'
 $snapOld   = Join-Path $resDir 'assets\old-index.json'
+$snapWilii = Join-Path $resDir 'assets\wilii-index.json'
 
 if (-not (Test-Path $csFile)) { throw "找不到源文件：$csFile" }
 if (-not (Test-Path $psFile)) { throw "找不到核心脚本：$psFile" }
@@ -155,6 +156,7 @@ $buildArgs += $csFiles
 if (Test-Path $cfgFile) { $buildArgs += @("/resource:$cfgFile,config.json") }
 if (Test-Path $snapFile) { $buildArgs += @("/resource:$snapFile,all-index.json") }
 if (Test-Path $snapOld)  { $buildArgs += @("/resource:$snapOld,old-index.json") }
+if (Test-Path $snapWilii) { $buildArgs += @("/resource:$snapWilii,wilii-index.json") }
 
 Write-Host "编译中…" -ForegroundColor Cyan
 $log = & $csc $buildArgs 2>&1 | Out-String

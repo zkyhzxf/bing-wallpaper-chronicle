@@ -263,10 +263,6 @@ namespace BingWallpaperLite
             archSrc2.Enabled = false;
             archiveMenu.DropDownItems.Add(archSrc2);
 
-            ToolStripMenuItem archSrc3 = new ToolStripMenuItem(S.ArchSrcLine3);
-            archSrc3.Name = "archsrc3";
-            archSrc3.Enabled = false;
-            archiveMenu.DropDownItems.Add(archSrc3);
 
             ToolStripMenuItem archInfo = new ToolStripMenuItem("…");
             archInfo.Name = "archinfo";
@@ -278,10 +274,6 @@ namespace BingWallpaperLite
             archIdxInfo.Enabled = false;
             archiveMenu.DropDownItems.Add(archIdxInfo);
 
-            ToolStripMenuItem archOldInfo = new ToolStripMenuItem("…");
-            archOldInfo.Name = "archoldinfo";
-            archOldInfo.Enabled = false;
-            archiveMenu.DropDownItems.Add(archOldInfo);
 
             archiveMenu.DropDownItems.Add(new ToolStripSeparator());
 

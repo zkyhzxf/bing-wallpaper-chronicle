@@ -19,7 +19,6 @@ namespace BingWallpaperLite
         private readonly Button btnStart;
         private readonly Label lblNothing;
         private readonly CheckBox cbIndex;
-        private readonly CheckBox cbOld;
 
         public bool Permanent { get; private set; }
         public bool WithIndex { get; private set; }
@@ -194,7 +193,9 @@ namespace BingWallpaperLite
                 Label l2 = MkLabel(S.CleanActual, 12, yy);
                 l2.Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Bold);
                 box.Controls.Add(l2);
-                Label v2 = MkValue(actualN + " 张，" + FmtSize(actualB), 320, yy);
+                string v2txt = (actualN + oldN) + " 张，" + FmtSize(actualB + oldB);
+                if (oldN > 0) { v2txt += S.CleanOldInline(oldN, Math.Round(oldB / 1024.0 / 1024.0, 1)); }
+                Label v2 = MkValue(v2txt, 320, yy);
                 v2.Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Bold);
                 box.Controls.Add(v2);
 
@@ -229,25 +230,7 @@ namespace BingWallpaperLite
                 Controls.Add(idxHint);
                 ny += 48;
 
-                cbOld = new CheckBox();
-                cbOld.Text = S.CleanWithOld(oldN, Math.Round(oldB / 1024.0 / 1024.0, 1));
-                cbOld.SetBounds(18, ny, 484, 22);
-                cbOld.Checked = false;
-                cbOld.Enabled = oldN > 0;
-                cbOld.CheckedChanged += delegate
-                {
-                    if (btnStart != null) { btnStart.Enabled = (actualN > 0) || cbIndex.Checked || cbOld.Checked; }
-                };
-                Controls.Add(cbOld);
-
-                Label oldHint = new Label();
-                oldHint.SetBounds(40, ny + 22, 462, 18);
-                oldHint.ForeColor = SystemColors.GrayText;
-                oldHint.Text = S.CleanWithOldHint;
-                Controls.Add(oldHint);
-                ny += 48;
-
-                ClientSize = new Size(520, 508);
+                ClientSize = new Size(520, 460);
             }
 
             // 删除方式
@@ -330,7 +313,8 @@ namespace BingWallpaperLite
         {
             Permanent = (rbPermanent != null && rbPermanent.Checked);
             WithIndex = (cbIndex != null && cbIndex.Checked);
-            WithOld = (cbOld != null && cbOld.Checked);
+            // 老存档是归档的一部分，清理归档时一起清，不再单独开关
+            WithOld = true;
             DialogResult = DialogResult.OK;
             Close();
         }
