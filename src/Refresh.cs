@@ -578,6 +578,36 @@ namespace BingWallpaperLite
                     catch { }
                 }
 
+                // 老索引（2009-08 ~ 2016-02，来自第三方存档），补空白日期
+                try
+                {
+                    string oldFile = Path.Combine(archiveDir, "old-index.json");
+                    if (File.Exists(oldFile))
+                    {
+                        object rawOld = new System.Web.Script.Serialization.JavaScriptSerializer()
+                            .DeserializeObject(File.ReadAllText(oldFile, Encoding.UTF8));
+                        object[] arrOld = rawOld as object[];
+                        if (arrOld != null)
+                        {
+                            foreach (object o in arrOld)
+                            {
+                                Dictionary<string, object> e = o as Dictionary<string, object>;
+                                if (e == null) { continue; }
+                                string d8 = e.ContainsKey("d") ? Convert.ToString(e["d"]) : "";
+                                string t8 = e.ContainsKey("t") ? Convert.ToString(e["t"]) : "";
+                                if (d8.Length != 8 || t8.Length == 0) { continue; }
+                                if (all.ContainsKey(d8)) { continue; }
+                                Dictionary<string, object> wrap = new Dictionary<string, object>();
+                                wrap["title"] = t8;
+                                wrap["copyright"] = "";
+                                wrap["link"] = "";
+                                all[d8] = wrap;
+                            }
+                        }
+                    }
+                }
+                catch { }
+
                 // 全量索引兜底：数组格式（d/t），只补月份索引里没有的日期
                 try
                 {

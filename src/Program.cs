@@ -19,9 +19,9 @@ using Microsoft.Win32;
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyConfiguration("Release")]
 [assembly: AssemblyCulture("")]
-[assembly: AssemblyVersion("3.6.12.1")]
-[assembly: AssemblyFileVersion("3.6.12.1")]
-[assembly: AssemblyInformationalVersion("3.6.12.1")]
+[assembly: AssemblyVersion("3.6.12.2")]
+[assembly: AssemblyFileVersion("3.6.12.2")]
+[assembly: AssemblyInformationalVersion("3.6.12.2")]
 [assembly: ComVisible(false)]
 
 namespace BingWallpaperLite
@@ -31,12 +31,12 @@ namespace BingWallpaperLite
         // ---------------------------------------------------------------- 常量
 
         internal const string AppName     = "必应壁纸编年史";
-        internal const string AppVersion  = "3.6.12.1";
+        internal const string AppVersion  = "3.6.12.2";
         private const string TaskName    = "BingWallpaperChronicle";
         private const string RunValue    = "BingWallpaperChronicle";
 
         // 归档取数下界：与 bing-wallpaper.ps1 的 $ArchiveMinDate 必须一致（脚本第 223 行）
-        internal static readonly DateTime ArchiveMinDateValue = new DateTime(2016, 3, 5);
+        internal static readonly DateTime ArchiveMinDateValue = new DateTime(2009, 8, 1);
         private const string RunKeyPath  = @"Software\Microsoft\Windows\CurrentVersion\Run";
         private const string UninstKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\BingWallpaperChronicle";
 

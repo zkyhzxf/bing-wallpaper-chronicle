@@ -232,7 +232,7 @@ function Set-WallpaperStyle {
 # 备用源：niumoo/bing-wallpaper（2021-02 起，只有 ID，无标题）
 $ArchivePrimary = 'https://raw.githubusercontent.com/Zhu-junwei/bing-wallpaper-archive/master'
 $ArchiveBackup  = 'https://raw.githubusercontent.com/niumoo/bing-wallpaper/main/picture'
-$ArchiveMinDate = '20160305'
+$ArchiveMinDate = '20090801'
 
 # 归档抓取通道。实测（无代理直连）：
 #   raw.githubusercontent.com  → 100% 失败（TLS 阻断）

@@ -181,7 +181,7 @@ Check '-Status -Json 的 index.minDate 与代码下界一致' {
     if (-not $j.index) { return '缺 index 键' }
     if (-not $j.index.minDate) { return '缺 index.minDate 字段' }
     if ($j.index.minDate -notmatch '^[0-9]{8}$') { return ('minDate 不是 8 位数字: ' + $j.index.minDate) }
-    if ($j.index.minDate -ne '20160305') { return ('minDate 为 ' + $j.index.minDate + '，与代码下界 20160305 不符') }
+    if ($j.index.minDate -ne '20090801') { return ('minDate 为 ' + $j.index.minDate + '，与代码下界 20090801 不符') }
     return $true
 }
 
