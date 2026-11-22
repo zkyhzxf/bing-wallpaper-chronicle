@@ -2781,6 +2781,8 @@ try {
                 }
             }
         } catch { }
+        # 手动换的那张要进保护名单，否则 30 天清理会把它删掉，"临时换的图"就真的只是临时
+        Add-Pinned -Date $dateStr
         Write-State -Date $dateStr -File $file -Title $uTtl -Copyright $uCpr -ImageId $uId
         Write-Log '--- 完成 ---'
         if ([bool]$config['autoClean']) {

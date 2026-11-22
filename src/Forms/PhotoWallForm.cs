@@ -30,10 +30,12 @@ namespace BingWallpaperLite
         private readonly Label lblStatus;
         private readonly Button btnFetch;
         private readonly ComboBox cmbSort;
+        private readonly Button btnSetWall;
+        private readonly Button btnFav;
+        private readonly Button btnOpen;
         private readonly CheckBox chkLocal;
         private readonly System.Windows.Forms.Timer ticker;
         private string selected = "";
-        private int zoomW = WallCard.CardWidth;
         private bool working = false;
         private int localCount = 0;
 
@@ -107,23 +109,7 @@ namespace BingWallpaperLite
             chkLocal.CheckedChanged += delegate { LoadData(); };
             top.Controls.Add(chkLocal);
 
-            Button btnZoomOut = new Button();
-            btnZoomOut.Text = "－";
-            btnZoomOut.SetBounds(326, 10, 30, 26);
-            btnZoomOut.Click += delegate { ZoomBy(-80); };
-            top.Controls.Add(btnZoomOut);
 
-            Button btnZoomIn = new Button();
-            btnZoomIn.Text = "＋";
-            btnZoomIn.SetBounds(360, 10, 30, 26);
-            btnZoomIn.Click += delegate { ZoomBy(80); };
-            top.Controls.Add(btnZoomIn);
-
-            Label lblZoomHint = new Label();
-            lblZoomHint.Text = S.WallZoomHint;
-            lblZoomHint.SetBounds(400, 13, 260, 20);
-            lblZoomHint.ForeColor = WallTheme.TextDim;
-            top.Controls.Add(lblZoomHint);
 
             // ---------------------------------------------------------------- 底部栏
             Panel bottom = new Panel();
@@ -143,9 +129,30 @@ namespace BingWallpaperLite
             btnFetch.Click += delegate { FetchAll(); };
             bottom.Controls.Add(btnFetch);
 
+            btnSetWall = new Button();
+            btnSetWall.Text = S.WallBtnSet;
+            btnSetWall.SetBounds(600, 13, 110, 30);
+            btnSetWall.Enabled = false;
+            btnSetWall.Click += delegate { ApplySelected(); };
+            bottom.Controls.Add(btnSetWall);
+
+            btnFav = new Button();
+            btnFav.Text = S.WallBtnFav;
+            btnFav.SetBounds(716, 13, 96, 30);
+            btnFav.Enabled = false;
+            btnFav.Click += delegate { FavSelected(); };
+            bottom.Controls.Add(btnFav);
+
+            btnOpen = new Button();
+            btnOpen.Text = S.WallBtnOpen;
+            btnOpen.SetBounds(818, 13, 96, 30);
+            btnOpen.Enabled = false;
+            btnOpen.Click += delegate { OpenSelected(); };
+            bottom.Controls.Add(btnOpen);
+
             Button btnClose = new Button();
             btnClose.Text = S.BtnClose;
-            btnClose.SetBounds(800, 13, 90, 30);
+            btnClose.SetBounds(920, 13, 86, 30);
             btnClose.Click += delegate { Close(); };
             bottom.Controls.Add(btnClose);
 
@@ -156,10 +163,6 @@ namespace BingWallpaperLite
             host.BackColor = WallTheme.Bg;
             Controls.Add(host);
             host.Resize += delegate { LayoutCards(); };
-            host.MouseWheel += delegate(object s, MouseEventArgs e)
-            {
-                if ((ModifierKeys & Keys.Control) == Keys.Control) { ZoomBy(e.Delta > 0 ? 80 : -80); }
-            };
 
             ticker = new System.Windows.Forms.Timer();
             ticker.Interval = 150;
@@ -168,6 +171,9 @@ namespace BingWallpaperLite
                 foreach (WallCard c in cards) { c.TickSpin(); }
             };
             ticker.Start();
+
+            // Dock 按 Z 序从高到低分配空间：把 Fill 的 host 放到最底层，顶部/底部才不会被它压住
+            Controls.SetChildIndex(host, Controls.Count - 1);
 
             try { Program.TrimThumbs(); } catch { }
             LoadData();
@@ -329,7 +335,7 @@ namespace BingWallpaperLite
             if (cards.Count == 0) { return; }
             int avail = host.ClientSize.Width - Pad * 2 - 22;
             if (avail < WallCard.MinWidth) { avail = WallCard.MinWidth; }
-            int cols = Math.Max(1, (avail + Gap) / (zoomW + Gap));
+            int cols = Math.Max(1, (avail + Gap) / (WallCard.CardWidth + Gap));
             int cellW = (avail - Gap * (cols - 1)) / cols;
             if (cellW < WallCard.MinWidth) { cellW = WallCard.MinWidth; }
             if (cellW > WallCard.MaxWidth) { cellW = WallCard.MaxWidth; }
@@ -344,15 +350,6 @@ namespace BingWallpaperLite
             }
         }
 
-        private void ZoomBy(int delta)
-        {
-            int next = zoomW + delta;
-            if (next < WallCard.MinWidth) { next = WallCard.MinWidth; }
-            if (next > WallCard.MaxWidth) { next = WallCard.MaxWidth; }
-            if (next == zoomW) { return; }
-            zoomW = next;
-            LayoutCards();
-        }
 
         private void UpdateStatus()
         {
@@ -375,6 +372,17 @@ namespace BingWallpaperLite
                 }
                 lblStatus.Text = txt;
                 btnFetch.Enabled = (missing.Count > 0) && !working;
+                bool hasSel = false;
+                if (selected.Length > 0)
+                {
+                    foreach (WallCard c in cards)
+                    {
+                        if (c.Date8 == selected && c.HasImage) { hasSel = true; break; }
+                    }
+                }
+                if (btnSetWall != null) { btnSetWall.Enabled = hasSel && !working; }
+                if (btnFav != null) { btnFav.Enabled = hasSel && !working; }
+                if (btnOpen != null) { btnOpen.Enabled = hasSel && !working; }
             }
             catch { }
         }
@@ -410,6 +418,72 @@ namespace BingWallpaperLite
                 }
             }
             catch { }
+        }
+
+        private WallCard SelectedCard()
+        {
+            if (selected.Length == 0) { return null; }
+            foreach (WallCard c in cards) { if (c.Date8 == selected) { return c; } }
+            return null;
+        }
+
+        private void ApplySelected()
+        {
+            WallCard c = SelectedCard();
+            if (c == null) { return; }
+            string src = c.Tag as string;
+            if (string.IsNullOrEmpty(src)) { return; }
+            working = true;
+            UpdateStatus();
+            try
+            {
+                int code = Program.RunScriptExit("-Use \"" + src + "\"");
+                if (code == 0 || code == 4 || code == 8)
+                {
+                    MessageBox.Show(S.WallApplied, Program.AppName, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+            }
+            finally
+            {
+                working = false;
+                UpdateStatus();
+            }
+        }
+
+        /// <summary>收藏 = 先设为当前图，再进收藏夹（-Favorite 操作的是 state 里那张）。</summary>
+        private void FavSelected()
+        {
+            WallCard c = SelectedCard();
+            if (c == null) { return; }
+            string src = c.Tag as string;
+            if (string.IsNullOrEmpty(src)) { return; }
+            working = true;
+            UpdateStatus();
+            try
+            {
+                int code = Program.RunScriptExit("-Use \"" + src + "\"");
+                if (code != 0 && code != 4 && code != 8)
+                {
+                    MessageBox.Show(S.WallFavFail, Program.AppName, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+                int code2 = Program.RunScriptExit("-Favorite");
+                MessageBox.Show(code2 == 0 ? S.WallFavDone : S.WallFavFail, Program.AppName,
+                    MessageBoxButtons.OK, code2 == 0 ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+            }
+            finally
+            {
+                working = false;
+                UpdateStatus();
+            }
+        }
+
+        private void OpenSelected()
+        {
+            WallCard c = SelectedCard();
+            if (c == null) { return; }
+            string src = c.Tag as string;
+            if (!string.IsNullOrEmpty(src)) { ShowInFolder(src); }
         }
 
         /// <summary>右键菜单：看图相关的几个动作。</summary>

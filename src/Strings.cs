@@ -380,6 +380,11 @@ namespace BingWallpaperLite
         public static string WallFilterLocal  { get { return T("只看本地有", "Local only"); } }
         public static string WallZoomHint     { get { return T("Ctrl + 滚轮 缩放", "Ctrl + wheel to zoom"); } }
         public static string WallSetAs        { get { return T("设为桌面壁纸", "Set as wallpaper"); } }
+        public static string WallBtnSet       { get { return T("换这张", "Use this"); } }
+        public static string WallBtnFav       { get { return T("收藏这张", "Favorite"); } }
+        public static string WallBtnOpen      { get { return T("打开位置", "Open folder"); } }
+        public static string WallFavDone      { get { return T("已收藏", "Favorited"); } }
+        public static string WallFavFail      { get { return T("收藏失败，这张可能不在缓存里", "Favorite failed; the file may not be in the cache"); } }
         public static string WallShowInFolder { get { return T("在资源管理器中显示", "Show in folder"); } }
         public static string WallCopyTitle    { get { return T("复制标题", "Copy title"); } }
         public static string WallCloseIdleBody { get { return T("本次只看了本地已有的图，没有临时文件。\r\n要关闭照片墙吗？", "Only local images were viewed; nothing temporary was downloaded.\r\nClose the photo wall?"); } }
