@@ -538,6 +538,7 @@ namespace BingWallpaperLite
     Images viewed in gallery mode land in cache\gallery and are not registered for
     protection; turning the mode off or restarting clears them.
     Click ""Favorite"" on anything you like - it moves to favorites and survives the cleanup.
+    In the photo wall (first item under ""This day in past years""), ""Use this"" moves the image into the archive.
 
 6. Why some images look soft
     Originals from 2009-2013 are 958x512, 2014 to early 2016 are 1366x768 or 1080p,
@@ -574,6 +575,7 @@ namespace BingWallpaperLite
     想随手翻着看、又不想攒下一堆文件时打开它。
     画廊里看的图落在 cache\gallery，不登记保护名单；关掉模式或重启软件就清空。
     看到喜欢的随手点「收藏」，它会移进收藏夹，退出画廊也不会被清。
+    照片墙（往年的今天 → 第一项）里点「换这张」，图会自动存进历史归档，之后归归档上限管。
 
 六、为什么有些图比较糊
     2009 至 2013 年的原图就是 958×512，2014 年到 2016 年初是 1366×768 或 1080p，

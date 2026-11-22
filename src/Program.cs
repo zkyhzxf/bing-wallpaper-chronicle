@@ -19,8 +19,8 @@ using Microsoft.Win32;
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyConfiguration("Release")]
 [assembly: AssemblyCulture("")]
-[assembly: AssemblyVersion("3.6.31.1")]
-[assembly: AssemblyFileVersion("3.6.31.1")]
+[assembly: AssemblyVersion("3.6.32.0")]
+[assembly: AssemblyFileVersion("3.6.32.0")]
 [assembly: AssemblyInformationalVersion("3.6.25")]
 [assembly: ComVisible(false)]
 
@@ -31,7 +31,7 @@ namespace BingWallpaperLite
         // ---------------------------------------------------------------- 常量
 
         internal const string AppName     = "必应壁纸编年史";
-        internal const string AppVersion  = "3.6.31.1";
+        internal const string AppVersion  = "3.6.32";
         private const string TaskName    = "BingWallpaperChronicle";
         private const string RunValue    = "BingWallpaperChronicle";
 

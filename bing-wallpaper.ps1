@@ -2740,6 +2740,30 @@ try {
     if ($Use) {
         if (-not (Test-Path $Use)) { throw "文件不存在: $Use" }
         $file = (Resolve-Path -LiteralPath $Use).Path
+
+        # 照片墙的临时图：换成壁纸时立刻转正进历史归档。
+        # 否则关窗选「不保留」会把正在用的这张一起清掉，等于白换。
+        try
+        {
+            if ($WallDir -and (Test-Path $WallDir)) {
+                $parentW = (New-Object System.IO.DirectoryInfo((Split-Path -Parent $file))).FullName
+                $wallFull = (New-Object System.IO.DirectoryInfo($WallDir)).FullName
+                if ($parentW -eq $wallFull) {
+                    if (-not (Test-Path $ArchiveImgDir)) { New-Item -ItemType Directory -Path $ArchiveImgDir -Force | Out-Null }
+                    $arcDest = Join-Path $ArchiveImgDir (Split-Path $file -Leaf)
+                    if (Test-Path -LiteralPath $arcDest) {
+                        $arcDest = Join-Path $ArchiveImgDir ([System.IO.Path]::GetFileNameWithoutExtension($file) + '_' + (Get-Date -Format 'HHmmss') + '.jpg')
+                    }
+                    Move-Item -LiteralPath $file -Destination $arcDest -Force
+                    $file = $arcDest
+                    Write-Log ("照片墙的图已转正进归档：" + $arcDest)
+                }
+            }
+        }
+        catch {
+            Write-Log ("照片墙转正失败：" + $_.Exception.Message) 'WARN'
+        }
+
         $ext = [System.IO.Path]::GetExtension($file).ToLower()
         if ($ext -notin @('.jpg', '.jpeg', '.png', '.bmp')) { throw "不支持的格式: $ext" }
 
