@@ -19,8 +19,8 @@ using Microsoft.Win32;
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyConfiguration("Release")]
 [assembly: AssemblyCulture("")]
-[assembly: AssemblyVersion("3.6.34.0")]
-[assembly: AssemblyFileVersion("3.6.34.0")]
+[assembly: AssemblyVersion("3.6.35.0")]
+[assembly: AssemblyFileVersion("3.6.35.0")]
 [assembly: AssemblyInformationalVersion("3.6.25")]
 [assembly: ComVisible(false)]
 
@@ -31,7 +31,7 @@ namespace BingWallpaperLite
         // ---------------------------------------------------------------- 常量
 
         internal const string AppName     = "必应壁纸编年史";
-        internal const string AppVersion  = "3.6.34";
+        internal const string AppVersion  = "3.6.35";
         private const string TaskName    = "BingWallpaperChronicle";
         private const string RunValue    = "BingWallpaperChronicle";
 
@@ -63,11 +63,45 @@ namespace BingWallpaperLite
         internal static string CacheDirPath { get { return cacheDir; } }
         internal static string FavDirPath { get { return favDir; } }
         internal static string OldDirPath { get { return Path.Combine(archiveDir, "old"); } }
-        internal static string GalleryDirPath { get { return Path.Combine(cacheDir, "gallery"); } }
+        /// <summary>当前生效的缓存根：接管时是 takeover\cache，否则是安装目录的 cache。</summary>
+        internal static string ActiveCacheDir
+        {
+            get
+            {
+                try
+                {
+                    if (File.Exists(Path.Combine(root, "takeover") + Path.DirectorySeparatorChar + "config.json"))
+                    {
+                        return Path.Combine(root, "takeover", "cache");
+                    }
+                }
+                catch { }
+                return cacheDir;
+            }
+        }
+
+        /// <summary>当前生效的收藏目录：接管时是 takeover\favorites。</summary>
+        internal static string ActiveFavDirPath
+        {
+            get
+            {
+                try
+                {
+                    if (File.Exists(Path.Combine(root, "takeover") + Path.DirectorySeparatorChar + "config.json"))
+                    {
+                        return Path.Combine(root, "takeover", "favorites");
+                    }
+                }
+                catch { }
+                return favDir;
+            }
+        }
+
+        internal static string GalleryDirPath { get { return Path.Combine(ActiveCacheDir, "gallery"); } }
         internal static string StoriesDirPath { get { return Path.Combine(archiveDir, "stories"); } }
         /// <summary>预取中转目录：只用于翻页加速，退出/启动时清空。</summary>
-        internal static string PrefetchDirPath { get { return Path.Combine(cacheDir, "prefetch"); } }
-        internal static string WallDirPath { get { return Path.Combine(cacheDir, "wall"); } }
+        internal static string PrefetchDirPath { get { return Path.Combine(ActiveCacheDir, "prefetch"); } }
+        internal static string WallDirPath { get { return Path.Combine(ActiveCacheDir, "wall"); } }
         internal static string TakeoverDirPath { get { return Path.Combine(root, "takeover"); } }
         internal static string TakeoverCfgPath { get { return Path.Combine(TakeoverDirPath, "config.json"); } }
 
@@ -118,7 +152,7 @@ namespace BingWallpaperLite
         {
             try { Program.RefreshAllPublic(); } catch { }
         }
-        internal static string ThumbsDirPath { get { return Path.Combine(cacheDir, "thumbs"); } }
+        internal static string ThumbsDirPath { get { return Path.Combine(ActiveCacheDir, "thumbs"); } }
 
         /// <summary>读一个字符串配置；没有就返回 dflt。</summary>
         internal static string CfgString(string key, string dflt)
@@ -191,7 +225,7 @@ namespace BingWallpaperLite
         {
             try
             {
-                string[] dirs = new string[] { favDir, cacheDir, ArchiveImgPath, WallDirPath };
+                string[] dirs = new string[] { ActiveFavDirPath, ActiveCacheDir, ArchiveImgPath, WallDirPath };
                 foreach (string dir in dirs)
                 {
                     if (!Directory.Exists(dir)) { continue; }

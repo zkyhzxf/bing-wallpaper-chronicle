@@ -405,7 +405,6 @@ namespace BingWallpaperLite
             lib.DropDownItems.Add(MakeItem(S.OpenCacheDir, delegate { OpenTarget(cacheDir); }));
             lib.DropDownItems.Add(MakeItem(S.OpenFavDir, delegate { OpenTarget(favDir); }));
             lib.DropDownItems.Add(MakeItem(S.OpenArchiveDir, delegate { OpenTarget(archiveImgDir); }));
-            lib.DropDownItems.Add(MakeItem(S.ReloadIndex, delegate { InvalidateArchiveIndex(); RefreshAll(); }));
             lib.DropDownItems.Add(MakeItem(S.TkMenu, delegate { DoTakeover(); }));
             lib.DropDownItems.Add(MakeItem(S.ExportDownloaded, delegate { DoExportDownloaded(); }));
             lib.DropDownItems.Add(MakeItem(S.DownloadRange, delegate { DoDownloadRange(); }));

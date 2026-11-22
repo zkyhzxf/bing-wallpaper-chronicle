@@ -88,7 +88,8 @@ param(
     [switch]$AuditDates,
     [string]$WallDate = '',
     [switch]$WallKeep,
-    [switch]$WallDrop
+    [switch]$WallDrop,
+    [switch]$WallArchive
 )
 
 $ErrorActionPreference = 'Stop'
@@ -105,12 +106,14 @@ if ($PrefetchDate) {
 
 # 照片墙模式：下载只落 cache\wall，不设壁纸、不写 state 与索引
 $script:WallMode = $false
+# 注意：$WallArchive 是 switch 参数，脚本作用域里 $script:WallArchive 就是它本人，别在这里重置成 false
 if ($WallDate) {
     $WallDate = ([string]$WallDate) -replace '[^0-9]', ''
     if ($WallDate.Length -eq 8) {
         $Date = $WallDate
         $script:NoApply = $true
         $script:WallMode = $true
+        if ($WallArchive) { $script:WallArchive = $true }
     }
 }
 
@@ -210,7 +213,8 @@ if (-not (Test-Path $CacheDir)) { New-Item -ItemType Directory -Path $CacheDir -
 # 画廊模式：下载落点改到 cache\gallery，退出时整个清掉，不登记保护名单
 # 下载落点统一解析：预取 -> cache\prefetch，画廊 -> cache\gallery，其余 -> cache 根
 function Get-DownloadDir {
-    if ($script:WallMode) { $d = $WallDir }
+    if ($script:WallMode -and $script:WallArchive) { $d = $ArchiveImgDir }
+    elseif ($script:WallMode) { $d = $WallDir }
     elseif ($script:NoApply) { $d = $PrefetchDir }
     elseif ($Gallery) { $d = $GalleryDir }
     elseif ($script:Takeover) { $d = $script:TakeoverRoot }
@@ -2691,7 +2695,8 @@ try {
                     $shortId = $archId -replace '_[A-Za-z]{2}-[A-Za-z]{2}\d+$', ''
                     $fileName = "${Date}_$shortId.jpg"
                     $dest = Join-Path $ArchiveImgDir $fileName
-                    if ($script:WallMode) { $dest = Join-Path $WallDir $fileName }
+                    if ($script:WallMode -and $script:WallArchive) { $dest = Join-Path $ArchiveImgDir $fileName }
+                    elseif ($script:WallMode) { $dest = Join-Path $WallDir $fileName }
                     elseif ($script:NoApply) { $dest = Join-Path $PrefetchDir $fileName }
                     if ($DryRun) {
                         Write-Log ("[DryRun] 将下载归档原图：" + $archId + " → " + $dest + "（不下载、不设壁纸）")

@@ -327,9 +327,9 @@ Check '照片墙取图落 cache\wall 且不写索引' {
     $wall = Join-Path $Root 'cache\wall'
     $idx = Join-Path $Root 'cache\index.json'
     $before = if (Test-Path $idx) { Get-Content $idx -Raw -Encoding UTF8 } else { '' }
-    $r = Run-Script @('-WallDate', '20231122')
+    $r = Run-Script @('-WallDate', '20180315')
     if ($r.Code -ne 0 -and $r.Code -ne 4 -and $r.Code -ne 8) { return ('退出码 ' + $r.Code) }
-    $hit = @(Get-ChildItem $wall -Filter '20231122_*.jpg' -ErrorAction SilentlyContinue)
+    $hit = @(Get-ChildItem $wall -Filter '20180315_*.jpg' -ErrorAction SilentlyContinue)
     if ($hit.Count -eq 0) { return 'wall 目录里没落这张图' }
     $after = if (Test-Path $idx) { Get-Content $idx -Raw -Encoding UTF8 } else { '' }
     if ($before -ne $after) { return '照片墙取图把 cache 索引写了' }

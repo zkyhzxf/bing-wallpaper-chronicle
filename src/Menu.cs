@@ -265,15 +265,6 @@ namespace BingWallpaperLite
             };
             archiveMenu.DropDownItems.Add(archToggle);
 
-            ToolStripMenuItem archUpdate = new ToolStripMenuItem(S.UpdateIndex);
-            archUpdate.Name = "archupdate";
-            archUpdate.Click += delegate
-            {
-                keepMenuOpenAfterClick = true;
-                anchor.BeginInvoke((MethodInvoker)delegate { RunScriptEx("-UpdateIndex", "index"); });
-            };
-            archiveMenu.DropDownItems.Add(archUpdate);
-
             archiveMenu.DropDownItems.Add(new ToolStripSeparator());
 
             ToolStripMenuItem archSrc1 = new ToolStripMenuItem(S.ArchSrcLine1);

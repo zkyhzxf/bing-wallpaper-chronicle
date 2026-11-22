@@ -34,6 +34,7 @@ namespace BingWallpaperLite
         private readonly Button btnFav;
         private readonly Button btnOpen;
         private readonly CheckBox chkLocal;
+        private readonly CheckBox chkArchive;
         private readonly System.Windows.Forms.Timer ticker;
         private string selected = "";
         private readonly string openWallpaper = "";
@@ -109,6 +110,12 @@ namespace BingWallpaperLite
             chkLocal.ForeColor = WallTheme.Text;
             chkLocal.CheckedChanged += delegate { LoadData(); };
             top.Controls.Add(chkLocal);
+
+            chkArchive = new CheckBox();
+            chkArchive.Text = S.WallToArchive;
+            chkArchive.SetBounds(320, 12, 190, 22);
+            chkArchive.ForeColor = WallTheme.Text;
+            top.Controls.Add(chkArchive);
 
 
 
@@ -526,7 +533,7 @@ namespace BingWallpaperLite
             btnFetch.Enabled = false;
             ThreadPool.QueueUserWorkItem(delegate
             {
-                Program.RunScriptExit("-WallDate " + d8);
+                Program.RunScriptExit("-WallDate " + d8 + (chkArchive.Checked ? " -WallArchive" : ""));
                 try
                 {
                     BeginInvoke((MethodInvoker)delegate
@@ -564,7 +571,7 @@ namespace BingWallpaperLite
                         });
                     }
                     catch { }
-                    int code = Program.RunScriptExit("-WallDate " + d8);
+                    int code = Program.RunScriptExit("-WallDate " + d8 + (chkArchive.Checked ? " -WallArchive" : ""));
                     if (code == 0 || code == 4 || code == 8) { ok++; }
                 }
                 try

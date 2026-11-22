@@ -360,6 +360,7 @@ namespace BingWallpaperLite
                        : string.Format("照片墙 · 历年同日 {0} 张", n);
         }
         public static string WallFetchMissing { get { return T("把缺的取回", "Fetch missing"); } }
+        public static string WallToArchive   { get { return T("直接存进归档", "Save to archive"); } }
         public static string WallFetching     { get { return T("正在取这张…", "Fetching…"); } }
         public static string WallFetchingN    { get { return T("正在取第 {0}/{1} 张…", "Fetching {0}/{1}…"); } }
         public static string WallFetchDone(int ok, int total)
