@@ -340,6 +340,24 @@ namespace BingWallpaperLite
                     cm.Enabled = !tk;
                     cm.ToolTipText = tk ? S.TkReadOnlyHint : "";
                 }
+                ToolStripMenuItem ms = menu.Items["modestate"] as ToolStripMenuItem;
+                if (ms != null)
+                {
+                    if (tk)
+                    {
+                        string root = CurrentTakeoverRoot();
+                        string name = "";
+                        try { name = new DirectoryInfo(root).Name; } catch { }
+                        if (string.IsNullOrEmpty(name)) { name = root; }
+                        ms.Text = S.ModeBadge(name);
+                        ms.ToolTipText = S.ModeBadgeHint(root);
+                        ms.Visible = true;
+                    }
+                    else
+                    {
+                        ms.Visible = false;
+                    }
+                }
             }
             catch { }
         }
@@ -761,8 +779,8 @@ namespace BingWallpaperLite
         private static void BuildLibPage(ToolStripMenuItem parent, string[] files, Dictionary<string, object> idx,
                                          string currentDate, bool isFavSection, int offset, int depth)
         {
-            const int PageSize = 8;
-            const int MaxDepth = 3;
+            const int PageSize = 12;
+            const int MaxDepth = 4;
 
             int added = 0;
             for (int i = offset; i < files.Length && added < PageSize; i++, added++)

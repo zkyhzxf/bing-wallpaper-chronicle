@@ -396,6 +396,18 @@ namespace BingWallpaperLite
                              : "目录：{0}\r\n找到 {1} 张图；新下载的图存这里；清理与移动已禁用。";
             return string.Format(tpl, root, n);
         }
+        /// <summary>菜单里的常驻模式标牌：接管时显示「收藏家模式 · 目录名」。</summary>
+        public static string ModeBadge(string name)
+        {
+            string tpl = _en ? "Collector mode · {0}" : "收藏家模式 · {0}";
+            return string.Format(tpl, name);
+        }
+        public static string ModeBadgeHint(string root)
+        {
+            string tpl = _en ? "Read-only mount: images are read from {0}\nLeaving takeover deletes the sandbox folder"
+                             : "只读挂载：图片从 {0} 读取\n退出接管时沙盒目录整个删除";
+            return string.Format(tpl, root);
+        }
         public static string TkBrokenState { get { return T("当前：接管目录不见了（已自动回到原模式）", "Current: takeover folder missing (reverted)"); } }
         public static string TkBrokenBody(string root)
         {

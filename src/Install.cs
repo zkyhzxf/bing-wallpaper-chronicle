@@ -56,12 +56,14 @@ namespace BingWallpaperLite
         }
 
         /// <summary>开始菜单必建；桌面只在安装时勾选了才建。</summary>
+        /// <summary>补建开始菜单快捷方式（已存在就不动）；桌面快捷方式只在安装时按勾选创建，不补建。</summary>
         private static void EnsureShortcuts()
         {
             try
             {
                 string exe = Application.ExecutablePath;
-                CreateShortcut(StartMenuLnk(), exe, AppName);
+                string sm = StartMenuLnk();
+                if (!string.IsNullOrEmpty(sm) && !File.Exists(sm)) { CreateShortcut(sm, exe, AppName); }
                 if (WantDesktopShortcut) { CreateShortcut(DesktopLnk(), exe, AppName); }
             }
             catch { }
@@ -86,7 +88,7 @@ namespace BingWallpaperLite
             if (!IsStartupPointingHere()) { SetStartup(true); changed = true; }
             if (!IsTaskPointingHere()) { RegisterTask(); changed = true; }
             SetUninstallEntry();
-            if (verbose) { EnsureShortcuts(); }
+            EnsureShortcuts();
             if (changed && verbose)
             {
                 MessageBox.Show(S.MsgRegistered, AppName,

@@ -36,6 +36,13 @@ namespace BingWallpaperLite
             };
             m.Items.Add(taskState);
 
+            // 模式标牌：只有接管时出现，直接告诉用户图片是从哪个目录读的
+            ToolStripMenuItem modeState = new ToolStripMenuItem(S.ModeBadge(""));
+            modeState.Name = "modestate";
+            modeState.Enabled = false;
+            modeState.Visible = false;
+            m.Items.Add(modeState);
+
             // 顺序：状态 -> 模式 -> 查看 -> 移动
             ToolStripMenuItem galleryToggle = new ToolStripMenuItem(S.GalleryMenu);
             galleryToggle.Name = "gallerytoggle";
