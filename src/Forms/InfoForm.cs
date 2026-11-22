@@ -28,6 +28,8 @@ namespace BingWallpaperLite
         private int storySeq = 0;
         private int storyY = 0;
         private Button btnFav;
+        private readonly System.Collections.Generic.HashSet<string> pfetched =
+            new System.Collections.Generic.HashSet<string>();
 
         /// <summary>读入内存再解码，避免 Image.FromFile 锁定壁纸文件。</summary>
         private static Bitmap MakeThumb(string file, int w, int h)
@@ -150,19 +152,7 @@ namespace BingWallpaperLite
             AcceptButton = btnClose;
             CancelButton = btnClose;
 
-            // 键盘翻页：← 上一张（更早），→ 下一张（更新）
-            KeyPreview = true;
-            KeyDown += delegate(object sk, KeyEventArgs ek)
-            {
-                if (ek.KeyCode == Keys.Left)
-                {
-                    ek.Handled = true; ek.SuppressKeyPress = true; Step(1);
-                }
-                else if (ek.KeyCode == Keys.Right)
-                {
-                    ek.Handled = true; ek.SuppressKeyPress = true; Step(-1);
-                }
-            };
+
 
             // 窗口高度跟着内容走
             ClientSize = new Size(620, by + 32 + 20);
@@ -193,6 +183,7 @@ namespace BingWallpaperLite
             curDate = date;
             RefreshFavState();
             LoadStoryAsync(date);
+            PrefetchAround(date);
         }
 
         /// <summary>按日期异步取故事并显示；没有故事时整块隐藏。</summary>
@@ -233,6 +224,47 @@ namespace BingWallpaperLite
                 }
                 catch { }
             });
+        }
+
+        /// <summary>左右键翻页。用 ProcessCmdKey 而不是 KeyDown：按钮有焦点时方向键会被 Tab 导航吃掉。</summary>
+        protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+        {
+            if (keyData == Keys.Left) { Step(1); return true; }
+            if (keyData == Keys.Right) { Step(-1); return true; }
+            return base.ProcessCmdKey(ref msg, keyData);
+        }
+
+        /// <summary>预取相邻日期的图，翻到的时候能直接命中本地。</summary>
+        private void PrefetchAround(string date)
+        {
+            try
+            {
+                string d = (date ?? "").Replace("-", "").Trim();
+                if (d.Length != 8) { return; }
+                DateTime dt;
+                if (!DateTime.TryParseExact(d, "yyyyMMdd", null,
+                        System.Globalization.DateTimeStyles.None, out dt)) { return; }
+                string[] targets = new string[] {
+                    dt.AddDays(-1).ToString("yyyyMMdd"),
+                    dt.AddDays(1).ToString("yyyyMMdd")
+                };
+                DateTime today = DateTime.Today;
+                foreach (string t in targets)
+                {
+                    DateTime td;
+                    if (!DateTime.TryParseExact(t, "yyyyMMdd", null,
+                            System.Globalization.DateTimeStyles.None, out td)) { continue; }
+                    if (td < Program.ArchiveMinDateValue || td > today) { continue; }
+                    if (pfetched.Contains(t)) { continue; }
+                    pfetched.Add(t);
+                    string tt = t;
+                    System.Threading.ThreadPool.QueueUserWorkItem(delegate
+                    {
+                        try { Program.RunPrefetch(tt); } catch { }
+                    });
+                }
+            }
+            catch { }
         }
 
         /// <summary>按当前壁纸是否在收藏夹里，刷新按钮文字。</summary>
@@ -346,6 +378,7 @@ namespace BingWallpaperLite
             if (btnExpand != null) { btnExpand.Visible = false; }
             ClientSize = new Size(620, storyY + 16);
             LoadStoryAsync(date);
+            PrefetchAround(date);
         }
 
         protected override void Dispose(bool disposing)

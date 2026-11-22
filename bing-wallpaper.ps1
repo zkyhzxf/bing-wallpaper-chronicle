@@ -77,12 +77,23 @@ param(
     [switch]$Gallery,
     [switch]$GalleryClear,
     [switch]$IncludeOld,
+    [string]$PrefetchDate = '',
     [string]$StoryFor = '',
     [switch]$CleanStories,
     [switch]$Status
 )
 
 $ErrorActionPreference = 'Stop'
+
+# 预取模式：只下载到归档，不设壁纸、不写 state、不登记保护名单
+$script:NoApply = $false
+if ($PrefetchDate) {
+    $PrefetchDate = ([string]$PrefetchDate) -replace '[^0-9]', ''
+    if ($PrefetchDate.Length -eq 8) {
+        $Date = $PrefetchDate
+        $script:NoApply = $true
+    }
+}
 
 # 输出编码固定 UTF-8：被托盘捕获标准输出时，中文不会变成乱码
 try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
@@ -769,6 +780,7 @@ function Save-BingImage {
 
 function Set-DesktopWallpaper {
     param([string]$Path)
+    if ($script:NoApply) { Write-Log '预取模式：跳过设置壁纸'; return $true }
     if (-not ('Native.Wallpaper' -as [type])) {
         Add-Type -Namespace Native -Name Wallpaper -MemberDefinition @'
 [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
@@ -1154,6 +1166,7 @@ function Move-ToCache {
 function Add-Pinned {
     param([string]$Date)
     if (-not $Date) { return }
+    if ($script:NoApply) { return }
     # 画廊模式下看过的图是临时的，退出即清，不进保护名单
     if ($Gallery) { return }
     $set = Read-Pinned
@@ -1374,6 +1387,7 @@ function Read-State {
 function Write-State {
     param([string]$Date, [string]$File, [string]$Title, [string]$ImageId, [string]$AppliedDate,
           [string]$Copyright = '', [string]$SearchUrl = '')
+    if ($script:NoApply) { return }
     $o = [ordered]@{
         date        = $Date
         file        = $File

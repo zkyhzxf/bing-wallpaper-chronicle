@@ -177,6 +177,13 @@ namespace BingWallpaperLite
             return RunScriptExit("-Step " + (dir >= 0 ? "1" : "-1"));
         }
 
+        /// <summary>预取某天的图：只下载到归档，不换壁纸、不写 state。</summary>
+        internal static int RunPrefetch(string date)
+        {
+            if (string.IsNullOrEmpty(date) || date.Length != 8) { return -1; }
+            return RunScriptExit("-PrefetchDate " + date);
+        }
+
         private static void RunGalleryClear()
         {
             if (!File.Exists(scriptPath)) { return; }
