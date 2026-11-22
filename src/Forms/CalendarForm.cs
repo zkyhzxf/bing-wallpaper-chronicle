@@ -338,9 +338,9 @@ namespace BingWallpaperLite
                     int lp = m.LParam.ToInt32();
                     Point p = new Point((short)(lp & 0xFFFF), (short)((lp >> 16) & 0xFFFF));
                     DateTime now = DateTime.Now;
-                    if ((now - lastDown).TotalMilliseconds < 500 &&
-                        Math.Abs(p.X - lastPos.X) < 6 &&
-                        Math.Abs(p.Y - lastPos.Y) < 6)
+                    if ((now - lastDown).TotalMilliseconds < SystemInformation.DoubleClickTime &&
+                        Math.Abs(p.X - lastPos.X) < 8 &&
+                        Math.Abs(p.Y - lastPos.Y) < 8)
                     {
                         lastDown = DateTime.MinValue;
                         CalendarForm f = owner;
@@ -365,6 +365,8 @@ namespace BingWallpaperLite
             SelectedDate = d;
             ok.Enabled = false;
             lblWhere.Text = S.SrchWorking;
+            // 双击之后要跑一次取图（本地是 1080p 时还会先去拿 UHD），光标给个明确反馈
+            Cursor = Cursors.WaitCursor;
             string d8 = d;
             System.Threading.ThreadPool.QueueUserWorkItem(delegate
             {
@@ -374,6 +376,7 @@ namespace BingWallpaperLite
                     BeginInvoke((MethodInvoker)delegate
                     {
                         ok.Enabled = true;
+                        Cursor = Cursors.Default;
                         bool done = (code == 0 || code == 8);
                         try { RefreshInfo(); } catch { }
                         try { cal.BoldedDates = LocalDates().ToArray(); } catch { }

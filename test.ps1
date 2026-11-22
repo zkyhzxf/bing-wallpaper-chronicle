@@ -846,6 +846,34 @@ Check '三处分辨率口径一致' {
     return $true
 }
 
+# ---------------------------------------------------------------- [12] 交互细节
+Write-Host ''
+Write-Host '[12] 交互细节'
+
+Check '搜索与随机按钮常亮（靠 busy 拦重入）' {
+    $t = Get-Content (Join-Path $Root 'src\Forms\SearchForm.cs') -Raw
+    if ($t -match 'btnSearch\.Enabled\s*=\s*false') { return '搜索按钮仍会被禁用' }
+    if ($t -match 'btnRandom\.Enabled\s*=\s*false') { return '随机按钮仍会被禁用' }
+    if ($t -notmatch 'private bool busy') { return '没有 busy 重入保护' }
+    return $true
+}
+
+Check '空关键词直接随机，不弹确认框' {
+    $t = Get-Content (Join-Path $Root 'src\Forms\SearchForm.cs') -Raw
+    if ($t -match 'HandleEmptyAction') { return '仍保留 HandleEmptyAction 确认流程' }
+    if ($t -notmatch 'if \(kw\.Length == 0\) \{ PickRandomGroup\(\); return; \}') { return '空关键词没有直接走随机' }
+    $s = Get-Content (Join-Path $Root 'src\Strings.cs') -Raw
+    if ($s -match 'SrchEmptyAsk') { return '确认框文案还留着（对应行为已删）' }
+    return $true
+}
+
+Check '日历双击用系统双击时间' {
+    $t = Get-Content (Join-Path $Root 'src\Forms\CalendarForm.cs') -Raw
+    if ($t -notmatch 'SystemInformation\.DoubleClickTime') { return '双击判定仍是硬编码 500ms' }
+    if ($t -notmatch 'f\.AcceptPick\(\)') { return '双击没有触发换这张' }
+    return $true
+}
+
 # ---------------------------------------------------------------- 汇总
 Write-Host ''
 Write-Host ('-' * 50) -ForegroundColor DarkGray

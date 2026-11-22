@@ -69,10 +69,7 @@ namespace BingWallpaperLite
         public static string SrchHint         { get { return T("索引覆盖 2009-07 至今（6339 天）；最近 8 天实时补齐。", "Index covers Jul 2009 onward (6339 days); the latest 8 days are always fetched live."); } }
         public static string SrchSearching    { get { return T("搜索中…", "Searching…"); } }
         public static string SrchBtnRandom    { get { return T("随机", "Random"); } }
-        public static string SrchEmptyAsk     { get { return T("没有填写关键词。\r\n要从图库里随机抽一组搜索结果吗？", "No keyword entered.\r\nPick a random batch of results from the library?"); } }
-        public static string SrchEmptyTtl     { get { return T("  没有关键词", "  No keyword"); } }
         public static string SrchLibEmpty     { get { return T("图库里抽不出结果（索引为空）。", "Nothing to pick (index is empty)."); } }
-        public static string SrchNeedSearch   { get { return T("还没有搜索结果，先点「搜索」。", "No results yet — click Search first."); } }
         public static string SrchNone         { get { return T("没有匹配的壁纸，换个词试试", "No matches — try different keywords"); } }
         public static string SrchCount        { get { return T("找到 ", "Found "); } }
         public static string SrchCountTail    { get { return _en ? " results" : " 张"; } }

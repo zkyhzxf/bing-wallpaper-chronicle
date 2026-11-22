@@ -20,6 +20,7 @@ namespace BingWallpaperLite
         private readonly Button btnRandom;
         private static readonly Random rnd = new Random();
         private const int RandomGroupSize = 20;
+        private bool busy = false;
 
         public string PickedDate { get; private set; }
 
@@ -95,34 +96,14 @@ namespace BingWallpaperLite
                 Accept();
                 return;
             }
-            HandleEmptyAction();
-        }
-
-        private void HandleEmptyAction()
-        {
-            string kw = txtKw.Text.Trim();
-
-            if (kw.Length > 0)
-            {
-                MessageBox.Show(S.SrchNeedSearch, Program.AppName,
-                    MessageBoxButtons.OK, MessageBoxIcon.Information);
-                txtKw.Focus();
-                return;
-            }
-
-            if (MessageBox.Show(S.SrchEmptyAsk, Program.AppName + S.SrchEmptyTtl,
-                    MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
-            {
-                txtKw.Focus();
-                return;
-            }
             PickRandomGroup();
         }
 
         private void PickRandomGroup()
         {
-            btnRandom.Enabled = false;
-            btnSearch.Enabled = false;
+            if (busy) { return; }
+            busy = true;
+            Cursor = Cursors.WaitCursor;
             lblStatus.Text = S.SrchSearching;
             lst.Items.Clear();
             results.Clear();
@@ -139,8 +120,8 @@ namespace BingWallpaperLite
                 lblStatus.Text = ex.Message;
             }
 
-            btnRandom.Enabled = true;
-            btnSearch.Enabled = true;
+            Cursor = Cursors.Default;
+            busy = false;
 
             if (lst.Items.Count == 0)
             {
@@ -149,17 +130,22 @@ namespace BingWallpaperLite
             }
             lblStatus.Text = S.SrchCount + lst.Items.Count + S.SrchCountTail;
             lst.SelectedIndex = 0;
+            lst.TopIndex = 0;
         }
 
         private void DoSearch()
         {
+            if (busy) { return; }
             string kw = txtKw.Text.Trim();
-            if (kw.Length == 0) { HandleEmptyAction(); return; }
+            // 空关键词 = 从全库随机抽一组，不再弹确认框
+            if (kw.Length == 0) { PickRandomGroup(); return; }
 
-            btnSearch.Enabled = false;
+            busy = true;
+            Cursor = Cursors.WaitCursor;
             lblStatus.Text = S.SrchSearching;
             lst.Items.Clear();
             results.Clear();
+            btnApply.Enabled = false;
             Application.DoEvents();
 
             try
@@ -172,7 +158,8 @@ namespace BingWallpaperLite
                 lblStatus.Text = ex.Message;
             }
 
-            btnSearch.Enabled = true;
+            Cursor = Cursors.Default;
+            busy = false;
 
             if (lst.Items.Count == 0)
             {
@@ -182,6 +169,7 @@ namespace BingWallpaperLite
             }
             lblStatus.Text = S.SrchCount + lst.Items.Count + S.SrchCountTail;
             lst.SelectedIndex = 0;
+            lst.TopIndex = 0;
         }
 
         private void ParseResults(string json)
@@ -225,12 +213,13 @@ namespace BingWallpaperLite
         /// <summary>选中一条就直接换图，窗口留着 —— 换图不再是「关窗确认」的副作用。</summary>
         private void Accept()
         {
-            if (lst.SelectedIndex < 0 || lst.SelectedIndex >= results.Count) { return; }
+            if (busy || lst.SelectedIndex < 0 || lst.SelectedIndex >= results.Count) { return; }
             string date = results[lst.SelectedIndex][0];
             PickedDate = date;
 
+            busy = true;
+            Cursor = Cursors.WaitCursor;
             btnApply.Enabled = false;
-            btnSearch.Enabled = false;
             lblStatus.Text = S.SrchWorking;
             string d8 = date;
             System.Threading.ThreadPool.QueueUserWorkItem(delegate
@@ -240,11 +229,12 @@ namespace BingWallpaperLite
                 {
                     BeginInvoke((MethodInvoker)delegate
                     {
-                        btnSearch.Enabled = true;
+                        busy = false;
+                        Cursor = Cursors.Default;
                         btnApply.Enabled = (lst.SelectedIndex >= 0);
-                        lblStatus.Text = (code == 0 || code == 4 || code == 8)
-                            ? S.SrchSwitched(d8)
-                            : S.SrchSwitchFail;
+                        if (code == 11) { lblStatus.Text = S.WallApplyFail; }
+                        else if (code == 12) { lblStatus.Text = S.FutureDateHint; }
+                        else { lblStatus.Text = (code == 0 || code == 8) ? S.SrchSwitched(d8) : S.SrchSwitchFail; }
                     });
                 }
                 catch { }
