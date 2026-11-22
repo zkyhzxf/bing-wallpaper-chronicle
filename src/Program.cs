@@ -19,9 +19,9 @@ using Microsoft.Win32;
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyConfiguration("Release")]
 [assembly: AssemblyCulture("")]
-[assembly: AssemblyVersion("3.6.22.0")]
-[assembly: AssemblyFileVersion("3.6.22.0")]
-[assembly: AssemblyInformationalVersion("3.6.22")]
+[assembly: AssemblyVersion("3.6.24.0")]
+[assembly: AssemblyFileVersion("3.6.24.0")]
+[assembly: AssemblyInformationalVersion("3.6.24")]
 [assembly: ComVisible(false)]
 
 namespace BingWallpaperLite
@@ -31,7 +31,7 @@ namespace BingWallpaperLite
         // ---------------------------------------------------------------- 常量
 
         internal const string AppName     = "必应壁纸编年史";
-        internal const string AppVersion  = "3.6.22";
+        internal const string AppVersion  = "3.6.24";
         private const string TaskName    = "BingWallpaperChronicle";
         private const string RunValue    = "BingWallpaperChronicle";
 
@@ -65,6 +65,8 @@ namespace BingWallpaperLite
         internal static string OldDirPath { get { return Path.Combine(archiveDir, "old"); } }
         internal static string GalleryDirPath { get { return Path.Combine(cacheDir, "gallery"); } }
         internal static string StoriesDirPath { get { return Path.Combine(archiveDir, "stories"); } }
+        /// <summary>预取中转目录：只用于翻页加速，退出/启动时清空。</summary>
+        internal static string PrefetchDirPath { get { return Path.Combine(cacheDir, "prefetch"); } }
         /// <summary>是否在「这张图是哪儿」里显示每日故事，配置项 showStory，默认开。</summary>
         internal static bool ShowStory { get { try { return GetCfgBool(ReadConfig(), "showStory", true); } catch { return true; } } }
 
@@ -727,6 +729,20 @@ namespace BingWallpaperLite
                     try { DetectResolutionOnce(); } catch { }
                     // 注册延后到消息循环启动后执行，避免阻塞启动
                     try { RefreshAll(); } catch { }
+
+                    // 预取只是翻页加速用的中转文件，不跨会话；启动先清空
+                    try
+                    {
+                        string pd = PrefetchDirPath;
+                        if (Directory.Exists(pd) && Directory.GetFiles(pd, "*.jpg").Length > 0)
+                        {
+                            System.Threading.ThreadPool.QueueUserWorkItem(delegate
+                            {
+                                try { RunScriptExit("-PrefetchClear"); } catch { }
+                            });
+                        }
+                    }
+                    catch { }
 
                     // 画廊模式不跨会话：上次异常退出（崩溃/关机）留下的残留在这里清掉
                     try

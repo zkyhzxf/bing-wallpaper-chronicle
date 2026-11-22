@@ -78,6 +78,7 @@ param(
     [switch]$GalleryClear,
     [switch]$IncludeOld,
     [string]$PrefetchDate = '',
+    [switch]$PrefetchClear,
     [string]$StoryFor = '',
     [switch]$CleanStories,
     [switch]$Status
@@ -121,6 +122,10 @@ $OldDir        = Join-Path $ArchiveDir 'old'
 $OldIndexPath  = Join-Path $ArchiveDir 'old-index.json'
 $WiliiIndexPath = Join-Path $ArchiveDir 'wilii-index.json'
 $StoriesDir    = Join-Path $ArchiveDir 'stories'
+$PrefetchDir   = Join-Path $CacheDir 'prefetch'
+if ($script:NoApply -and $PrefetchDir -and -not (Test-Path $PrefetchDir)) {
+    try { New-Item -ItemType Directory -Path $PrefetchDir -Force | Out-Null } catch { }
+}
 $StoryMapPath  = Join-Path $ArchiveDir 'story-map.json'
 $GalleryDir    = Join-Path $CacheDir 'gallery'
 $PinnedPath = Join-Path $Root 'pinned.json'
@@ -2024,6 +2029,19 @@ try {
         Exit-Run 0
     }
 
+    if ($PrefetchClear) {
+        $nP = 0
+        if (Test-Path $PrefetchDir) {
+            Get-ChildItem $PrefetchDir -Filter '*.jpg' -File -ErrorAction SilentlyContinue | ForEach-Object {
+                if ($DryRun) { Write-Log "[DryRun] 将删除预取 $($_.Name)"; $nP++ }
+                elseif (Remove-OneFile -Path $_.FullName -Mode $CleanMode) { $nP++ }
+            }
+        }
+        Write-Log ("清理预取缓存：" + $nP + " 张")
+        Write-Output ('{"removed":' + $nP + '}')
+        Exit-Run 0
+    }
+
     if ($StoryFor) {
         $sv = Get-Story -Date $StoryFor
         $objS = [ordered]@{ date = ([string]$StoryFor) -replace '[^0-9]', ''; story = $sv }
@@ -2210,6 +2228,17 @@ try {
                 $hit = Get-ChildItem $omDir -Filter "${Date}_*.jpg" -File -ErrorAction SilentlyContinue | Select-Object -First 1
             }
         }
+        # 预取目录：命中就转正到 cache 根目录，否则退出清理时壁纸文件会消失
+        if (-not $hit -and (Test-Path $PrefetchDir)) {
+            $pfHit = Get-ChildItem $PrefetchDir -Filter "${Date}_*.jpg" -File -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($pfHit) {
+                $pfDest = Join-Path $CacheDir $pfHit.Name
+                if (-not $script:NoApply -and -not (Test-Path -LiteralPath $pfDest)) {
+                    try { Move-Item -LiteralPath $pfHit.FullName -Destination $pfDest -Force; $pfHit = Get-Item -LiteralPath $pfDest } catch { }
+                }
+                $hit = $pfHit
+            }
+        }
         if ($hit) {
             $locked = Enter-RunLock
             if (-not $locked) { exit 2 }
@@ -2274,6 +2303,7 @@ try {
                     $ymO   = $Date.Substring(0, 6)
                     $dirO  = Join-Path $OldDir $ymO
                     if ($Gallery) { $dirO = $GalleryDir }
+                    if ($script:NoApply) { $dirO = $PrefetchDir }
                     if (-not (Test-Path $dirO)) { New-Item -ItemType Directory -Path $dirO -Force | Out-Null }
                     $destO = Join-Path $dirO ("${Date}_" + $slugO + '.jpg')
                     $locked = Enter-RunLock
@@ -2330,6 +2360,7 @@ try {
                     $shortId = $archId -replace '_[A-Za-z]{2}-[A-Za-z]{2}\d+$', ''
                     $fileName = "${Date}_$shortId.jpg"
                     $dest = Join-Path $ArchiveImgDir $fileName
+                    if ($script:NoApply) { $dest = Join-Path $PrefetchDir $fileName }
                     $locked = Enter-RunLock
                     if (-not $locked) { exit 2 }
 
@@ -2376,6 +2407,7 @@ try {
             # 4) 兜底：微软 CDN 按日期直取，再不行用 wilii
             $fileName = "${Date}_CDN.jpg"
             $dest = Join-Path $DownDir $fileName
+            if ($script:NoApply) { $dest = Join-Path $PrefetchDir $fileName }
             $locked = Enter-RunLock
             if (-not $locked) { exit 2 }
             $tailCand = @()
