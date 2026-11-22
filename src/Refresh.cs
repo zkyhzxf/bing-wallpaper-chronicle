@@ -868,6 +868,19 @@ namespace BingWallpaperLite
             if (ca != null)
             {
                 int n = SafeGetFiles(archiveImgDir).Length;
+                // 与「实际清理」口径一致：老存档也算归档的一部分
+                try
+                {
+                    string oldR2 = OldDirPath;
+                    if (!string.IsNullOrEmpty(oldR2) && Directory.Exists(oldR2))
+                    {
+                        foreach (string om2 in Directory.GetDirectories(oldR2))
+                        {
+                            n += Directory.GetFiles(om2, "*.jpg").Length;
+                        }
+                    }
+                }
+                catch { }
                 ca.Text = n > 0 ? S.CleanArchN2(n) : S.CleanArchive;
                 ca.Enabled = n > 0;
             }
@@ -927,6 +940,14 @@ namespace BingWallpaperLite
                     if (hit.Length == 0 && Directory.Exists(archiveImgDir))
                     {
                         hit = Directory.GetFiles(archiveImgDir, key + "_*.jpg");
+                    }
+                    if (hit.Length == 0)
+                    {
+                        string omDir = OldMonthDir(key);
+                        if (omDir != null && Directory.Exists(omDir))
+                        {
+                            hit = Directory.GetFiles(omDir, key + "_*.jpg");
+                        }
                     }
                     if (hit.Length > 0) { localFile = hit[0]; }
                 }
