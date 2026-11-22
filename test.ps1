@@ -888,6 +888,21 @@ Check '日历双击不会叠加触发' {
     return $true
 }
 
+Check '信息窗口按钮不捕获构造参数' {
+    $t = Get-Content (Join-Path $Root 'src\Forms\InfoForm.cs') -Raw
+    if ($t -match 'btnLearn\.Click \+= delegate \{ Program\.OpenUrl\(searchUrl\)') { return '了解更多仍捕获构造参数 searchUrl —— 翻页后不会变' }
+    if ($t -match 'btnFolder\.Click \+= delegate \{ Program\.ShowInFolder\(file\)') { return '在文件夹中显示仍捕获构造参数 file' }
+    if ($t -notmatch 'private string curSearchUrl') { return '没有 curSearchUrl 字段' }
+    if ($t -notmatch 'Reload\([^)]*\)\s*\{\s*curDate = date;\s*curSearchUrl =') { return 'Reload 里没更新 curSearchUrl' }
+    return $true
+}
+
+Check '归档索引的 l 字段也被认' {
+    $t = Get-Content (Join-Path $Root 'src\Info.cs') -Raw
+    if ($t -notmatch 'fe\.ContainsKey\("l"\)') { return 'Info.cs 只认 link，索引里实际是 l，兜底一直是死代码' }
+    return $true
+}
+
 # ---------------------------------------------------------------- 汇总
 Write-Host ''
 Write-Host ('-' * 50) -ForegroundColor DarkGray

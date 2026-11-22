@@ -99,9 +99,12 @@ namespace BingWallpaperLite
                 if (full != null && full.ContainsKey(date))
                 {
                     Dictionary<string, object> fe = full[date] as Dictionary<string, object>;
-                    if (fe != null && fe.ContainsKey("link"))
+                    if (fe != null)
                     {
-                        string lk = fe["link"] == null ? "" : fe["link"].ToString();
+                        // 索引里的字段名是 l（不是 link），两种都认，免得这段兜底一直是死代码
+                        string lk = "";
+                        if (fe.ContainsKey("l") && fe["l"] != null) { lk = fe["l"].ToString(); }
+                        else if (fe.ContainsKey("link") && fe["link"] != null) { lk = fe["link"].ToString(); }
                         if (lk.Length > 0) { learnUrl = lk; }
                     }
                 }
@@ -156,9 +159,11 @@ namespace BingWallpaperLite
                     if (index != null && index.ContainsKey(date))
                     {
                         Dictionary<string, object> fe = index[date] as Dictionary<string, object>;
-                        if (fe != null && fe.ContainsKey("link"))
+                        if (fe != null)
                         {
-                            string lk = fe["link"] == null ? "" : fe["link"].ToString();
+                            string lk = "";
+                            if (fe.ContainsKey("l") && fe["l"] != null) { lk = fe["l"].ToString(); }
+                            else if (fe.ContainsKey("link") && fe["link"] != null) { lk = fe["link"].ToString(); }
                             if (lk.Length > 0) { learnUrl = lk; }
                         }
                     }

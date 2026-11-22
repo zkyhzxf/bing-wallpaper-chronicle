@@ -25,6 +25,10 @@ namespace BingWallpaperLite
         private Button btnPrevNav;
         private Button btnNextNav;
         private string curDate = "";
+        private string curSearchUrl = "";
+        private string curFile = "";
+        private Button btnLearn;
+        private Button btnFolder;
         private int storySeq = 0;
         private int storyY = 0;
         private bool storyExpanded = false;
@@ -125,18 +129,23 @@ namespace BingWallpaperLite
 
             by += 40;
 
-            Button btnLearn = new Button();
+            // 这两个按钮的 onClick 读字段而不是构造函数参数：翻页后 Reload 会更新字段，
+            // 闭包捕获参数的话，点多少次都还是第一张图的那个链接 / 路径。
+            curSearchUrl = searchUrl == null ? "" : searchUrl;
+            curFile = file == null ? "" : file;
+
+            btnLearn = new Button();
             btnLearn.Text = S.InfoBtnSearch;
             btnLearn.SetBounds(20, by, 110, 32);
-            btnLearn.Enabled = searchUrl.Length > 0;
-            btnLearn.Click += delegate { Program.OpenUrl(searchUrl); };
+            btnLearn.Enabled = curSearchUrl.Length > 0;
+            btnLearn.Click += delegate { if (curSearchUrl.Length > 0) { Program.OpenUrl(curSearchUrl); } };
             Controls.Add(btnLearn);
 
-            Button btnFolder = new Button();
+            btnFolder = new Button();
             btnFolder.Text = S.InfoBtnFolder;
             btnFolder.SetBounds(140, by, 130, 32);
-            btnFolder.Enabled = !string.IsNullOrEmpty(file);
-            btnFolder.Click += delegate { Program.ShowInFolder(file); };
+            btnFolder.Enabled = curFile.Length > 0;
+            btnFolder.Click += delegate { if (curFile.Length > 0) { Program.ShowInFolder(curFile); } };
             Controls.Add(btnFolder);
 
             Button btnMore = new Button();
@@ -405,6 +414,10 @@ namespace BingWallpaperLite
         private void Reload(string date, string title, string copyright, string file, string sizeText, string searchUrl)
         {
             curDate = date;
+            curSearchUrl = searchUrl == null ? "" : searchUrl;
+            curFile = file == null ? "" : file;
+            if (btnLearn != null) { btnLearn.Enabled = curSearchUrl.Length > 0; }
+            if (btnFolder != null) { btnFolder.Enabled = curFile.Length > 0; }
             try
             {
                 if (thumb != null) { thumb.Dispose(); thumb = null; }
