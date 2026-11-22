@@ -337,6 +337,22 @@ Check '照片墙取图落 cache\wall 且不写索引' {
     return $true
 }
 
+Check '-Date 归档日期 -DryRun 不下载也不改桌面' {
+    $imgDir = Join-Path $Root 'archive\images'
+    $beforeImgs = @(Get-ChildItem $imgDir -Filter '*.jpg' -ErrorAction SilentlyContinue).Count
+    $beforeWp = ''
+    try { $beforeWp = [string](Get-ItemProperty 'HKCU:\Control Panel\Desktop' -Name Wallpaper -ErrorAction SilentlyContinue).Wallpaper } catch { }
+    $r = Run-Script @('-Date', '20200315', '-DryRun')
+    if ($r.Code -ne 0) { return ('退出码 ' + $r.Code) }
+    if ($r.Output -notmatch '\[DryRun\]') { return '输出里没有 DryRun 标记' }
+    $afterImgs = @(Get-ChildItem $imgDir -Filter '*.jpg' -ErrorAction SilentlyContinue).Count
+    if ($afterImgs -ne $beforeImgs) { return ('归档文件数变了：' + $beforeImgs + ' → ' + $afterImgs) }
+    $afterWp = ''
+    try { $afterWp = [string](Get-ItemProperty 'HKCU:\Control Panel\Desktop' -Name Wallpaper -ErrorAction SilentlyContinue).Wallpaper } catch { }
+    if ($beforeWp -ne $afterWp) { return '桌面壁纸被改了' }
+    return $true
+}
+
 # ---------------------------------------------------------------- 5. 数据完整性
 Write-Host ''
 Write-Host '[5] 数据完整性' -ForegroundColor Yellow

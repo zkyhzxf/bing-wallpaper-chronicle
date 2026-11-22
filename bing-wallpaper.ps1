@@ -2504,6 +2504,10 @@ try {
             $hit = Get-ChildItem $WallDir -Filter "${Date}_*.jpg" -File -ErrorAction SilentlyContinue | Select-Object -First 1
         }
         if ($hit) {
+            if ($DryRun) {
+                Write-Log ("[DryRun] 命中本地，将设为壁纸：" + $hit.FullName)
+                Exit-Run 0
+            }
             $locked = Enter-RunLock -WaitSec $script:LockWaitSec
             if (-not $locked) { exit 2 }
             Set-WallpaperStyle -Name $styleName
@@ -2570,6 +2574,10 @@ try {
                     $dirO = Get-DownloadDir
                     if (-not (Test-Path $dirO)) { New-Item -ItemType Directory -Path $dirO -Force | Out-Null }
                     $destO = Join-Path $dirO ("${Date}_" + $slugO + '.jpg')
+                    if ($DryRun) {
+                        Write-Log ("[DryRun] 将下载老存档：$slugO → $destO（不下载、不设壁纸）")
+                        Exit-Run 0
+                    }
                     $locked = Enter-RunLock -WaitSec $script:LockWaitSec
                     if (-not $locked) { exit 2 }
                     $szO = 0
@@ -2626,6 +2634,10 @@ try {
                     $dest = Join-Path $ArchiveImgDir $fileName
                     if ($script:WallMode) { $dest = Join-Path $WallDir $fileName }
                     elseif ($script:NoApply) { $dest = Join-Path $PrefetchDir $fileName }
+                    if ($DryRun) {
+                        Write-Log ("[DryRun] 将下载归档原图：" + $archId + " → " + $dest + "（不下载、不设壁纸）")
+                        Exit-Run 0
+                    }
                     $locked = Enter-RunLock -WaitSec $script:LockWaitSec
                     if (-not $locked) { exit 2 }
 
@@ -2672,6 +2684,10 @@ try {
             # 4) 兜底：微软 CDN 按日期直取，再不行用 wilii
             $fileName = "${Date}_CDN.jpg"
             $dest = Join-Path $DownDir $fileName
+            if ($DryRun) {
+                Write-Log ("[DryRun] 将兜底下载（微软 CDN / wilii）→ " + $dest + "（不下载、不设壁纸）")
+                Exit-Run 0
+            }
             $locked = Enter-RunLock -WaitSec $script:LockWaitSec
             if (-not $locked) { exit 2 }
             $tailCand = @()
