@@ -102,6 +102,13 @@ namespace BingWallpaperLite
         public static string CleanDoneIdx(int rm) { return _en ? ("Removed " + rm + " index files") : ("删除 " + rm + " 个索引文件"); }
         public static string CleanWithIndex { get { return T("同时清理索引（15 个月份 + 全量索引）", "Also clear indexes (monthly + full)"); } }
         public static string CleanWithIndexHint { get { return T("删掉的是目录册，不是图片：之后取历史图要联网查，搜索会重下索引", "Removes the catalogue, not the images: later lookups go online and search re-downloads the index"); } }
+        public static string CleanWithOld(int n, double mb)
+        {
+            return _en
+                ? ("Also clear legacy archive (" + n + " images / " + mb.ToString("0.0") + " MB, 2009-08 ~ 2016-02)")
+                : ("同时清理老存档（" + n + " 张 / " + mb.ToString("0.0") + " MB，2009-08 ~ 2016-02）");
+        }
+        public static string CleanWithOldHint { get { return T("老存档来自第三方镜像，删了要重新联网取；分辨率 1366×768", "Legacy archive comes from a third-party mirror; deleting it means downloading again"); } }
         public static string CleanIdxSuffix(int n) { return _en ? ("; " + n + " index files removed") : ("；另删 " + n + " 个索引文件"); }
         public static string CleanDoneArch(int rm, int fav, int cur)
         {
@@ -261,6 +268,7 @@ namespace BingWallpaperLite
         public static string CalLocFav        { get { return T("● 已在本地 · 收藏", "● Local · favorites"); } }
         public static string CalLocCache      { get { return T("● 已在本地 · 缓存", "● Local · cache"); } }
         public static string CalLocArch       { get { return T("● 已在本地 · 归档", "● Local · archive"); } }
+        public static string CalLocOld        { get { return T("● 已在本地 · 老存档", "● Local · old archive"); } }
         public static string CalLocNone       { get { return T("○ 本地没有 · 需联网", "○ Not local · needs network"); } }
         public static string CalBoldHint      { get { return T("粗体：本地已有这张图", "Bold: already local"); } }
         public static string BtnOK            { get { return T("确定", "OK"); } }
@@ -309,7 +317,7 @@ namespace BingWallpaperLite
         public static string NeedArchHint      { get { return T("2025-03 之前的日期要开启「增强数据源 ▸ 启用第三方归档」才能取到", "Dates before Mar 2025 need Data sources → Enable third-party archive"); } }
         public static string ArchDownHint      { get { return T("检查网络或代理，或在「增强数据源」里临时关闭后重试", "Check network or proxy, or disable Data sources and retry"); } }
         public static string LatestHint        { get { return T("当前就是最新的一张；更早的可用「选日期」", "This is already the newest; use Pick a date for older ones"); } }
-        public static string OldestHint        { get { return T("已到能取到的最早一天（2016-03-05），可在「按日期搜索」里跳转", "Reached the earliest available day (2016-03-05); use Search by date to jump"); } }
+        public static string OldestHint        { get { return T("已到能取到的最早一天（2009-08-31），可在「按日期搜索」里跳转", "Reached the earliest available day (2009-08-31); use Search by date to jump"); } }
         public static string EdgeHint          { get { return T("换个方向，或用「选日期」指定", "Try the other direction, or pick a date"); } }
         public static string NoFavHint         { get { return T("只有缓存目录里的壁纸才能收藏", "Only wallpapers in the cache folder can be favorited"); } }
         public static string DegradedHint      { get { return T("归档原图取不到，这张用的是微软 CDN 的 3840×2400", "Archive original unavailable; using Microsoft CDN 3840×2400"); } }
@@ -348,12 +356,26 @@ namespace BingWallpaperLite
         public static string ArchImgInfo(int n, double mb, int prot) { return _en ? (" · " + n + " images / " + mb + " MB (" + prot + " protected)") : (" · 图片 " + n + " 张 / " + mb + " MB（" + prot + " 张受保护）"); }
         public static string ArchSrcLine1   { get { return T("主源 Zhu-junwei  ·  2016-03 起  ·  带中文标题", "Primary  Zhu-junwei  ·  since Mar 2016  ·  with titles"); } }
         public static string ArchSrcLine2   { get { return T("兜底 niumoo      ·  2021-02 起  ·  仅 ID", "Fallback niumoo    ·  since Feb 2021  ·  IDs only"); } }
+        public static string ArchSrcLine3   { get { return T("老档 anerg       ·  2009-08 起  ·  老图 1366×768", "Old    anerg       ·  since Aug 2009  ·  legacy 1366x768"); } }
         public static string ArchRowArchive(int n, double mb, int cap, int prot)
         {
             return _en
                 ? ("Archive  " + n + " images / " + mb.ToString("0.0") + " MB (cap " + cap + " MB, " + prot + " protected)")
                 : ("归档  " + n + " 张 / " + mb.ToString("0.0") + " MB（上限 " + cap + " MB，" + prot + " 张受保护）");
         }
+        public static string ArchRowOld(int n, double mb)
+        {
+            return _en
+                ? ("Legacy  " + n + " images / " + mb.ToString("0.0") + " MB (2009-08 ~ 2016-02)")
+                : ("老存档  " + n + " 张 / " + mb.ToString("0.0") + " MB（2009-08 ~ 2016-02）");
+        }
+        public static string GalleryMenu  { get { return T("画廊模式（随手看图，退出即清）", "Gallery mode (browse freely, cleared on exit)"); } }
+        public static string GalleryOn    { get { return T("● 画廊模式 · 关掉就清空画廊", "● Gallery on · cleared when you turn it off"); } }
+        public static string GalleryCount(int n, double mb)
+        {
+            return _en ? (" · " + n + " images / " + mb.ToString("0.0") + " MB") : (" · 画廊 " + n + " 张 / " + mb.ToString("0.0") + " MB");
+        }
+        public static string GalleryTipOn  { get { return T("画廊模式下看的图不进保护名单，关掉这个模式就清空", "Images viewed in Gallery mode are not protected and are cleared when you turn it off"); } }
         public static string ArchRowIndex(int months, double kb, int total)
         {
             return _en
@@ -386,8 +408,8 @@ namespace BingWallpaperLite
 
         // ---------------- 关于正文
         public static string AboutFeat1      { get { return T("· 每天 00:10 自动换当天的图，8:30 / 12:00 补查", "· Switches to today's image at 00:10, with retries at 08:30 / 12:00"); } }
-        public static string AboutFeat2      { get { return T("· 往回翻：最近 8 天直接取，更早的自动接续归档，可一路翻到 2016-03", "· Browse back: last 8 days from the API, older ones continue from the archive, all the way to Mar 2016"); } }
-        public static string AboutFeat2b     { get { return T("· 日历跳到 2016-03 以来的任意一天", "· Jump to any day since Mar 2016 from the calendar"); } }
+        public static string AboutFeat2      { get { return T("· 往回翻：最近 8 天直接取，更早的接续归档，可一路翻到 2009-08", "· Browse back: last 8 days from the API, older ones continue from the archive, all the way to Aug 2009"); } }
+        public static string AboutFeat2b     { get { return T("· 日历跳到 2009-08 以来的任意一天（2016-03 前是老存档，1366×768）", "· Jump to any day since Aug 2009 (before Mar 2016 comes from an old archive at 1366x768)"); } }
         public static string AboutFeat3      { get { return T("· 收藏喜欢的图，收藏与缓存清理互不影响", "· Favorite images; favorites survive cache cleanup"); } }
         public static string AboutFeat4      { get { return T("· 关掉托盘也照常换图（计划任务直接调脚本）", "· Keeps working with the tray closed (the task runs the script)"); } }
         public static string AboutCanDo      { get { return T("【能做什么】", "[What it does]"); } }

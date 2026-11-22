@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -419,7 +419,7 @@ namespace BingWallpaperLite
         /// <summary>找某个日期的图，返回路径；三处都没有返回 null。</summary>
         internal static string FindImageFilePath(string date, out int where)
         {
-            where = 0;   // 0=没有 1=收藏 2=缓存 3=归档
+            where = 0;   // 0=没有 1=收藏 2=缓存 3=归档 4=老存档
             string[] dirs = new string[] { FavDirPath, CacheDirPath, ArchiveImgPath };
             for (int i = 0; i < dirs.Length; i++)
             {
@@ -435,6 +435,17 @@ namespace BingWallpaperLite
                 }
                 catch { }
             }
+            // 老存档（2009-08 ~ 2016-02）按月分目录，单独一查
+            try
+            {
+                string om = OldMonthDir(date);
+                if (om != null && Directory.Exists(om))
+                {
+                    string[] hitOld = Directory.GetFiles(om, date + "_*.jpg");
+                    if (hitOld.Length > 0) { where = 4; return hitOld[0]; }
+                }
+            }
+            catch { }
             return null;
         }
 
@@ -472,6 +483,7 @@ namespace BingWallpaperLite
             try { bytes = new FileInfo(file).Length; } catch { }
             if (where == 1) { return S.CalLocFav; }
             if (where == 2) { return S.CalLocCache; }
+            if (where == 4) { return S.CalLocOld; }
             return S.CalLocArch;
         }
 
@@ -1068,12 +1080,65 @@ namespace BingWallpaperLite
                         }
                     }
                 }
-                else if (x.Name == "archsrc1" || x.Name == "archsrc2")
+                else if (x.Name == "archsrc1" || x.Name == "archsrc2" || x.Name == "archsrc3")
                 {
-                    // 关掉增强数据源时，把两行来源灰掉但仍保留信息
+                    // 关掉增强数据源时，把来源行灰掉但仍保留信息
                     x.Enabled = false;
                     x.ForeColor = on ? SystemColors.GrayText : SystemColors.ControlDarkDark;
                     if (!on && x.Name == "archsrc2") { x.Text = S.ArchInfoPrefix + S.ArchOffLine; }
+                }
+                else if (x.Name == "archoldinfo")
+                {
+                    int oldN = 0;
+                    long oldBytes = 0;
+                    try
+                    {
+                        string oldRoot = OldDirPath;
+                        if (Directory.Exists(oldRoot))
+                        {
+                            foreach (string om in Directory.GetDirectories(oldRoot))
+                            {
+                                foreach (string img in Directory.GetFiles(om, "*.jpg"))
+                                {
+                                    oldN++;
+                                    oldBytes += new FileInfo(img).Length;
+                                }
+                            }
+                        }
+                    }
+                    catch { }
+                    x.Text = S.ArchRowOld(oldN, Math.Round(oldBytes / 1024.0 / 1024.0, 1));
+                }
+            }
+
+            // 画廊模式状态行
+            ToolStripMenuItem gt = menu.Items["gallerytoggle"] as ToolStripMenuItem;
+            if (gt != null)
+            {
+                if (GalleryMode)
+                {
+                    int gn = 0;
+                    long gb = 0;
+                    try
+                    {
+                        string gd = GalleryDirPath;
+                        if (Directory.Exists(gd))
+                        {
+                            foreach (string f in Directory.GetFiles(gd, "*.jpg"))
+                            {
+                                gn++;
+                                gb += new FileInfo(f).Length;
+                            }
+                        }
+                    }
+                    catch { }
+                    gt.Text = S.GalleryOn + S.GalleryCount(gn, Math.Round(gb / 1024.0 / 1024.0, 1));
+                    gt.Font = new Font(gt.Font, FontStyle.Bold);
+                }
+                else
+                {
+                    gt.Text = S.GalleryMenu;
+                    gt.Font = new Font(gt.Font, FontStyle.Regular);
                 }
             }
         }

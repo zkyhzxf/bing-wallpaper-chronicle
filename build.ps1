@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     编译 必应壁纸Lite 的托盘程序。
@@ -52,6 +52,7 @@ $iconFile  = Join-Path $resDir 'bing.ico'
 $iconBusy  = Join-Path $resDir 'bing-busy.ico'
 $cfgFile   = Join-Path $resDir 'config.json'
 $snapFile  = Join-Path $resDir 'assets\all-index.json'
+$snapOld   = Join-Path $resDir 'assets\old-index.json'
 
 if (-not (Test-Path $csFile)) { throw "找不到源文件：$csFile" }
 if (-not (Test-Path $psFile)) { throw "找不到核心脚本：$psFile" }
@@ -128,6 +129,18 @@ if ((Test-Path $liveIdx) -and (Test-Path $snapFile)) {
     Write-Host '已生成 assets\all-index.json 快照' -ForegroundColor DarkGray
 }
 
+# 老存档索引（2009-08 ~ 2016-02）：同样以运行时数据为准刷新快照
+$liveOld = Join-Path $repoRoot 'archive\old-index.json'
+if ((Test-Path $liveOld) -and (Test-Path $snapOld)) {
+    if ((Get-Item $liveOld).LastWriteTime -gt (Get-Item $snapOld).LastWriteTime) {
+        Copy-Item $liveOld $snapOld -Force
+        Write-Host '已刷新 assets\old-index.json 快照' -ForegroundColor DarkGray
+    }
+} elseif ((Test-Path $liveOld) -and -not (Test-Path $snapOld)) {
+    Copy-Item $liveOld $snapOld -Force
+    Write-Host '已生成 assets\old-index.json 快照' -ForegroundColor DarkGray
+}
+
 # 源码：优先用 src\ 下的多文件；没有则退回单文件 TrayProgram.cs
 $srcDir = Join-Path $repoRoot 'src'
 if (Test-Path $srcDir) {
@@ -141,6 +154,7 @@ if (Test-Path $srcDir) {
 $buildArgs += $csFiles
 if (Test-Path $cfgFile) { $buildArgs += @("/resource:$cfgFile,config.json") }
 if (Test-Path $snapFile) { $buildArgs += @("/resource:$snapFile,all-index.json") }
+if (Test-Path $snapOld)  { $buildArgs += @("/resource:$snapOld,old-index.json") }
 
 Write-Host "编译中…" -ForegroundColor Cyan
 $log = & $csc $buildArgs 2>&1 | Out-String

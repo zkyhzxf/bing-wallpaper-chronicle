@@ -11,6 +11,7 @@
         2. https://www.bing.com/th?id={ID}&w=3840&h=2160  3840x2160  约 0.8 MB
         3. 微软 CDN url2  .../Latest/3840x2400/{date}.jpg  3840x2400  约 0.8 MB
         4. https://www.bing.com/th?id={ID}_1920x1080.jpg  1920x1080  约 0.33 MB
+        5. https://img.nanxiongnandi.com/{YYYYMM}/{slug}.jpg  2009-08 起  老图 1366x768
 
     并发安全：脚本用 cache\.running 做独占锁。抢锁失败时退出码为 2（表示"已有实例在跑"），
     调用方（托盘程序）可据此显示"正在更新"。成功/跳过为 0，出错为 1。
@@ -73,6 +74,9 @@ param(
     [string]$KwFile = '',
     [string]$Search = '',
     [switch]$Json,
+    [switch]$Gallery,
+    [switch]$GalleryClear,
+    [switch]$IncludeOld,
     [switch]$Status
 )
 
@@ -100,10 +104,20 @@ $FavDir     = Join-Path $Root 'favorites'
 $FavIndex   = Join-Path $FavDir 'index.json'
 $ArchiveDir = Join-Path $Root 'archive'
 $ArchiveImgDir = Join-Path $ArchiveDir 'images';
+$OldDir        = Join-Path $ArchiveDir 'old'
+$OldIndexPath  = Join-Path $ArchiveDir 'old-index.json'
+$GalleryDir    = Join-Path $CacheDir 'gallery'
 $PinnedPath = Join-Path $Root 'pinned.json'
 $PinnedLegacyPath = Join-Path $Root 'cache\pinned.json'
 
 if (-not (Test-Path $CacheDir)) { New-Item -ItemType Directory -Path $CacheDir -Force | Out-Null }
+
+# 画廊模式：下载落点改到 cache\gallery，退出时整个清掉，不登记保护名单
+$DownDir = $CacheDir
+if ($Gallery) {
+    $DownDir = $GalleryDir
+    if (-not (Test-Path $DownDir)) { New-Item -ItemType Directory -Path $DownDir -Force | Out-Null }
+}
 
 # ---------------------------------------------------------------- 日志
 
@@ -328,6 +342,47 @@ function Save-ArchiveVia {
     } catch { }
 }
 
+# 老存档索引（2009-08 ~ 2016-02）：字段 d/t/i，i 是镜像站的图片 slug，没有 Bing id
+# 数据来自 bingwallpaper.anerg.com，按月度页从新到旧反推日期，条数必须等于当月天数才收
+$script:OldMap = $null
+function Get-OldIndexMap {
+    if ($null -ne $script:OldMap) { return $script:OldMap }
+    $script:OldMap = @{}
+    if (-not (Test-Path $OldIndexPath)) { return $script:OldMap }
+    try {
+        $arr = Get-Content $OldIndexPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        foreach ($x in $arr) {
+            $k = [string]$x.d
+            if ($k.Length -eq 8) { $script:OldMap[$k] = $x }
+        }
+        Write-Log ("老存档索引已载入：" + $script:OldMap.Count + " 天")
+    } catch {
+        Write-Log "老存档索引解析失败: $($_.Exception.Message)" 'WARN'
+    }
+    return $script:OldMap
+}
+
+function Get-OldIndexRecord {
+    param([string]$Date)
+    $Date = ([string]$Date) -replace '[^0-9]', ''
+    if ($Date.Length -ne 8) { return $null }
+    $map = Get-OldIndexMap
+    if (-not $map.ContainsKey($Date)) { return $null }
+    $x = $map[$Date]
+    $slug = [string]$x.i
+    if (-not $slug) { return $null }
+    $ym = $Date.Substring(0, 6)
+    return @{
+        id        = ''
+        title     = [string]$x.t
+        copyright = ''
+        url       = ('https://img.nanxiongnandi.com/' + $ym + '/' + $slug + '.jpg')
+        slug      = $slug
+        source    = 'old'
+        searchUrl = ''
+    }
+}
+
 function Get-ArchiveRecord {
     param([string]$Date)
     # 返回 @{ id=...; title=...; copyright=...; url=... } 或 $null
@@ -335,6 +390,12 @@ function Get-ArchiveRecord {
     $Date = ([string]$Date) -replace '[^0-9]', ''
     if ($Date.Length -ne 8) { return $null }
     if ($Date -lt $ArchiveMinDate) { return $null }
+
+    # 老存档优先：2016-03 之前主源没有数据，直接查镜像索引，省一次联网
+    if ($Date -lt '20160305') {
+        $oldRec = Get-OldIndexRecord -Date $Date
+        if ($oldRec) { return $oldRec }
+    }
 
     $y  = $Date.Substring(0, 4)
     $m  = $Date.Substring(4, 2)
@@ -664,14 +725,20 @@ function Search-Archive {
 function Get-NeighborDate {
     param([string]$From, [int]$Step)
     if (-not $From) { return '' }
+    $dates = @()
     try {
         $idx = Get-FullIndex
-    } catch { return '' }
-    if (-not $idx -or @($idx).Count -eq 0) { return '' }
+        if ($idx) { foreach ($it in $idx) { $dates += [string]$it.d } }
+    } catch { }
+    # 老存档（2009-08 ~ 2016-02）：主索引够不着这一段，翻页要能接上
+    try {
+        $oldMap = Get-OldIndexMap
+        if ($oldMap -and $oldMap.Count -gt 0) { $dates += @($oldMap.Keys) }
+    } catch { }
+    if ($dates.Count -eq 0) { return '' }
 
     $best = ''
-    foreach ($it in $idx) {
-        $d = [string]$it.d
+    foreach ($d in $dates) {
         if ($d.Length -ne 8) { continue }
         if ($Step -gt 0) {
             # 找比 From 更早的里最新的
@@ -886,6 +953,8 @@ function Move-ToCache {
 function Add-Pinned {
     param([string]$Date)
     if (-not $Date) { return }
+    # 画廊模式下看过的图是临时的，退出即清，不进保护名单
+    if ($Gallery) { return }
     $set = Read-Pinned
     if ($set.ContainsKey($Date)) { return }
     $set[$Date] = $true
@@ -1685,6 +1754,19 @@ try {
         Exit-Run 0
     }
 
+    if ($GalleryClear) {
+        $nG = 0
+        if (Test-Path $GalleryDir) {
+            Get-ChildItem $GalleryDir -Filter '*.jpg' -File -ErrorAction SilentlyContinue | ForEach-Object {
+                if ($DryRun) { Write-Log "[DryRun] 将删除画廊 $($_.Name)"; $nG++ }
+                elseif (Remove-OneFile -Path $_.FullName -Mode $CleanMode) { $nG++ }
+            }
+        }
+        Write-Log ("退出画廊模式：清理 " + $nG + " 张")
+        Write-Output ('{"removed":' + $nG + '}')
+        Exit-Run 0
+    }
+
     if ($CleanArchiveIndex) {
         $nIdx = 0
         Get-ChildItem $ArchiveDir -Filter '*.json' -File -ErrorAction SilentlyContinue | ForEach-Object {
@@ -1758,7 +1840,22 @@ try {
                 Write-Log ("同时清理归档索引：删除 " + $nIdxA + " 个文件")
             }
         }
-        Write-Output ('{"removed":' + $removedA + ',"keptFav":' + $keptFavA + ',"keptCur":' + $keptCurA + ',"idxRemoved":' + $nIdxA + '}')
+        # 老存档（2009-08 ~ 2016-02）单独一块，默认不动，要清得显式带 -IncludeOld
+        $removedO = 0
+        $freedO = 0
+        if ($IncludeOld -and (Test-Path $OldDir)) {
+            Get-ChildItem $OldDir -Recurse -Filter '*.jpg' -File -ErrorAction SilentlyContinue | ForEach-Object {
+                $dO = ''
+                if ($_.Name -match '^(\d{8})') { $dO = $matches[1] }
+                if ($dO -and $favA.ContainsKey($dO)) { $keptFavA++; $keptA++; return }
+                if ($curA -and $curA -eq $_.FullName) { $keptCurA++; $keptA++; return }
+                $szO2 = $_.Length
+                if ($DryRun) { Write-Log "[DryRun] 将删除老存档图 $($_.Name)"; $removedO++; $freedO += $szO2; return }
+                if (Remove-OneFile -Path $_.FullName -Mode $CleanMode) { $removedO++; $freedO += $szO2 }
+            }
+            Write-Log ("清理老存档：删除 " + $removedO + " 张，释放 " + [math]::Round($freedO / 1MB, 1) + " MB")
+        }
+        Write-Output ('{"removed":' + $removedA + ',"keptFav":' + $keptFavA + ',"keptCur":' + $keptCurA + ',"idxRemoved":' + $nIdxA + ',"oldRemoved":' + $removedO + '}')
         Exit-Run 0
     }
 
@@ -1830,6 +1927,12 @@ try {
         if (-not $hit -and (Test-Path $ArchiveImgDir)) {
             $hit = Get-ChildItem $ArchiveImgDir -Filter "${Date}_*.jpg" -File -ErrorAction SilentlyContinue | Select-Object -First 1
         }
+        if (-not $hit) {
+            $omDir = Join-Path $OldDir $Date.Substring(0, 6)
+            if (Test-Path $omDir) {
+                $hit = Get-ChildItem $omDir -Filter "${Date}_*.jpg" -File -ErrorAction SilentlyContinue | Select-Object -First 1
+            }
+        }
         if ($hit) {
             $locked = Enter-RunLock
             if (-not $locked) { exit 2 }
@@ -1886,6 +1989,41 @@ try {
             $useArchive = [bool]$config['archive']
             if ($useArchive) {
                 $rec = Get-ArchiveRecord -Date $Date
+
+                # 老存档（2009-08 ~ 2016-02）：只有镜像站 slug，没有 Bing id
+                if ($rec -and $rec.slug) {
+                    $slugO = [string]$rec.slug
+                    $ymO   = $Date.Substring(0, 6)
+                    $dirO  = Join-Path $OldDir $ymO
+                    if ($Gallery) { $dirO = $GalleryDir }
+                    if (-not (Test-Path $dirO)) { New-Item -ItemType Directory -Path $dirO -Force | Out-Null }
+                    $destO = Join-Path $dirO ("${Date}_" + $slugO + '.jpg')
+                    $locked = Enter-RunLock
+                    if (-not $locked) { exit 2 }
+                    $szO = 0
+                    $okO = $false
+                    try {
+                        Write-Log "下载 $($rec.url)"
+                        $szO = Save-BingImage -Url $rec.url -Dest $destO -MinKB 30
+                        $okO = $true
+                        Write-Log ("下载完成 " + [math]::Round($szO / 1KB) + ' KB（老存档镜像）')
+                    } catch {
+                        Write-Log "老存档下载失败：$($_.Exception.Message)" 'WARN'
+                    }
+                    if ($okO) {
+                        Set-WallpaperStyle -Name $styleName
+                        if (Set-DesktopWallpaper -Path $destO) { Write-Log "壁纸已设置: $destO" }
+                        $tO = [string]$rec.title
+                        if ($tO.Length -gt 60) { $tO = $tO.Substring(0, 60) }
+                        Add-Pinned -Date $Date
+                        Write-State -Date $Date -File $destO -Title $tO -Copyright '' -ImageId '' -AppliedDate $Date
+                        Write-Log '--- 完成（老存档 1366x768）---'
+                        Exit-Run 0
+                    }
+                    $locked = $false
+                    Write-Log '老存档取图失败，继续尝试其他通道' 'WARN'
+                }
+
                 if ($rec -and $rec.id) {
                     $archId  = [string]$rec.id
                     $archTtl = [string]$rec.title
@@ -1939,7 +2077,7 @@ try {
             # 4) 兜底：微软 CDN 按日期直取
             $url = "https://bingwallpaperimages.microsoft.com/Latest/3840x2400/$Date.jpg"
             $fileName = "${Date}_CDN.jpg"
-            $dest = Join-Path $CacheDir $fileName
+            $dest = Join-Path $DownDir $fileName
             $locked = Enter-RunLock
             if (-not $locked) { exit 2 }
             try {
@@ -2125,7 +2263,7 @@ try {
     $fullId = $m.Groups[1].Value -replace '_UHD\.jpg$', ''
     $baseId = $fullId -replace '_[A-Za-z]{2}-[A-Za-z]{2}\d+$', ''
     $fileName = "${dateStr}_${baseId}.jpg"
-    $dest = Join-Path $CacheDir $fileName
+    $dest = Join-Path $DownDir $fileName
 
     # 同一天只可能有一张 Bing 图：不管本地存的是 _OHR.Xxx 还是 _CDN，都复用同一份
     # 优先用非 _CDN（原图质量更高），没有再退回 _CDN

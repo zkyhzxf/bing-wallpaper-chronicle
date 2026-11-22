@@ -64,10 +64,11 @@ Windows 上的必应每日壁纸工具。初衷是替代微软官方客户端—
 
 | 文件 | 说明 |
 |---|---|
-| `bing-wallpaper.ps1` | 1951 行，全部业务逻辑。改它之前先读 `Get-ArchiveRecord` 和 `Read-Pinned` |
+| `bing-wallpaper.ps1` | 2422 行，全部业务逻辑。改它之前先读 `Get-ArchiveRecord`、`Get-OldIndexRecord`、`Read-Pinned` |
 | `build.ps1` | 编译 + 打包，读源码版本号，刷新索引快照 |
-| `test.ps1` | 21 条回归断言 |
+| `test.ps1` | 22 条回归断言 |
 | `assets\all-index.json` | 全量索引快照，编译时打进 exe 资源 |
+| `assets\old-index.json` | 老存档索引快照（2009-08 ~ 2016-02，2099 天），同样打进 exe |
 | `assets\screenshot-desktop.jpg` | README 预览图 |
 
 ### 数据目录
@@ -77,6 +78,9 @@ Windows 上的必应每日壁纸工具。初衷是替代微软官方客户端—
 | `cache\` | 最近 30 天的图 | `Clear-OldCache`，30 天规则 |
 | `favorites\` | 收藏 | 永不清理 |
 | `archive\images\` | 归档图（按日期取的） | 500 MB 上限，两轮清理 |
+| `archive\old\{YYYYMM}\` | 老存档图（2009-08 ~ 2016-02，1366×768） | 手动清理时要勾「同时清理老存档」，自动清理不碰 |
+| `archive\old-index.json` | 老存档索引（`d`/`t`/`i`，`i` 是镜像站 slug） | 首次运行从 exe 释放 |
+| `cache\gallery\` | 画廊模式的图 | 关掉画廊模式就清空，不登记保护名单 |
 | `archive\*.json` | 索引（月份 + 全量） | 清理归档时可勾选删除 |
 | `pinned.json` | 自动清理保留的日期 | 「自动清理保留」窗口 |
 | `state.json` | 当前壁纸、标题、版权、imageId | 换图时写 |
@@ -137,6 +141,21 @@ Release 需要在 GitHub 网页手动创建，上传 `dist\BingWallpaperLite-v3.
 
 模板在 `tools\Edit-KeepBom`（本次会话里反复用的那个函数，可以抄）。
 
+**注意**：`build.ps1` 和 `Refresh.cs` 曾经处于**无 BOM** 状态。用 pwsh 7 跑一直没事（7 默认 UTF-8），换成 `powershell.exe`（5.1）就按 GBK 解码，中文全乱、脚本解析失败。这两个文件现在已补 BOM，改动时别弄丢。
+
+### 1b. PowerShell 5.1 的 `ConvertFrom-Json` 在管道里不展开数组
+
+```powershell
+# 错：循环只跑一次，得到一个 Object[]，$x.d 是 $null
+foreach ($x in @(Get-Content $f -Raw | ConvertFrom-Json)) { ... }
+
+# 对：先落到变量，再遍历
+$arr = Get-Content $f -Raw | ConvertFrom-Json
+foreach ($x in $arr) { ... }
+```
+
+老存档索引因此解析出 0 条，日志里只显示「已载入：0 天」，很容易被当成「文件不存在」去查错方向。
+
 ### 2. csc 编译的 exe 默认不带 TLS 1.2
 
 `ServicePointManager.SecurityProtocol` 默认是 `Ssl3|Tls`，访问 GitHub API 会失败。`UpdateProbe.CheckLatestRelease` 里手动 `|= Tls12`。
@@ -185,6 +204,12 @@ PowerShell 里 `$T` 和 `$t` 是同一个变量。清理脚本曾经因为 `$tmp
 - [ ] `SearchForm` 的 `(无标题)` 硬编码改成 `S.PinNoTitle`
 - [ ] 壁纸库分页 `PageSize = 8` 偏小，收藏攒到 30 张要点三次「更多」（可改 12 / MaxDepth 4）
 - [ ] 快捷方式目前只在**全新安装**时创建，升上来的老部署没有
+
+### 短期（数据）
+
+- [ ] 缺口 309 天：10 个整月（2010-04 / 2012-08 / 2013-04 / 2013-09 / 2013-12 / 2014-03 / 2014-10 / 2014-11 / 2015-07 / 2015-11）+ 2016-03-01~04
+  - 这批是抓取时「条数 ≠ 当月天数」被整月丢弃的
+  - 补法：逐日去 anerg 详情页现抓，成本高（一天一次 HTML 请求），建议做成「点开某天没图时才现抓」的按需补
 
 ### 中期
 

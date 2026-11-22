@@ -139,6 +139,7 @@ namespace BingWallpaperLite
                 if (f.ShowDialog(anchor) != DialogResult.OK) { return; }
                 string mode = f.Permanent ? "permanent" : "recycle";
                 string extra = f.WithIndex ? " -WithIndex" : "";
+                if (f.WithOld) { extra += " -IncludeOld"; }
                 RunScriptEx("-CleanArchive -CleanMode " + mode + extra, "cleanarch");
             }
         }

@@ -41,6 +41,20 @@ namespace BingWallpaperLite
 
             m.Items.Add(MakeItem(S.WhereIsThis, delegate { ShowInfo(); }));
 
+            ToolStripMenuItem galleryToggle = new ToolStripMenuItem(S.GalleryMenu);
+            galleryToggle.Name = "gallerytoggle";
+            galleryToggle.CheckOnClick = false;
+            galleryToggle.ToolTipText = S.GalleryTipOn;
+            galleryToggle.Click += delegate
+            {
+                keepMenuOpenAfterClick = true;
+                bool turnOn = !GalleryMode;
+                GalleryMode = turnOn;
+                // 开、关都清一次：开时清上次的残留，关时清本次看过的
+                anchor.BeginInvoke((MethodInvoker)delegate { RunScriptEx("-GalleryClear", "gallery"); });
+            };
+            m.Items.Add(galleryToggle);
+
             ToolStripMenuItem favToggle = new ToolStripMenuItem(S.FavOff);
             favToggle.Name = "favtoggle";
             favToggle.CheckOnClick = false;
@@ -249,6 +263,11 @@ namespace BingWallpaperLite
             archSrc2.Enabled = false;
             archiveMenu.DropDownItems.Add(archSrc2);
 
+            ToolStripMenuItem archSrc3 = new ToolStripMenuItem(S.ArchSrcLine3);
+            archSrc3.Name = "archsrc3";
+            archSrc3.Enabled = false;
+            archiveMenu.DropDownItems.Add(archSrc3);
+
             ToolStripMenuItem archInfo = new ToolStripMenuItem("…");
             archInfo.Name = "archinfo";
             archInfo.Enabled = false;
@@ -258,6 +277,11 @@ namespace BingWallpaperLite
             archIdxInfo.Name = "archidxinfo";
             archIdxInfo.Enabled = false;
             archiveMenu.DropDownItems.Add(archIdxInfo);
+
+            ToolStripMenuItem archOldInfo = new ToolStripMenuItem("…");
+            archOldInfo.Name = "archoldinfo";
+            archOldInfo.Enabled = false;
+            archiveMenu.DropDownItems.Add(archOldInfo);
 
             archiveMenu.DropDownItems.Add(new ToolStripSeparator());
 

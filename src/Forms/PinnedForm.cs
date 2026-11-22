@@ -267,6 +267,16 @@ namespace BingWallpaperLite
                 }
                 catch { }
             }
+            try
+            {
+                string om = Program.OldMonthDir(date);
+                if (om != null && Directory.Exists(om))
+                {
+                    string[] hitOld = Directory.GetFiles(om, date + "_*.jpg");
+                    if (hitOld.Length > 0) { return hitOld[0]; }
+                }
+            }
+            catch { }
             return null;
         }
 

@@ -141,6 +141,31 @@ namespace BingWallpaperLite
             List<DateTime> list = new List<DateTime>();
             HashSet<string> seen = new HashSet<string>();
             string[] dirs = new string[] { Program.FavDirPath, Program.CacheDirPath, Program.ArchiveImgPath };
+            // 老存档按月分目录，目录本身不参与，单独扫
+            try
+            {
+                string oldRoot = Program.OldDirPath;
+                if (!string.IsNullOrEmpty(oldRoot) && Directory.Exists(oldRoot))
+                {
+                    foreach (string om in Directory.GetDirectories(oldRoot))
+                    {
+                        foreach (string f in Directory.GetFiles(om, "*.jpg"))
+                        {
+                            string fn2 = Path.GetFileName(f);
+                            if (fn2.Length < 8) { continue; }
+                            string d8b = fn2.Substring(0, 8);
+                            if (!seen.Add(d8b)) { continue; }
+                            DateTime dobj;
+                            if (DateTime.TryParseExact(d8b, "yyyyMMdd", null,
+                                    System.Globalization.DateTimeStyles.None, out dobj))
+                            {
+                                if (dobj >= cal.MinDate && dobj <= cal.MaxDate) { list.Add(dobj); }
+                            }
+                        }
+                    }
+                }
+            }
+            catch { }
             foreach (string dir in dirs)
             {
                 try

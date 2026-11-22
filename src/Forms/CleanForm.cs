@@ -19,9 +19,11 @@ namespace BingWallpaperLite
         private readonly Button btnStart;
         private readonly Label lblNothing;
         private readonly CheckBox cbIndex;
+        private readonly CheckBox cbOld;
 
         public bool Permanent { get; private set; }
         public bool WithIndex { get; private set; }
+        public bool WithOld { get; private set; }
 
         public CleanForm(Target target)
         {
@@ -133,6 +135,29 @@ namespace BingWallpaperLite
                 catch { }
             }
 
+            // 老存档单独统计：2009-08 ~ 2016-02，按月分目录
+            int oldN = 0;
+            long oldB = 0;
+            if (target == Target.Archive)
+            {
+                try
+                {
+                    string oldRoot = Program.OldDirPath;
+                    if (Directory.Exists(oldRoot))
+                    {
+                        foreach (string om in Directory.GetDirectories(oldRoot))
+                        {
+                            foreach (string of in Directory.GetFiles(om, "*.jpg"))
+                            {
+                                oldN++;
+                                try { oldB += new FileInfo(of).Length; } catch { }
+                            }
+                        }
+                    }
+                }
+                catch { }
+            }
+
             // 统计区
             Panel box = new Panel();
             box.BorderStyle = BorderStyle.FixedSingle;
@@ -204,7 +229,25 @@ namespace BingWallpaperLite
                 Controls.Add(idxHint);
                 ny += 48;
 
-                ClientSize = new Size(520, 460);
+                cbOld = new CheckBox();
+                cbOld.Text = S.CleanWithOld(oldN, Math.Round(oldB / 1024.0 / 1024.0, 1));
+                cbOld.SetBounds(18, ny, 484, 22);
+                cbOld.Checked = false;
+                cbOld.Enabled = oldN > 0;
+                cbOld.CheckedChanged += delegate
+                {
+                    if (btnStart != null) { btnStart.Enabled = (actualN > 0) || cbIndex.Checked || cbOld.Checked; }
+                };
+                Controls.Add(cbOld);
+
+                Label oldHint = new Label();
+                oldHint.SetBounds(40, ny + 22, 462, 18);
+                oldHint.ForeColor = SystemColors.GrayText;
+                oldHint.Text = S.CleanWithOldHint;
+                Controls.Add(oldHint);
+                ny += 48;
+
+                ClientSize = new Size(520, 508);
             }
 
             // 删除方式
@@ -287,6 +330,7 @@ namespace BingWallpaperLite
         {
             Permanent = (rbPermanent != null && rbPermanent.Checked);
             WithIndex = (cbIndex != null && cbIndex.Checked);
+            WithOld = (cbOld != null && cbOld.Checked);
             DialogResult = DialogResult.OK;
             Close();
         }

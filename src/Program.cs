@@ -19,9 +19,9 @@ using Microsoft.Win32;
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyConfiguration("Release")]
 [assembly: AssemblyCulture("")]
-[assembly: AssemblyVersion("3.6.12.2")]
-[assembly: AssemblyFileVersion("3.6.12.2")]
-[assembly: AssemblyInformationalVersion("3.6.12.2")]
+[assembly: AssemblyVersion("3.6.13.0")]
+[assembly: AssemblyFileVersion("3.6.13.0")]
+[assembly: AssemblyInformationalVersion("3.6.13")]
 [assembly: ComVisible(false)]
 
 namespace BingWallpaperLite
@@ -31,7 +31,7 @@ namespace BingWallpaperLite
         // ---------------------------------------------------------------- 常量
 
         internal const string AppName     = "必应壁纸编年史";
-        internal const string AppVersion  = "3.6.12.2";
+        internal const string AppVersion  = "3.6.13";
         private const string TaskName    = "BingWallpaperChronicle";
         private const string RunValue    = "BingWallpaperChronicle";
 
@@ -62,6 +62,15 @@ namespace BingWallpaperLite
         internal static string ArchiveDirPath2 { get { return archiveDir; } }
         internal static string CacheDirPath { get { return cacheDir; } }
         internal static string FavDirPath { get { return favDir; } }
+        internal static string OldDirPath { get { return Path.Combine(archiveDir, "old"); } }
+        internal static string GalleryDirPath { get { return Path.Combine(cacheDir, "gallery"); } }
+
+        /// <summary>老存档按月分目录：archive\old\YYYYMM，日期不是 8 位时返回 null。</summary>
+        internal static string OldMonthDir(string date)
+        {
+            if (string.IsNullOrEmpty(date) || date.Length != 8) { return null; }
+            return Path.Combine(OldDirPath, date.Substring(0, 6));
+        }
 
         internal static Dictionary<string, object> ReadPinnedPublic()
         {
@@ -94,6 +103,8 @@ namespace BingWallpaperLite
         private static string lastSyncedActual = "";
         private static bool refreshing = false;
         private static bool keepMenuOpenAfterClick = false;
+        /// <summary>画廊模式：只在内存里，重启托盘即失效；开启时图落 cache\gallery，退出时清空。</summary>
+        internal static bool GalleryMode = false;
         private static bool themeApplied = false;
         private static bool lastAppliedDark = false;
         private static System.Windows.Forms.Timer lockWatch;
@@ -463,6 +474,29 @@ namespace BingWallpaperLite
                                 byte[] buf = new byte[8192];
                                 int n;
                                 while ((n = ss.Read(buf, 0, buf.Length)) > 0) { fs.Write(buf, 0, n); }
+                            }
+                        }
+                    }
+                }
+            }
+            catch { }
+
+            // 老存档索引：2009-08 ~ 2016-02 的 slug 表，同样只在缺失时释放
+            try
+            {
+                string olds = Path.Combine(archiveDir, "old-index.json");
+                if (!File.Exists(olds))
+                {
+                    if (!Directory.Exists(archiveDir)) { Directory.CreateDirectory(archiveDir); }
+                    using (Stream osr = asm.GetManifestResourceStream("old-index.json"))
+                    {
+                        if (osr != null)
+                        {
+                            using (FileStream fs = new FileStream(olds, FileMode.Create, FileAccess.Write, FileShare.None))
+                            {
+                                byte[] buf = new byte[8192];
+                                int n;
+                                while ((n = osr.Read(buf, 0, buf.Length)) > 0) { fs.Write(buf, 0, n); }
                             }
                         }
                     }

@@ -179,7 +179,10 @@ AI 调用…
 历史数据来自这些项目，没有它们这个工具只能看最近 8 天：
 
 * [Zhu-junwei/bing-wallpaper-archive](https://github.com/Zhu-junwei/bing-wallpaper-archive) —— 2016 年 3 月至今的完整归档，含中文标题与版权
-* [niumoo/bing-wallpaper](https://github.com/niumoo/bing-wallpaper) —— 备用源
+* [niumoo/bing-wallpaper](https://github.com/niumoo/bing-wallpaper) —— 同域备用源（2021-02 起，只有 ID，无标题）
+* [bingwallpaper.anerg.com](https://bingwallpaper.anerg.com) —— 老存档镜像（**2009-08 ~ 2016-02**，1366×768）
+  * 2021-02 起的同期图片与 Bing 官方**逐字节一致**，可作为原图兜底
+  * 运行时只拼图片直链，不解析网页：索引已离线抓好打进 exe
 * [gh-proxy.com](https://gh-proxy.com/) —— GitHub 加速，国内直连 raw 走不通时的主通道
 * Microsoft Bing —— 图片本身
 
@@ -245,7 +248,8 @@ dist\                   发布产物（不入库）
 
 **已知限制**：
 
-* 归档只有 2016-03 至今，更早的 Bing 自己也清理了
+* 主索引覆盖 2016-03 至今；2009-08 ~ 2016-02 来自第三方存档站，那几年的原图就是 **1366×768**，不是现在的 4K
+* 老存档里有 309 天取不到（2010-04 / 2012-08 / 2013-04 / 2013-09 / 2013-12 / 2014-03 / 2014-10 / 2014-11 / 2015-07 / 2015-11 十个整月 + 2016-03-01~04），抓取时条数对不上当月天数，整月丢弃
 * 关键词搜索是字面匹配，不做分词。"雪山"搜不到"雪"和"山"分开写的标题，得手动拆成 `雪 山`
 * 2019-05 前的图分辨率偏低
 

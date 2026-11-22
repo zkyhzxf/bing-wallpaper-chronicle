@@ -94,7 +94,9 @@ namespace BingWallpaperLite
             sb.AppendLine(@"  -Search ""雪 山""     搜索并换第一张匹配的");
             sb.AppendLine(@"  -Clean -Keep 7      清理 7 天前的缓存");
             sb.AppendLine(@"  -CleanAll           清空缓存（保留当前壁纸）");
-            sb.AppendLine(@"  -CleanArchive       清理归档图片（可加 -WithIndex 连索引一起清）");
+            sb.AppendLine(@"  -CleanArchive       清理归档图片（可加 -WithIndex 连索引一起清，-IncludeOld 连老存档一起清）
+  -Gallery            画廊模式：图落 cache\\gallery，不登记保护名单
+  -GalleryClear       退出画廊模式，清空 cache\\gallery");
             sb.AppendLine(@"  -FavDate 20261120   把该日期的图加入收藏");
             sb.AppendLine(@"  -UnfavDate 20261120 把收藏里该日期移回缓存");
             sb.AppendLine(@"  -ExportLinks -RangeFrom 20261101 -RangeTo 20261121");
