@@ -317,6 +317,12 @@ namespace BingWallpaperLite
             }
         }
 
+        /// <summary>给托盘发一条气泡，供其它窗口调用。</summary>
+        internal static void Notify(string title, string text)
+        {
+            try { Balloon(title, text); } catch { }
+        }
+
         private static void Balloon(string title, string text)
         {
             try

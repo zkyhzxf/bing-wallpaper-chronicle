@@ -373,6 +373,10 @@ namespace BingWallpaperLite
                            "{0} of {1} years available, {2} missing (double-click a cell to set as wallpaper)"); }
         }
         public static string WallApplied      { get { return T("已设为桌面壁纸", "Set as desktop wallpaper"); } }
+        public static string WallIdleHint     { get { return T("（本地都有，没有临时文件，关窗不会问）", "(all local; nothing temporary to ask about)"); } }
+        public static string WallClosedIdle   { get { return T("照片墙已关闭，本次只看了本地已有的图", "Photo wall closed; only local images were viewed"); } }
+        public static string WallClosedKeep   { get { return T("已暂存 {0} 张到历史归档", "Kept {0} images in the archive"); } }
+        public static string WallClosedDrop   { get { return T("已丢弃 {0} 张临时图", "Dropped {0} temporary images"); } }
         public static string WallCloseTitle   { get { return T("这张照片墙怎么处理？", "What should happen to this photo wall?"); } }
         public static string WallCloseBody(int n)
         {

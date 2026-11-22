@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Imaging;
@@ -15,11 +15,11 @@ namespace BingWallpaperLite
     /// </summary>
     internal sealed class PhotoWallForm : Form
     {
-        private const int CellW = 300;
-        private const int CellH = 169;
+        private const int CellW = 320;
+        private const int CellH = 180;
         private const int Cols = 4;
-        private const int ThumbW = 300;
-        private const int ThumbH = 169;
+        private const int ThumbW = 320;
+        private const int ThumbH = 180;
 
         private readonly List<string> dates = new List<string>();
         private readonly List<PictureBox> boxes = new List<PictureBox>();
@@ -40,7 +40,25 @@ namespace BingWallpaperLite
             MaximizeBox = true;
             MinimizeBox = true;
             ShowInTaskbar = true;
-            ClientSize = new Size(Cols * (CellW + 18) + 24, 720);
+            // 默认宽度取屏幕工作区的 80%，至少放得下 4 列
+            int wantW = Cols * (CellW + 22) + 44;
+            int capW = 1200;
+            int capH = 700;
+            try
+            {
+                Rectangle wa = Screen.PrimaryScreen.WorkingArea;
+                capW = wa.Width - 80;
+                capH = wa.Height - 100;
+            }
+            catch { }
+            int startW = Math.Min(wantW, capW);
+            try
+            {
+                int prefer = (int)(Screen.PrimaryScreen.WorkingArea.Width * 0.8);
+                if (prefer > startW && prefer <= capW) { startW = prefer; }
+            }
+            catch { }
+            ClientSize = new Size(startW, Math.Max(560, Math.Min(780, capH)));
             try { Font = new Font("Microsoft YaHei UI", 9F); } catch { }
 
             int yearNow = DateTime.Today.Year;
@@ -208,7 +226,9 @@ namespace BingWallpaperLite
         {
             try
             {
-                lblStatus.Text = string.Format(S.WallStatusFmt, have, dates.Count, missing.Count);
+                string txt = string.Format(S.WallStatusFmt, have, dates.Count, missing.Count);
+                if (missing.Count == 0) { txt = txt + "  " + S.WallIdleHint; }
+                lblStatus.Text = txt;
                 btnFetch.Enabled = (missing.Count > 0) && !working;
             }
             catch { }
@@ -344,7 +364,12 @@ namespace BingWallpaperLite
             try
             {
                 int nWall = CountWall();
-                if (nWall <= 0) { return; }
+                if (nWall <= 0)
+                {
+                    // 没有临时图就没有去处要选，但仍给一句反馈，免得"关了什么都没发生"
+                    Program.Notify(S.WallCloseTitle, S.WallClosedIdle);
+                    return;
+                }
 
                 string choice = Program.CfgString("wallOnClose", "");
                 if (choice != "keep" && choice != "drop")
@@ -360,10 +385,12 @@ namespace BingWallpaperLite
                 if (choice == "keep")
                 {
                     Program.RunScriptExit("-WallKeep");
+                    Program.Notify(S.WallCloseKeep, string.Format(S.WallClosedKeep, nWall));
                 }
                 else
                 {
                     Program.RunScriptExit("-WallDrop");
+                    Program.Notify(S.WallCloseDrop, string.Format(S.WallClosedDrop, nWall));
                     foreach (string t in usedFiles)
                     {
                         try
