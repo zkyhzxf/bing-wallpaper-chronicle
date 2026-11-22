@@ -15,8 +15,8 @@ namespace BingWallpaperLite
     /// </summary>
     internal sealed class PhotoWallForm : Form
     {
-        private const int ThumbW = WallCard.ImageW;
-        private const int ThumbH = WallCard.ImageH;
+        private const int ThumbW = 320;
+        private const int ThumbH = 180;
         private const int Gap = 16;
         private const int Pad = 12;
 
@@ -33,6 +33,7 @@ namespace BingWallpaperLite
         private readonly CheckBox chkLocal;
         private readonly System.Windows.Forms.Timer ticker;
         private string selected = "";
+        private int zoomW = WallCard.CardWidth;
         private bool working = false;
         private int localCount = 0;
 
@@ -106,6 +107,24 @@ namespace BingWallpaperLite
             chkLocal.CheckedChanged += delegate { LoadData(); };
             top.Controls.Add(chkLocal);
 
+            Button btnZoomOut = new Button();
+            btnZoomOut.Text = "－";
+            btnZoomOut.SetBounds(326, 10, 30, 26);
+            btnZoomOut.Click += delegate { ZoomBy(-80); };
+            top.Controls.Add(btnZoomOut);
+
+            Button btnZoomIn = new Button();
+            btnZoomIn.Text = "＋";
+            btnZoomIn.SetBounds(360, 10, 30, 26);
+            btnZoomIn.Click += delegate { ZoomBy(80); };
+            top.Controls.Add(btnZoomIn);
+
+            Label lblZoomHint = new Label();
+            lblZoomHint.Text = S.WallZoomHint;
+            lblZoomHint.SetBounds(400, 13, 260, 20);
+            lblZoomHint.ForeColor = WallTheme.TextDim;
+            top.Controls.Add(lblZoomHint);
+
             // ---------------------------------------------------------------- 底部栏
             Panel bottom = new Panel();
             bottom.Dock = DockStyle.Bottom;
@@ -137,6 +156,10 @@ namespace BingWallpaperLite
             host.BackColor = WallTheme.Bg;
             Controls.Add(host);
             host.Resize += delegate { LayoutCards(); };
+            host.MouseWheel += delegate(object s, MouseEventArgs e)
+            {
+                if ((ModifierKeys & Keys.Control) == Keys.Control) { ZoomBy(e.Delta > 0 ? 80 : -80); }
+            };
 
             ticker = new System.Windows.Forms.Timer();
             ticker.Interval = 150;
@@ -232,6 +255,13 @@ namespace BingWallpaperLite
                 card.Tag = src;
                 card.Click += delegate { OnCardClick(card); };
                 card.DoubleClick += delegate { OnCardDoubleClick(card); };
+                card.MouseUp += delegate(object s, MouseEventArgs me)
+                {
+                    if (me.Button == MouseButtons.Right)
+                    {
+                        ShowCardMenu(card, card.PointToScreen(me.Location));
+                    }
+                };
                 cards.Add(card);
                 host.Controls.Add(card);
                 card.ResumeLayout();
@@ -293,20 +323,35 @@ namespace BingWallpaperLite
             });
         }
 
+        /// <summary>列数按目标宽度算，再把可用宽度均分给每张卡片 —— 右侧不留空白。</summary>
         private void LayoutCards()
         {
             if (cards.Count == 0) { return; }
-            int avail = host.ClientSize.Width - Pad * 2 - 20;
-            if (avail < WallCard.CardWidth) { avail = WallCard.CardWidth; }
-            int cols = Math.Max(1, (avail + Gap) / (WallCard.CardWidth + Gap));
+            int avail = host.ClientSize.Width - Pad * 2 - 22;
+            if (avail < WallCard.MinWidth) { avail = WallCard.MinWidth; }
+            int cols = Math.Max(1, (avail + Gap) / (zoomW + Gap));
+            int cellW = (avail - Gap * (cols - 1)) / cols;
+            if (cellW < WallCard.MinWidth) { cellW = WallCard.MinWidth; }
+            if (cellW > WallCard.MaxWidth) { cellW = WallCard.MaxWidth; }
+            int cellH = WallCard.HeightFor(cellW);
             for (int i = 0; i < cards.Count; i++)
             {
                 int col = i % cols;
                 int row = i / cols;
-                cards[i].SetBounds(Pad + col * (WallCard.CardWidth + Gap),
-                                   Pad + row * (WallCard.CardHeight + Gap),
-                                   WallCard.CardWidth, WallCard.CardHeight);
+                cards[i].SetBounds(Pad + col * (cellW + Gap),
+                                   Pad + row * (cellH + Gap),
+                                   cellW, cellH);
             }
+        }
+
+        private void ZoomBy(int delta)
+        {
+            int next = zoomW + delta;
+            if (next < WallCard.MinWidth) { next = WallCard.MinWidth; }
+            if (next > WallCard.MaxWidth) { next = WallCard.MaxWidth; }
+            if (next == zoomW) { return; }
+            zoomW = next;
+            LayoutCards();
         }
 
         private void UpdateStatus()
@@ -365,6 +410,33 @@ namespace BingWallpaperLite
                 }
             }
             catch { }
+        }
+
+        /// <summary>右键菜单：看图相关的几个动作。</summary>
+        private void ShowCardMenu(WallCard card, Point screenPt)
+        {
+            ContextMenuStrip m = new ContextMenuStrip();
+            try { m.Font = new Font("Microsoft YaHei UI", 9F); } catch { }
+            string src = card.Tag as string;
+            if (!string.IsNullOrEmpty(src))
+            {
+                m.Items.Add(S.WallSetAs, null, delegate { OnCardDoubleClick(card); });
+                m.Items.Add(S.WallShowInFolder, null, delegate { ShowInFolder(src); });
+                m.Items.Add(S.WallCopyTitle, null, delegate
+                {
+                    try { Clipboard.SetText(card.TitleText.Length > 0 ? card.TitleText : card.Date8); } catch { }
+                });
+            }
+            else
+            {
+                m.Items.Add(S.WallCardFetch, null, delegate { FetchOne(card); });
+            }
+            m.Show(screenPt);
+        }
+
+        private static void ShowInFolder(string path)
+        {
+            try { System.Diagnostics.Process.Start("explorer.exe", "/select,\"" + path + "\""); } catch { }
         }
 
         private void FetchOne(WallCard card)

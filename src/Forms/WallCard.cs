@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Text;
@@ -56,10 +56,23 @@ namespace BingWallpaperLite
     /// <summary>照片墙的一张卡片：圆角、悬停、选中、缺图虚线格、加载转圈，全部自绘。</summary>
     internal sealed class WallCard : Control
     {
-        public const int CardWidth = 340;
+        public const int CardWidth = 340;      // 默认档位宽；实际宽度由窗体按列数均分
         public const int CardHeight = 246;
-        public const int ImageW = 320;
-        public const int ImageH = 180;
+        public const int MinWidth = 190;
+        public const int MaxWidth = 720;
+
+        /// <summary>图区宽度：卡片内左右各 10。</summary>
+        public int ImageW { get { return Math.Max(100, Width - 20); } }
+
+        /// <summary>图区高度：固定 16:9。</summary>
+        public int ImageH { get { return Math.Max(60, (int)((Width - 20) * 9.0 / 16.0)); } }
+
+        /// <summary>给定卡片宽度时的总高：上内边距 + 图 + 文字区。</summary>
+        public static int HeightFor(int width)
+        {
+            int iw = Math.Max(100, width - 20);
+            return 10 + (int)(iw * 9.0 / 16.0) + 56;
+        }
 
         public string Date8 = "";
         public string TitleText = "";
@@ -128,7 +141,10 @@ namespace BingWallpaperLite
             g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
 
             Rectangle bounds = new Rectangle(0, 0, Width - 1, Height - 1);
-            Rectangle img = new Rectangle(10, 10, ImageW, ImageH);
+            if (Width < 40 || Height < 40) { return; }
+            int iw = ImageW;
+            int ih = ImageH;
+            Rectangle img = new Rectangle(10, 10, iw, ih);
 
             using (GraphicsPath card = Round(bounds, 10))
             {
@@ -174,15 +190,19 @@ namespace BingWallpaperLite
                     }
                 }
 
-                // 年份水印
+                // 年份：画在文字区右侧，不再压在图上看不清
+                int yearW = 0;
                 if (Date8.Length == 8)
                 {
                     string yr = Date8.Substring(0, 4);
-                    int alpha = WallTheme.Dark ? 22 : 28;
+                    int alpha = WallTheme.Dark ? 46 : 60;
                     using (SolidBrush yb = new SolidBrush(Color.FromArgb(alpha, WallTheme.Text)))
                     {
                         SizeF ys = g.MeasureString(yr, FontYear);
-                        g.DrawString(yr, FontYear, yb, img.Right - ys.Width - 6, img.Bottom - ys.Height + 6);
+                        float yx = Width - ys.Width - 12;
+                        float yy = ih + 22 - ys.Height / 2 + 6;
+                        g.DrawString(yr, FontYear, yb, yx, yy);
+                        yearW = (int)ys.Width + 10;
                     }
                 }
 
@@ -190,7 +210,7 @@ namespace BingWallpaperLite
                 using (SolidBrush ab = new SolidBrush(Selected ? WallTheme.Accent : WallTheme.TextDim))
                 {
                     string md = Date8.Length == 8 ? (Date8.Substring(4, 2) + "-" + Date8.Substring(6, 2)) : "——";
-                    g.DrawString(md, FontDate, ab, 14, ImageH + 18);
+                    g.DrawString(md, FontDate, ab, 14, ih + 18);
                 }
                 string title = TitleText;
                 if (title.Length == 0) { title = S.NoTitle; }
@@ -199,7 +219,9 @@ namespace BingWallpaperLite
                 {
                     sf.Trimming = StringTrimming.EllipsisCharacter;
                     sf.FormatFlags = StringFormatFlags.NoWrap;
-                    Rectangle tr = new Rectangle(64, ImageH + 17, ImageW - 58, 20);
+                    int tw = iw - 58 - yearW;
+                    if (tw < 60) { tw = 60; }
+                    Rectangle tr = new Rectangle(64, ih + 17, tw, 20);
                     g.DrawString(title, FontTitle, tbr, tr, sf);
                 }
 
