@@ -11,37 +11,44 @@ namespace BingWallpaperLite
     /// <summary>
     /// 照片墙：把历年同一天的图一次摆出来。
     /// 临时下载落 cache\wall，缩略图落 cache\thumbs（按日期命名，一张一份）；
-    /// 关窗时二选：暂存到归档、或连同本次缩略图一起丢掉。
+    /// 关窗时弹窗二选：暂存到归档、或连同本次缩略图一起丢掉。
     /// </summary>
     internal sealed class PhotoWallForm : Form
     {
-        private const int CellW = 320;
-        private const int CellH = 180;
-        private const int Cols = 4;
-        private const int ThumbW = 320;
-        private const int ThumbH = 180;
+        private const int ThumbW = WallCard.ImageW;
+        private const int ThumbH = WallCard.ImageH;
+        private const int Gap = 16;
+        private const int Pad = 12;
 
+        private readonly List<WallCard> cards = new List<WallCard>();
         private readonly List<string> dates = new List<string>();
-        private readonly List<PictureBox> boxes = new List<PictureBox>();
-        private readonly List<Label> captions = new List<Label>();
-        private readonly List<string> usedFiles = new List<string>();
+        private readonly Dictionary<string, Image> thumbs = new Dictionary<string, Image>();
+        private readonly List<string> usedThumbs = new List<string>();
         private readonly List<string> missing = new List<string>();
+
+        private readonly Panel host;
         private readonly Label lblStatus;
         private readonly Button btnFetch;
-        private readonly Button btnClose;
+        private readonly ComboBox cmbSort;
+        private readonly CheckBox chkLocal;
+        private readonly System.Windows.Forms.Timer ticker;
+        private string selected = "";
         private bool working = false;
+        private int localCount = 0;
 
         public PhotoWallForm()
         {
-            string today = DateTime.Today.ToString("MMdd");
-            Text = Program.AppName + " · " + S.WallTitle(today);
+            try { WallTheme.Apply(); } catch { }
+            Text = Program.AppName + " · " + S.WallTitle(DateTime.Today.ToString("MMdd"));
             FormBorderStyle = FormBorderStyle.Sizable;
             StartPosition = FormStartPosition.CenterScreen;
             MaximizeBox = true;
             MinimizeBox = true;
             ShowInTaskbar = true;
-            // 默认宽度取屏幕工作区的 80%，至少放得下 4 列
-            int wantW = Cols * (CellW + 22) + 44;
+            try { Font = new Font("Microsoft YaHei UI", 9F); } catch { }
+            BackColor = WallTheme.Bg;
+
+            int wantW = 4 * (WallCard.CardWidth + Gap) + Pad * 2 + 24;
             int capW = 1200;
             int capH = 700;
             try
@@ -58,8 +65,7 @@ namespace BingWallpaperLite
                 if (prefer > startW && prefer <= capW) { startW = prefer; }
             }
             catch { }
-            ClientSize = new Size(startW, Math.Max(560, Math.Min(780, capH)));
-            try { Font = new Font("Microsoft YaHei UI", 9F); } catch { }
+            ClientSize = new Size(startW, Math.Max(600, Math.Min(820, capH)));
 
             int yearNow = DateTime.Today.Year;
             for (int y = yearNow - 1; y >= Program.ArchiveMinDateValue.Year; y--)
@@ -71,74 +77,81 @@ namespace BingWallpaperLite
                 dates.Add(dt.ToString("yyyyMMdd"));
             }
 
-            Panel host = new Panel();
-            host.Dock = DockStyle.Fill;
-            host.AutoScroll = true;
-            Controls.Add(host);
+            // ---------------------------------------------------------------- 顶部工具条
+            Panel top = new Panel();
+            top.Dock = DockStyle.Top;
+            top.Height = 44;
+            top.BackColor = WallTheme.Bg;
+            Controls.Add(top);
 
-            FlowLayoutPanel flow = new FlowLayoutPanel();
-            flow.Dock = DockStyle.Fill;
-            flow.AutoScroll = true;
-            flow.Padding = new Padding(6);
-            host.Controls.Add(flow);
+            Label lblSort = new Label();
+            lblSort.Text = S.WallSortLabel;
+            lblSort.SetBounds(12, 13, 40, 20);
+            lblSort.ForeColor = WallTheme.TextDim;
+            top.Controls.Add(lblSort);
 
-            for (int i = 0; i < dates.Count; i++)
-            {
-                string d8 = dates[i];
-                Panel cell = new Panel();
-                cell.SetBounds(0, 0, CellW + 8, CellH + 44);
-                cell.Margin = new Padding(6);
+            cmbSort = new ComboBox();
+            cmbSort.DropDownStyle = ComboBoxStyle.DropDownList;
+            cmbSort.SetBounds(52, 9, 120, 24);
+            cmbSort.Items.Add(S.WallSortNew);
+            cmbSort.Items.Add(S.WallSortOld);
+            cmbSort.SelectedIndex = 0;
+            cmbSort.SelectedIndexChanged += delegate { LoadData(); };
+            top.Controls.Add(cmbSort);
 
-                PictureBox pic = new PictureBox();
-                pic.SetBounds(4, 4, CellW, CellH);
-                pic.SizeMode = PictureBoxSizeMode.Zoom;
-                pic.BackColor = Color.FromArgb(36, 36, 36);
-                pic.Tag = d8;
-                pic.Cursor = Cursors.Hand;
-                pic.DoubleClick += delegate { ApplyWallpaper(pic.Tag as string); };
-                pic.Click += delegate(object s, EventArgs e) { OnCellClick(s as PictureBox); };
-                cell.Controls.Add(pic);
-                boxes.Add(pic);
+            chkLocal = new CheckBox();
+            chkLocal.Text = S.WallFilterLocal;
+            chkLocal.SetBounds(190, 12, 120, 22);
+            chkLocal.ForeColor = WallTheme.Text;
+            chkLocal.CheckedChanged += delegate { LoadData(); };
+            top.Controls.Add(chkLocal);
 
-                Label cap = new Label();
-                cap.SetBounds(4, CellH + 6, CellW, 34);
-                cap.AutoSize = false;
-                cap.Text = d8.Substring(0, 4) + "-" + d8.Substring(4, 2) + "-" + d8.Substring(6, 2) + "  …";
-                cell.Controls.Add(cap);
-                captions.Add(cap);
-
-                flow.Controls.Add(cell);
-            }
-
+            // ---------------------------------------------------------------- 底部栏
             Panel bottom = new Panel();
             bottom.Dock = DockStyle.Bottom;
-            bottom.Height = 46;
+            bottom.Height = 56;
+            bottom.BackColor = WallTheme.Bg;
             Controls.Add(bottom);
-            bottom.BringToFront();
 
             lblStatus = new Label();
-            lblStatus.SetBounds(12, 14, 520, 20);
-            lblStatus.ForeColor = SystemColors.GrayText;
+            lblStatus.SetBounds(14, 18, 620, 22);
+            lblStatus.ForeColor = WallTheme.TextDim;
             bottom.Controls.Add(lblStatus);
 
             btnFetch = new Button();
             btnFetch.Text = S.WallFetchMissing;
-            btnFetch.SetBounds(560, 10, 140, 28);
+            btnFetch.SetBounds(660, 13, 130, 30);
             btnFetch.Click += delegate { FetchAll(); };
             bottom.Controls.Add(btnFetch);
 
-            btnClose = new Button();
+            Button btnClose = new Button();
             btnClose.Text = S.BtnClose;
-            btnClose.SetBounds(712, 10, 90, 28);
+            btnClose.SetBounds(800, 13, 90, 30);
             btnClose.Click += delegate { Close(); };
             bottom.Controls.Add(btnClose);
-            AcceptButton = btnClose;
+
+            // ---------------------------------------------------------------- 卡片区
+            host = new Panel();
+            host.Dock = DockStyle.Fill;
+            host.AutoScroll = true;
+            host.BackColor = WallTheme.Bg;
+            Controls.Add(host);
+            host.Resize += delegate { LayoutCards(); };
+
+            ticker = new System.Windows.Forms.Timer();
+            ticker.Interval = 150;
+            ticker.Tick += delegate
+            {
+                foreach (WallCard c in cards) { c.TickSpin(); }
+            };
+            ticker.Start();
 
             try { Program.TrimThumbs(); } catch { }
-            LoadCells();
+            LoadData();
         }
 
-        /// <summary>逐个格子找本地文件：收藏 → 缓存 → 归档 → 老存档 → 照片墙临时目录。</summary>
+        // ---------------------------------------------------------------- 数据
+
         private static string FindLocal(string d8)
         {
             try
@@ -161,17 +174,48 @@ namespace BingWallpaperLite
             return null;
         }
 
-        /// <summary>缩略图走磁盘缓存；没有就后台生成，生成完回填。</summary>
-        private void LoadCells()
+        private static string ThumbPath(string d8)
         {
+            return Path.Combine(Program.ThumbsDirPath, d8 + ".jpg");
+        }
+
+        private void ClearCards()
+        {
+            foreach (WallCard c in cards)
+            {
+                try { host.Controls.Remove(c); c.Dispose(); } catch { }
+            }
+            cards.Clear();
+            host.Controls.Clear();
+        }
+
+        private void LoadData()
+        {
+            ClearCards();
             missing.Clear();
+            usedThumbs.Clear();
+            localCount = 0;
+            selected = "";
+
             Dictionary<string, object> idx = null;
             try { idx = Program.LoadArchiveIndex(); } catch { }
-            int have = 0;
-            for (int i = 0; i < dates.Count; i++)
+
+            List<string> order = new List<string>(dates);
+            if (cmbSort.SelectedIndex == 1) { order.Reverse(); }
+
+            foreach (string d8 in order)
             {
-                string d8 = dates[i];
                 string src = FindLocal(d8);
+                if (chkLocal.Checked && src == null) { continue; }
+                if (src == null) { missing.Add(d8); }
+                else
+                {
+                    localCount++;
+                    usedThumbs.Add(src);
+                    string tp = ThumbPath(d8);
+                    if (File.Exists(tp)) { usedThumbs.Add(tp); }
+                }
+
                 string title = "";
                 try
                 {
@@ -179,92 +223,184 @@ namespace BingWallpaperLite
                     if (e != null && e.ContainsKey("title") && e["title"] != null) { title = e["title"].ToString(); }
                 }
                 catch { }
-                if (title.Length > 40) { title = title.Substring(0, 40) + "…"; }
-                captions[i].Text = d8.Substring(0, 4) + "-" + d8.Substring(4, 2) + "-" + d8.Substring(6, 2) + "  "
-                                   + (title.Length > 0 ? title : S.NoTitle);
 
-                if (src == null)
-                {
-                    missing.Add(d8);
-                    boxes[i].Image = null;
-                    boxes[i].BackColor = Color.FromArgb(28, 28, 28);
-                    captions[i].ForeColor = SystemColors.GrayText;
-                    continue;
-                }
-                have++;
-                usedFiles.Add(src);
-                captions[i].ForeColor = SystemColors.ControlText;
-                string thumb = ThumbPath(d8);
-                if (File.Exists(thumb))
-                {
-                    try { boxes[i].Image = LoadNoLock(thumb); } catch { }
-                    usedFiles.Add(thumb);
-                }
-                else
-                {
-                    string s = src;
-                    int slot = i;
-                    ThreadPool.QueueUserWorkItem(delegate
-                    {
-                        string made = MakeThumbFile(s, d8);
-                        if (made == null) { return; }
-                        try
-                        {
-                            BeginInvoke((MethodInvoker)delegate
-                            {
-                                try { boxes[slot].Image = LoadNoLock(made); } catch { }
-                            });
-                        }
-                        catch { }
-                    });
-                }
+                WallCard card = new WallCard();
+                card.Date8 = d8;
+                card.TitleText = title;
+                card.HasImage = (src != null);
+                card.SuspendLayout();
+                card.Tag = src;
+                card.Click += delegate { OnCardClick(card); };
+                card.DoubleClick += delegate { OnCardDoubleClick(card); };
+                cards.Add(card);
+                host.Controls.Add(card);
+                card.ResumeLayout();
+
+                if (src != null) { AttachThumb(card, d8, src); }
             }
-            UpdateStatus(have);
+
+            LayoutCards();
+            UpdateStatus();
         }
 
-        private void UpdateStatus(int have)
+        private void AttachThumb(WallCard card, string d8, string src)
         {
-            try
+            Image cached;
+            if (thumbs.TryGetValue(d8, out cached))
             {
-                string txt = string.Format(S.WallStatusFmt, have, dates.Count, missing.Count);
-                if (missing.Count == 0) { txt = txt + "  " + S.WallIdleHint; }
-                lblStatus.Text = txt;
-                btnFetch.Enabled = (missing.Count > 0) && !working;
+                card.Thumb = cached;
+                card.Invalidate();
+                return;
             }
-            catch { }
-        }
+            string tp = ThumbPath(d8);
+            if (File.Exists(tp))
+            {
+                try
+                {
+                    card.Thumb = LoadNoLock(tp);
+                    thumbs[d8] = card.Thumb;
+                    card.Invalidate();
+                    return;
+                }
+                catch { }
+            }
 
-        private void OnCellClick(PictureBox pic)
-        {
-            if (pic == null || working) { return; }
-            string d8 = pic.Tag as string;
-            if (string.IsNullOrEmpty(d8)) { return; }
-            if (FindLocal(d8) != null) { return; }
-            working = true;
-            lblStatus.Text = S.WallFetching;
-            btnFetch.Enabled = false;
+            card.Loading = true;
+            string s = src;
             ThreadPool.QueueUserWorkItem(delegate
             {
-                int code = Program.RunScriptExit("-WallDate " + d8);
+                string made = MakeThumbFile(s, d8);
+                if (made == null)
+                {
+                    try { BeginInvoke((MethodInvoker)delegate { card.Loading = false; card.Invalidate(); }); } catch { }
+                    return;
+                }
                 try
                 {
                     BeginInvoke((MethodInvoker)delegate
                     {
-                        working = false;
-                        LoadCells();
+                        try
+                        {
+                            card.Thumb = LoadNoLock(made);
+                            thumbs[d8] = card.Thumb;
+                        }
+                        catch { }
+                        card.Loading = false;
+                        card.Invalidate();
                     });
                 }
                 catch { }
             });
         }
 
-        /// <summary>串行补齐：脚本用全局运行锁，并发只会互相挡。</summary>
+        private void LayoutCards()
+        {
+            if (cards.Count == 0) { return; }
+            int avail = host.ClientSize.Width - Pad * 2 - 20;
+            if (avail < WallCard.CardWidth) { avail = WallCard.CardWidth; }
+            int cols = Math.Max(1, (avail + Gap) / (WallCard.CardWidth + Gap));
+            for (int i = 0; i < cards.Count; i++)
+            {
+                int col = i % cols;
+                int row = i / cols;
+                cards[i].SetBounds(Pad + col * (WallCard.CardWidth + Gap),
+                                   Pad + row * (WallCard.CardHeight + Gap),
+                                   WallCard.CardWidth, WallCard.CardHeight);
+            }
+        }
+
+        private void UpdateStatus()
+        {
+            try
+            {
+                string txt = string.Format(S.WallStatusFmt, localCount, dates.Count, missing.Count);
+                if (selected.Length > 0)
+                {
+                    string t = "";
+                    foreach (WallCard c in cards)
+                    {
+                        if (c.Date8 == selected) { t = c.TitleText; break; }
+                    }
+                    txt = selected.Substring(0, 4) + "-" + selected.Substring(4, 2) + "-" + selected.Substring(6, 2)
+                          + "  " + (t.Length > 0 ? t : S.NoTitle) + "    ｜    " + txt;
+                }
+                else if (missing.Count == 0)
+                {
+                    txt = txt + "  " + S.WallIdleHint;
+                }
+                lblStatus.Text = txt;
+                btnFetch.Enabled = (missing.Count > 0) && !working;
+            }
+            catch { }
+        }
+
+        // ---------------------------------------------------------------- 交互
+
+        private void OnCardClick(WallCard card)
+        {
+            if (card == null) { return; }
+            if (!card.HasImage)
+            {
+                FetchOne(card);
+                return;
+            }
+            foreach (WallCard c in cards) { if (c.Selected) { c.Selected = false; c.Invalidate(); } }
+            card.Selected = true;
+            card.Invalidate();
+            selected = card.Date8;
+            UpdateStatus();
+        }
+
+        private void OnCardDoubleClick(WallCard card)
+        {
+            if (card == null) { return; }
+            string src = card.Tag as string;
+            if (string.IsNullOrEmpty(src)) { FetchOne(card); return; }
+            try
+            {
+                int code = Program.RunScriptExit("-Use \"" + src + "\"");
+                if (code == 0 || code == 4 || code == 8)
+                {
+                    MessageBox.Show(S.WallApplied, Program.AppName, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+            }
+            catch { }
+        }
+
+        private void FetchOne(WallCard card)
+        {
+            if (working || card == null) { return; }
+            string d8 = card.Date8;
+            working = true;
+            card.Loading = true;
+            card.Invalidate();
+            lblStatus.Text = S.WallFetching;
+            btnFetch.Enabled = false;
+            ThreadPool.QueueUserWorkItem(delegate
+            {
+                Program.RunScriptExit("-WallDate " + d8);
+                try
+                {
+                    BeginInvoke((MethodInvoker)delegate
+                    {
+                        working = false;
+                        LoadData();
+                    });
+                }
+                catch { }
+            });
+        }
+
         private void FetchAll()
         {
             if (working || missing.Count == 0) { return; }
             working = true;
             btnFetch.Enabled = false;
             List<string> todo = new List<string>(missing);
+            foreach (WallCard c in cards)
+            {
+                if (!c.HasImage) { c.Loading = true; c.Invalidate(); }
+            }
             ThreadPool.QueueUserWorkItem(delegate
             {
                 int ok = 0;
@@ -288,7 +424,7 @@ namespace BingWallpaperLite
                     BeginInvoke((MethodInvoker)delegate
                     {
                         working = false;
-                        LoadCells();
+                        LoadData();
                         lblStatus.Text = S.WallFetchDone(ok, todo.Count);
                     });
                 }
@@ -296,21 +432,7 @@ namespace BingWallpaperLite
             });
         }
 
-        /// <summary>双击格子：把这张设为桌面壁纸（走 -Date，和托盘里的换图完全同一条路）。</summary>
-        private void ApplyWallpaper(string d8)
-        {
-            if (string.IsNullOrEmpty(d8) || working) { return; }
-            if (FindLocal(d8) == null) { OnCellClick(null); }
-            string path = FindLocal(d8);
-            if (path == null) { return; }
-            try { Program.RunScriptExit("-Use \"" + path + "\""); } catch { }
-            try { MessageBox.Show(S.WallApplied, Program.AppName, MessageBoxButtons.OK, MessageBoxIcon.Information); } catch { }
-        }
-
-        private static string ThumbPath(string d8)
-        {
-            return Path.Combine(Program.ThumbsDirPath, d8 + ".jpg");
-        }
+        // ---------------------------------------------------------------- 缩略图
 
         private static Bitmap LoadNoLock(string file)
         {
@@ -322,7 +444,6 @@ namespace BingWallpaperLite
             }
         }
 
-        /// <summary>生成并落盘缩略图；源图不存在或解码失败返回 null。</summary>
         private static string MakeThumbFile(string src, string d8)
         {
             try
@@ -357,17 +478,23 @@ namespace BingWallpaperLite
             catch { return 0; }
         }
 
+        // ---------------------------------------------------------------- 关窗
+
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
             base.OnFormClosing(e);
             if (e.Cancel) { return; }
+
             try
             {
                 int nWall = CountWall();
                 if (nWall <= 0)
                 {
-                    // 没有临时图就没有去处要选，但仍给一句反馈，免得"关了什么都没发生"
-                    Program.Notify(S.WallCloseTitle, S.WallClosedIdle);
+                    // 没有临时图：仍然弹窗确认，不再用托盘气泡（那条路常被系统吞掉）
+                    using (WallCloseForm f = new WallCloseForm(0))
+                    {
+                        if (f.ShowDialog(this) != DialogResult.OK) { e.Cancel = true; return; }
+                    }
                     return;
                 }
 
@@ -385,17 +512,16 @@ namespace BingWallpaperLite
                 if (choice == "keep")
                 {
                     Program.RunScriptExit("-WallKeep");
-                    Program.Notify(S.WallCloseKeep, string.Format(S.WallClosedKeep, nWall));
+                    MessageBox.Show(S.WallResultKeep(nWall), Program.AppName,
+                        MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
                 else
                 {
                     Program.RunScriptExit("-WallDrop");
-                    Program.Notify(S.WallCloseDrop, string.Format(S.WallClosedDrop, nWall));
-                    foreach (string t in usedFiles)
+                    foreach (string t in usedThumbs)
                     {
                         try
                         {
-                            // 只清缩略图；原图属于 cache / archive / 收藏，不在这里动
                             if (t.StartsWith(Program.ThumbsDirPath, StringComparison.OrdinalIgnoreCase) && File.Exists(t))
                             {
                                 File.Delete(t);
@@ -403,13 +529,26 @@ namespace BingWallpaperLite
                         }
                         catch { }
                     }
+                    MessageBox.Show(S.WallResultDrop(nWall), Program.AppName,
+                        MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
             }
             catch { }
         }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                try { ticker.Stop(); ticker.Dispose(); } catch { }
+                foreach (Image im in thumbs.Values) { try { im.Dispose(); } catch { } }
+                thumbs.Clear();
+            }
+            base.Dispose(disposing);
+        }
     }
 
-    /// <summary>照片墙关窗时的二选：暂存到归档，或不保留。没有「取消」——不想选就别关窗。</summary>
+    /// <summary>照片墙关窗时的询问：有临时图给两个去向；没有就只是确认关闭。</summary>
     internal sealed class WallCloseForm : Form
     {
         public bool Keep { get; private set; }
@@ -417,45 +556,67 @@ namespace BingWallpaperLite
 
         public WallCloseForm(int n)
         {
+            bool hasTmp = n > 0;
             Text = Program.AppName + " · " + S.WallCloseTitle;
             FormBorderStyle = FormBorderStyle.FixedDialog;
             StartPosition = FormStartPosition.CenterParent;
             MaximizeBox = false;
             MinimizeBox = false;
             ShowInTaskbar = false;
-            ClientSize = new Size(440, 200);
+            ClientSize = new Size(460, hasTmp ? 210 : 160);
             try { Font = new Font("Microsoft YaHei UI", 9F); } catch { }
 
             Label lbl = new Label();
-            lbl.SetBounds(16, 14, 408, 60);
-            lbl.Text = S.WallCloseBody(n);
+            lbl.AutoSize = false;
+            lbl.SetBounds(16, 14, 428, 62);
+            lbl.Text = hasTmp ? S.WallCloseBody(n) : S.WallCloseIdleBody;
             Controls.Add(lbl);
 
-            CheckBox chk = new CheckBox();
-            chk.Text = S.WallCloseRemember;
-            chk.SetBounds(16, 80, 300, 24);
-            Controls.Add(chk);
+            if (hasTmp)
+            {
+                CheckBox chk = new CheckBox();
+                chk.Text = S.WallCloseRemember;
+                chk.SetBounds(16, 84, 320, 24);
+                Controls.Add(chk);
 
-            Button btnKeep = new Button();
-            btnKeep.Text = S.WallCloseKeep;
-            btnKeep.SetBounds(16, 150, 150, 32);
-            btnKeep.Click += delegate { Keep = true; Remember = chk.Checked; DialogResult = DialogResult.OK; Close(); };
-            Controls.Add(btnKeep);
+                Button btnKeep = new Button();
+                btnKeep.Text = S.WallCloseKeep;
+                btnKeep.SetBounds(16, 156, 150, 32);
+                btnKeep.Click += delegate { Keep = true; Remember = chk.Checked; DialogResult = DialogResult.OK; Close(); };
+                Controls.Add(btnKeep);
 
-            Button btnDrop = new Button();
-            btnDrop.Text = S.WallCloseDrop;
-            btnDrop.SetBounds(276, 150, 150, 32);
-            btnDrop.Click += delegate { Keep = false; Remember = chk.Checked; DialogResult = DialogResult.OK; Close(); };
-            Controls.Add(btnDrop);
+                Button btnDrop = new Button();
+                btnDrop.Text = S.WallCloseDrop;
+                btnDrop.SetBounds(294, 156, 150, 32);
+                btnDrop.Click += delegate { Keep = false; Remember = chk.Checked; DialogResult = DialogResult.OK; Close(); };
+                Controls.Add(btnDrop);
 
-            Button btnBack = new Button();
-            btnBack.Text = S.WallCloseBack;
-            btnBack.SetBounds(176, 150, 90, 32);
-            btnBack.Click += delegate { DialogResult = DialogResult.Cancel; Close(); };
-            Controls.Add(btnBack);
+                Button btnBack = new Button();
+                btnBack.Text = S.WallCloseBack;
+                btnBack.SetBounds(174, 156, 112, 32);
+                btnBack.Click += delegate { DialogResult = DialogResult.Cancel; Close(); };
+                Controls.Add(btnBack);
 
-            AcceptButton = btnKeep;
-            CancelButton = btnBack;
+                AcceptButton = btnKeep;
+                CancelButton = btnBack;
+            }
+            else
+            {
+                Button btnOk = new Button();
+                btnOk.Text = S.BtnClose;
+                btnOk.SetBounds(16, 108, 150, 32);
+                btnOk.Click += delegate { DialogResult = DialogResult.OK; Close(); };
+                Controls.Add(btnOk);
+
+                Button btnBack2 = new Button();
+                btnBack2.Text = S.WallCloseBack;
+                btnBack2.SetBounds(294, 108, 150, 32);
+                btnBack2.Click += delegate { DialogResult = DialogResult.Cancel; Close(); };
+                Controls.Add(btnBack2);
+
+                AcceptButton = btnOk;
+                CancelButton = btnBack2;
+            }
         }
     }
 }

@@ -373,6 +373,22 @@ namespace BingWallpaperLite
                            "{0} of {1} years available, {2} missing (double-click a cell to set as wallpaper)"); }
         }
         public static string WallApplied      { get { return T("已设为桌面壁纸", "Set as desktop wallpaper"); } }
+        public static string WallCardFetch    { get { return T("取回", "Fetch"); } }
+        public static string WallSortLabel    { get { return T("排序", "Sort"); } }
+        public static string WallSortNew      { get { return T("新 → 旧", "New → Old"); } }
+        public static string WallSortOld      { get { return T("旧 → 新", "Old → New"); } }
+        public static string WallFilterLocal  { get { return T("只看本地有", "Local only"); } }
+        public static string WallCloseIdleBody { get { return T("本次只看了本地已有的图，没有临时文件。\r\n要关闭照片墙吗？", "Only local images were viewed; nothing temporary was downloaded.\r\nClose the photo wall?"); } }
+        public static string WallResultKeep(int n)
+        {
+            string tpl = _en ? "Kept {0} images in the history archive" : "已暂存 {0} 张到历史归档";
+            return string.Format(tpl, n);
+        }
+        public static string WallResultDrop(int n)
+        {
+            string tpl = _en ? "Dropped {0} temporary images" : "已丢弃 {0} 张临时图";
+            return string.Format(tpl, n);
+        }
         public static string WallIdleHint     { get { return T("（本地都有，没有临时文件，关窗不会问）", "(all local; nothing temporary to ask about)"); } }
         public static string WallClosedIdle   { get { return T("照片墙已关闭，本次只看了本地已有的图", "Photo wall closed; only local images were viewed"); } }
         public static string WallClosedKeep   { get { return T("已暂存 {0} 张到历史归档", "Kept {0} images in the archive"); } }
