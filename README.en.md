@@ -1,8 +1,20 @@
 # BingWallpaperChronicle
 
+*Also known in Chinese as 必年代记.*
+
 [中文](README.md) | **English**
 
-A Bing daily wallpaper tool for Windows. Three layers — tray, script, scheduled task — with history going back to **March 2016**. Bilingual UI that follows your system language.
+Every Bing wallpaper from **July 2009** to today — **6339 days, no gaps**.
+Browse, search, or bulk-download. Since 2019 the originals are
+**3840×2160 watermark-free** — Microsoft's own client ships 468 KB watermarked JPEGs.
+
+| | |
+|---|---|
+| Coverage | 2009-07-13 → today, **6339 days** (3 gaps: 2010-04-16 / 2010-04-17 / 2012-08-14) |
+| Quality | 3840×2160 watermark-free originals since 2019; 1080p for 2016–2018; third-party mirrors before that |
+| Size | full UHD ≈ 15 GB · 1080p ≈ 2 GB · mirrors only ≈ 1.3 GB |
+| Runtime | none. .NET Framework 4.x (ships with Windows) + built-in PowerShell |
+| Offline | the index is embedded in the exe — search and browse titles without network |
 
 ![Overview](assets/screenshot-desktop.jpg)
 
@@ -30,7 +42,7 @@ So I wrote my own: only Bing's public APIs, all behaviour in local code, nothing
 
 **History**
 
-* Calendar picker for any date from **March 2016** to today
+* Calendar picker for any date from **July 2009** to today
 * **This day in past years** — compare the same date across ten years
 * Images fetched from history go into a separate archive, isolated from the daily cache
 * Archived images carry Chinese titles and credits
