@@ -1,4 +1,4 @@
-# 必应壁纸编年史 · 回归测试
+﻿# 必应壁纸编年史 · 回归测试
 # 用法：pwsh -File test.ps1
 # 设计原则：幂等、不碰桌面壁纸、不依赖网络（用本地索引与缓存）
 
@@ -769,6 +769,54 @@ Check '帮助与关于都写了兜底链与三层封顶' {
     $t = Get-Content (Join-Path $Root 'src\Strings.cs') -Raw
     foreach ($k in @('十一、这张图是从哪来的', '十二、占用为什么不会一直涨', '5 级自动回退', '三层封顶', 'Where the image comes from', 'Why storage stays put')) {
         if ($t.IndexOf($k) -lt 0) { return ('Strings.cs 缺「' + $k + '」') }
+    }
+    return $true
+}
+
+# ---------------------------------------------------------------- [10] 编码与静默失败
+Write-Host ''
+Write-Host '[10] 编码与静默失败'
+
+Check '所有源码文件带 UTF-8 BOM' {
+    $bad = @()
+    $list = @()
+    $srcD = Join-Path $Root 'src'
+    if (Test-Path $srcD) { $list += @(Get-ChildItem $srcD -Recurse -Filter *.cs -File) }
+    foreach ($n in @('bing-wallpaper.ps1', 'test.ps1', 'build.ps1')) {
+        $p = Join-Path $Root $n
+        if (Test-Path $p) { $list += Get-Item $p }
+    }
+    if ($list.Count -eq 0) { return '没找到任何源文件' }
+    foreach ($f in $list) {
+        $h = [System.IO.File]::ReadAllBytes($f.FullName)
+        if ($h.Length -lt 3 -or $h[0] -ne 0xEF -or $h[1] -ne 0xBB -or $h[2] -ne 0xBF) { $bad += $f.Name }
+    }
+    if ($bad.Count -gt 0) { return ('缺 BOM：' + ($bad -join '、')) }
+    return $true
+}
+
+Check '空 catch 不超过 84 处' {
+    $t = Get-Content $Script -Raw
+    $n = ([regex]::Matches($t, 'catch \{ \}')).Count
+    if ($n -gt 84) { return ('空 catch 已 ' + $n + ' 处，超上限 84') }
+    return $true
+}
+
+Check '退出码有集中说明表' {
+    $t = Get-Content $Script -Raw
+    if ($t -notmatch '\$EXIT\s*=\s*@\{') { return '脚本里没有 $EXIT 常量表' }
+    foreach ($k in @('WALL_FAIL = 11', 'FUTURE    = 12', 'DEGRADED  = 8', 'NO_IMAGE  = 5')) {
+        if ($t.IndexOf($k) -lt 0) { return ('$EXIT 表缺 ' + $k) }
+    }
+    return $true
+}
+
+Check '关键失败路径有留痕日志' {
+    $t = Get-Content $Script -Raw
+    foreach ($k in @('壁纸设置后注册表未更新', '回收站不可用，已直接删除',
+                     '保护名单写入失败', '缓存索引同步失败', '归档月度缓存读取失败',
+                     '下载目录创建失败')) {
+        if ($t.IndexOf($k) -lt 0) { return ('缺关键日志：' + $k) }
     }
     return $true
 }

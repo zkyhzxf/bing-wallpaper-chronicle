@@ -98,6 +98,28 @@ if (-not (Test-Path $outDir)) { New-Item -ItemType Directory -Path $outDir -Forc
 $exeName = "BingWallpaperLite.exe"
 $exePath = Join-Path $outDir $exeName
 
+# ---------------------------------------------------------------- BOM 预检
+
+# .cs 缺 BOM 会被 csc 按系统 ANSI 读，中文常量直接乱掉（编译能过，字符串已经坏了）；
+# .ps1 缺 BOM 会被 powershell.exe 按 GBK 读，满屏语法错误。两个都不报错，只会悄悄出错。
+$bomBytes = [byte[]](0xEF, 0xBB, 0xBF)
+$bomFixed = 0
+$bomTargets = @()
+$srcDir = Join-Path $repoRoot 'src'
+if (Test-Path $srcDir) { $bomTargets += @(Get-ChildItem $srcDir -Recurse -Filter *.cs -File) }
+foreach ($bn in @('bing-wallpaper.ps1', 'test.ps1', 'build.ps1')) {
+    $bp = Join-Path $repoRoot $bn
+    if (Test-Path $bp) { $bomTargets += Get-Item $bp }
+}
+foreach ($bf in $bomTargets) {
+    $bytes = [System.IO.File]::ReadAllBytes($bf.FullName)
+    if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) { continue }
+    [System.IO.File]::WriteAllBytes($bf.FullName, ($bomBytes + $bytes))
+    Write-Host ('  BOM 预检：补回 ' + $bf.Name) -ForegroundColor Yellow
+    $bomFixed++
+}
+if ($bomFixed -gt 0) { Write-Host ("  BOM 预检：共补回 $bomFixed 个文件") -ForegroundColor Yellow }
+
 # ---------------------------------------------------------------- 编译
 
 $buildArgs = @(

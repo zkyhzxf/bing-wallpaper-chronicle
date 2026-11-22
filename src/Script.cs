@@ -387,6 +387,8 @@ namespace BingWallpaperLite
                     {
                         Balloon(S.BNoImage, S.NoImageHint);
                     }
+                    // 退出码语义见 bing-wallpaper.ps1 头部的 $EXIT 表；
+                    // 11 = 图已就位但桌面未更新，12 = 日期越界（未来日期）
                     else if (code == 11)
                     {
                         Balloon(S.BWallFail, S.WallApplyFail);

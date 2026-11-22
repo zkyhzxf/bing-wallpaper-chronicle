@@ -106,6 +106,24 @@ param(
     [switch]$MigrateOld
 )
 
+# ---------------------------------------------------------------- 退出码约定
+# 调用方（BingWallpaperLite.exe）按这张表解读返回值，C# 侧在 Script.cs / CalendarForm.cs /
+# PhotoWallForm.cs 里有对应分支。加新码时两边一起改，别只改一边。
+$EXIT = @{
+    OK        = 0    # 成功
+    ERR       = 1    # 一般错误，看日志定位
+    BUSY      = 2    # 撞锁，已有实例在跑
+    NO_FAV    = 3    # 没有可取消的收藏
+    EDGE      = 4    # 翻到最早 / 最新边界
+    NO_IMAGE  = 5    # 这一天没有图
+    NEED_ARCH = 6    # 缺历史归档，需先取归档索引
+    ARCH_DOWN = 7    # 归档源不可用
+    DEGRADED  = 8    # 成功但画质降级（非 UHD）
+    WAITING   = 9    # 今天的图还没发布
+    WALL_FAIL = 11   # 图已就位，桌面壁纸未生效
+    FUTURE    = 12   # 日期越界（未来日期）
+}
+
 $ErrorActionPreference = 'Stop'
 
 # 临时件的删除方式：画廊图、预取图、故事缓存、两处索引、清空缓存 —— 都是可重建/可重抓的东西，
@@ -258,7 +276,7 @@ function Get-DownloadDir {
     elseif ($Gallery) { $d = $GalleryDir }
     elseif ($script:Takeover) { $d = $script:TakeoverRoot }
     else { $d = $CacheDir }
-    if ($d -and -not (Test-Path $d)) { try { New-Item -ItemType Directory -Path $d -Force | Out-Null } catch { } }
+    if ($d -and -not (Test-Path $d)) { try { New-Item -ItemType Directory -Path $d -Force | Out-Null } catch { Write-Log ('下载目录创建失败：' + $d + ' - ' + $_.Exception.Message) 'WARN' } }
     return $d
 }
 $DownDir = Get-DownloadDir
@@ -565,7 +583,7 @@ function Save-ArchiveVia {
         if ([string]$config['archiveVia'] -eq $Via) { return }
         $config['archiveVia'] = $Via
         [System.IO.File]::WriteAllText($ConfigPath, ($config | ConvertTo-Json -Depth 4), (New-Object System.Text.UTF8Encoding($false)))
-    } catch { }
+    } catch { Write-Log ('归档通道偏好写入失败：' + $_.Exception.Message) 'WARN' }
 }
 
 # wilii 全量文件名表（2016-03-05 起）：字段 d/n，n 是不带分辨率后缀的基础名
@@ -794,7 +812,7 @@ function Get-ArchiveRecord {
     $m  = $Date.Substring(4, 2)
     $ym = $y + '-' + $m
     if (-not (Test-Path $ArchiveDir)) {
-        try { New-Item -ItemType Directory -Path $ArchiveDir -Force | Out-Null } catch { }
+        try { New-Item -ItemType Directory -Path $ArchiveDir -Force | Out-Null } catch { Write-Log ('归档目录创建失败：' + $_.Exception.Message) 'WARN' }
     }
     $cacheFile = Join-Path $ArchiveDir "$ym.json"
 
@@ -822,7 +840,7 @@ function Get-ArchiveRecord {
                     }
                 }
             }
-        } catch { }
+        } catch { Write-Log ('归档月度缓存读取失败：' + $_.Exception.Message) 'WARN' }
     }
 
     $map = @{}
@@ -869,7 +887,7 @@ function Get-ArchiveRecord {
                         $map[$d] = [ordered]@{ id = $mm.Groups[1].Value; t = ''; c = ''; u = '' }
                     }
                 }
-            } catch { }
+            } catch { Write-Log ('归档索引行解析失败：' + $_.Exception.Message) 'WARN' }
         }
     }
 
@@ -1053,7 +1071,7 @@ function Get-FullIndex {
 
     Write-Log '正在下载全量索引（约 1.6 MB）…'
     if (-not (Test-Path $ArchiveDir)) {
-        try { New-Item -ItemType Directory -Path $ArchiveDir -Force | Out-Null } catch { }
+        try { New-Item -ItemType Directory -Path $ArchiveDir -Force | Out-Null } catch { Write-Log ('归档目录创建失败：' + $_.Exception.Message) 'WARN' }
     }
     $resp = $null
     $try = @($AllIndexUrl, 'https://raw.githubusercontent.com/Zhu-junwei/bing-wallpaper-archive/master/Bing_zh-CN_all.json')
@@ -1408,7 +1426,7 @@ function Add-Pinned {
     $set[$Date] = $true
     try {
         [System.IO.File]::WriteAllText($PinnedPath, ($set | ConvertTo-Json -Depth 3), (New-Object System.Text.UTF8Encoding($false)))
-    } catch { }
+    } catch { Write-Log ('保护名单写入失败：' + $_.Exception.Message) 'WARN' }
 }
 
 # ---------------------------------------------------------------- 缓存清理
@@ -1426,11 +1444,9 @@ function Clear-OldCache {
         if ($cur -and $_.FullName -ieq $cur) { $protected++; return }
         if (Test-Path -LiteralPath (Join-Path $FavDir $_.Name)) {
             if ($DryRun) { Write-Log "[DryRun] 将删除重复副本 $($_.Name)" }
-            else { try { [System.IO.File]::Delete($_.FullName); $removed++ } catch { } }
+            else { try { [System.IO.File]::Delete($_.FullName); $removed++ } catch { Write-Log ('重复副本删除失败：' + $_.Name) 'WARN' } }
             return
         }
-        # 正在使用的壁纸永不清理（锁定中的那张就是靠这个保住）
-        if ($cur -and $_.FullName -ieq $cur) { $protected++; return }
         # 用户主动挑的历史图，按日期登记，永不被自动清理
         $dm = [regex]::Match($_.BaseName, '^(\d{8})_')
         if ($dm.Success -and $pinnedSet.ContainsKey($dm.Groups[1].Value)) { $protected++; return }
@@ -1463,7 +1479,7 @@ function Clear-OldCache {
                 [System.IO.File]::WriteAllText($IndexPath, ($tmpA | ConvertTo-Json -Depth 6), (New-Object System.Text.UTF8Encoding($false)))
                 Write-Log '索引已同步，移除失效条目'
             }
-        } catch { }
+        } catch { Write-Log ('缓存索引同步失败：' + $_.Exception.Message) 'WARN' }
     }
     return $removed
 }
@@ -1620,7 +1636,7 @@ function Clear-AllCache {
                     if (Test-Path (Join-Path $CacheDir $pp.Value.file)) { $new[$pp.Name] = $pp.Value }
                 }
                 [System.IO.File]::WriteAllText($IndexPath, ($new | ConvertTo-Json -Depth 6), (New-Object System.Text.UTF8Encoding($false)))
-            } catch { }
+            } catch { Write-Log ('缓存索引同步失败：' + $_.Exception.Message) 'WARN' }
         }
     }
     Write-Log "清空缓存：删除 $removed 个，保留当前壁纸 $kept 个"
@@ -1631,7 +1647,7 @@ function Clear-AllCache {
 
 function Read-State {
     if (Test-Path $StatePath) {
-        try { return Get-Content $StatePath -Raw -Encoding UTF8 | ConvertFrom-Json } catch { }
+        try { return Get-Content $StatePath -Raw -Encoding UTF8 | ConvertFrom-Json } catch { Write-Log ('state 读取失败：' + $_.Exception.Message) 'WARN' }
     }
     return $null
 }
