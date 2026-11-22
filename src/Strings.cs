@@ -347,6 +347,44 @@ namespace BingWallpaperLite
         public static string DaysSuffix     { get { return _en ? " days)" : " 天）"; } }
         public static string DaysPrefix     { get { return _en ? " (" : "（"; } }
         public static string NoTitle        { get { return T("（无标题）", "(no title)"); } }
+
+        // ---------------- 照片墙
+        public static string WallTitle(string mmdd)
+        {
+            string md = mmdd.Length == 4 ? (mmdd.Substring(0, 2) + "-" + mmdd.Substring(2)) : mmdd;
+            return _en ? ("Photo wall · " + md + " across years") : ("照片墙 · 历年 " + md);
+        }
+        public static string WallMenu(int n)
+        {
+            return _en ? string.Format("Photo wall · {0} images from past years", n)
+                       : string.Format("照片墙 · 历年同日 {0} 张", n);
+        }
+        public static string WallFetchMissing { get { return T("把缺的取回", "Fetch missing"); } }
+        public static string WallFetching     { get { return T("正在取这张…", "Fetching…"); } }
+        public static string WallFetchingN    { get { return T("正在取第 {0}/{1} 张…", "Fetching {0}/{1}…"); } }
+        public static string WallFetchDone(int ok, int total)
+        {
+            string tpl = _en ? "Fetched {0} of {1}" : "已取回 {0}/{1} 张";
+            return string.Format(tpl, ok, total);
+        }
+        public static string WallStatusFmt
+        {
+            get { return T("本地已有 {0} 张 / 共 {1} 个年份，还缺 {2} 张（双击格子设为壁纸）",
+                           "{0} of {1} years available, {2} missing (double-click a cell to set as wallpaper)"); }
+        }
+        public static string WallApplied      { get { return T("已设为桌面壁纸", "Set as desktop wallpaper"); } }
+        public static string WallCloseTitle   { get { return T("这张照片墙怎么处理？", "What should happen to this photo wall?"); } }
+        public static string WallCloseBody(int n)
+        {
+            string tpl = _en
+                ? "You fetched {0} images into the temporary folder; keep them in the archive?"
+                : "本次取回了 {0} 张图，放在临时目录里；要暂存到历史归档吗？";
+            return string.Format(tpl, n);
+        }
+        public static string WallCloseRemember { get { return T("记住这次选择，以后不再问", "Remember this choice"); } }
+        public static string WallCloseKeep     { get { return T("暂存到归档", "Keep in archive"); } }
+        public static string WallCloseDrop     { get { return T("不保留", "Drop"); } }
+        public static string WallCloseBack     { get { return T("返回照片墙", "Back"); } }
         public static string ReloadIndex    { get { return T("重新载入索引", "Reload index"); } }
         public static string SrchWorking    { get { return T("正在换图…", "Switching…"); } }
         public static string SrchSwitchFail { get { return T("换图失败，可以再点一次", "Switch failed; try again"); } }

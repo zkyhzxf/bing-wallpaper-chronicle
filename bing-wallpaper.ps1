@@ -85,7 +85,10 @@ param(
     [int]$BudgetSec = 0,
     [int]$ProbeLockWait = 0,
     [switch]$RebuildCacheIndex,
-    [switch]$AuditDates
+    [switch]$AuditDates,
+    [string]$WallDate = '',
+    [switch]$WallKeep,
+    [switch]$WallDrop
 )
 
 $ErrorActionPreference = 'Stop'
@@ -97,6 +100,17 @@ if ($PrefetchDate) {
     if ($PrefetchDate.Length -eq 8) {
         $Date = $PrefetchDate
         $script:NoApply = $true
+    }
+}
+
+# 照片墙模式：下载只落 cache\wall，不设壁纸、不写 state 与索引
+$script:WallMode = $false
+if ($WallDate) {
+    $WallDate = ([string]$WallDate) -replace '[^0-9]', ''
+    if ($WallDate.Length -eq 8) {
+        $Date = $WallDate
+        $script:NoApply = $true
+        $script:WallMode = $true
     }
 }
 
@@ -141,6 +155,7 @@ $OldIndexPath  = Join-Path $ArchiveDir 'old-index.json'
 $WiliiIndexPath = Join-Path $ArchiveDir 'wilii-index.json'
 $StoriesDir    = Join-Path $ArchiveDir 'stories'
 $PrefetchDir   = Join-Path $CacheDir 'prefetch'
+$WallDir       = Join-Path $CacheDir 'wall'
 if ($script:NoApply -and $PrefetchDir -and -not (Test-Path $PrefetchDir)) {
     try { New-Item -ItemType Directory -Path $PrefetchDir -Force | Out-Null } catch { }
 }
@@ -154,7 +169,8 @@ if (-not (Test-Path $CacheDir)) { New-Item -ItemType Directory -Path $CacheDir -
 # 画廊模式：下载落点改到 cache\gallery，退出时整个清掉，不登记保护名单
 # 下载落点统一解析：预取 -> cache\prefetch，画廊 -> cache\gallery，其余 -> cache 根
 function Get-DownloadDir {
-    if ($script:NoApply) { $d = $PrefetchDir }
+    if ($script:WallMode) { $d = $WallDir }
+    elseif ($script:NoApply) { $d = $PrefetchDir }
     elseif ($Gallery) { $d = $GalleryDir }
     else { $d = $CacheDir }
     if ($d -and -not (Test-Path $d)) { try { New-Item -ItemType Directory -Path $d -Force | Out-Null } catch { } }
@@ -1537,6 +1553,39 @@ function Exit-Run {
     exit $Code
 }
 
+# ---------------------------------------------------------------- 照片墙暂存 / 丢弃
+
+if ($WallKeep) {
+    if (-not (Test-Path $WallDir)) { Write-Host '照片墙临时目录是空的'; exit 0 }
+    if (-not (Test-Path $ArchiveImgDir)) { New-Item -ItemType Directory -Path $ArchiveImgDir -Force | Out-Null }
+    $movedW = 0
+    foreach ($f in @(Get-ChildItem $WallDir -Filter '*.jpg' -File -ErrorAction SilentlyContinue)) {
+        try {
+            $destW = Join-Path $ArchiveImgDir $f.Name
+            if (Test-Path -LiteralPath $destW) { $destW = Join-Path $ArchiveImgDir ($f.BaseName + '_' + (Get-Date -Format 'HHmmss') + '.jpg') }
+            Move-Item -LiteralPath $f.FullName -Destination $destW -Force
+            $mW = [regex]::Match($f.Name, '^(\d{8})_')
+            if ($mW.Success) { Add-Pinned -Date $mW.Groups[1].Value }
+            $movedW++
+        } catch {
+            Write-Log ("照片墙暂存失败：" + $f.Name + " " + $_.Exception.Message) 'WARN'
+        }
+    }
+    Write-Host ("已暂存 $movedW 张到历史归档")
+    exit 0
+}
+
+if ($WallDrop) {
+    $droppedW = 0
+    if (Test-Path $WallDir) {
+        foreach ($f in @(Get-ChildItem $WallDir -Filter '*.jpg' -File -ErrorAction SilentlyContinue)) {
+            try { Remove-Item -LiteralPath $f.FullName -Force -ErrorAction SilentlyContinue; $droppedW++ } catch { }
+        }
+    }
+    Write-Host ("已丢弃 $droppedW 张照片墙临时图")
+    exit 0
+}
+
 # ---------------------------------------------------------------- 重建缓存索引
 
 if ($RebuildCacheIndex) {
@@ -2190,6 +2239,7 @@ try {
             } catch { }
         }
         $modeF = if ($CleanMode -eq 'permanent') { '彻底删除' } else { '进回收站' }
+        if ($DryRun) { $modeF = 'DryRun，未删除' }
         Write-Log ("清空收藏（" + $modeF + "）：删除 " + $removedF + " 张，释放 " + [math]::Round($freedF / 1MB, 1) + " MB，保留当前壁纸 " + $keptF + " 张")
         Write-Output ('{"removed":' + $removedF + ',"moved":' + $keptF + '}')
         Exit-Run 0
@@ -2443,11 +2493,15 @@ try {
             $pfHit = Get-ChildItem $PrefetchDir -Filter "${Date}_*.jpg" -File -ErrorAction SilentlyContinue | Select-Object -First 1
             if ($pfHit) {
                 $pfDest = Join-Path $CacheDir $pfHit.Name
-                if (-not $script:NoApply -and -not (Test-Path -LiteralPath $pfDest)) {
+                if ($script:WallMode) { $pfDest = Join-Path $WallDir $pfHit.Name }
+                if ((-not $script:NoApply -or $script:WallMode) -and -not (Test-Path -LiteralPath $pfDest)) {
                     try { Move-Item -LiteralPath $pfHit.FullName -Destination $pfDest -Force; $pfHit = Get-Item -LiteralPath $pfDest } catch { }
                 }
                 $hit = $pfHit
             }
+        }
+        if (-not $hit -and $script:WallMode -and (Test-Path $WallDir)) {
+            $hit = Get-ChildItem $WallDir -Filter "${Date}_*.jpg" -File -ErrorAction SilentlyContinue | Select-Object -First 1
         }
         if ($hit) {
             $locked = Enter-RunLock -WaitSec $script:LockWaitSec
@@ -2570,7 +2624,8 @@ try {
                     $shortId = $archId -replace '_[A-Za-z]{2}-[A-Za-z]{2}\d+$', ''
                     $fileName = "${Date}_$shortId.jpg"
                     $dest = Join-Path $ArchiveImgDir $fileName
-                    if ($script:NoApply) { $dest = Join-Path $PrefetchDir $fileName }
+                    if ($script:WallMode) { $dest = Join-Path $WallDir $fileName }
+                    elseif ($script:NoApply) { $dest = Join-Path $PrefetchDir $fileName }
                     $locked = Enter-RunLock -WaitSec $script:LockWaitSec
                     if (-not $locked) { exit 2 }
 

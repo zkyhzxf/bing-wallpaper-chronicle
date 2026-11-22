@@ -19,8 +19,8 @@ using Microsoft.Win32;
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyConfiguration("Release")]
 [assembly: AssemblyCulture("")]
-[assembly: AssemblyVersion("3.6.27.0")]
-[assembly: AssemblyFileVersion("3.6.27.0")]
+[assembly: AssemblyVersion("3.6.28.0")]
+[assembly: AssemblyFileVersion("3.6.28.0")]
 [assembly: AssemblyInformationalVersion("3.6.25")]
 [assembly: ComVisible(false)]
 
@@ -31,7 +31,7 @@ namespace BingWallpaperLite
         // ---------------------------------------------------------------- 常量
 
         internal const string AppName     = "必应壁纸编年史";
-        internal const string AppVersion  = "3.6.27";
+        internal const string AppVersion  = "3.6.28";
         private const string TaskName    = "BingWallpaperChronicle";
         private const string RunValue    = "BingWallpaperChronicle";
 
@@ -67,6 +67,95 @@ namespace BingWallpaperLite
         internal static string StoriesDirPath { get { return Path.Combine(archiveDir, "stories"); } }
         /// <summary>预取中转目录：只用于翻页加速，退出/启动时清空。</summary>
         internal static string PrefetchDirPath { get { return Path.Combine(cacheDir, "prefetch"); } }
+        internal static string WallDirPath { get { return Path.Combine(cacheDir, "wall"); } }
+        internal static string ThumbsDirPath { get { return Path.Combine(cacheDir, "thumbs"); } }
+
+        /// <summary>读一个字符串配置；没有就返回 dflt。</summary>
+        internal static string CfgString(string key, string dflt)
+        {
+            try
+            {
+                string v = GetStr(ReadConfig(), key);
+                return string.IsNullOrEmpty(v) ? dflt : v;
+            }
+            catch { return dflt; }
+        }
+
+        /// <summary>写一个字符串配置。</summary>
+        internal static void CfgSetString(string key, string val)
+        {
+            try
+            {
+                Dictionary<string, object> c = ReadConfig();
+                SetCfg(c, key, val);
+                WriteConfig(c);
+            }
+            catch { }
+        }
+
+        /// <summary>
+        /// 缩略图三重封顶之一：清孤儿（源图已经不在）+ 按上限淘汰最久未写的。
+        /// 缩略图是派生数据，重建成本低，直接删不进回收站。
+        /// </summary>
+        internal static void TrimThumbs()
+        {
+            try
+            {
+                string dir = ThumbsDirPath;
+                if (!Directory.Exists(dir)) { return; }
+                FileInfo[] files = new DirectoryInfo(dir).GetFiles("*.jpg");
+                if (files.Length == 0) { return; }
+
+                foreach (FileInfo f in files)
+                {
+                    string d8 = Path.GetFileNameWithoutExtension(f.Name);
+                    if (d8.Length != 8) { continue; }
+                    if (!SourceExists(d8)) { try { f.Delete(); } catch { } }
+                }
+
+                files = new DirectoryInfo(dir).GetFiles("*.jpg");
+                int maxCount = GetCfgInt(ReadConfig(), "thumbsMaxCount", 800);
+                int maxMB = GetCfgInt(ReadConfig(), "thumbsMaxMB", 100);
+                long total = 0;
+                foreach (FileInfo f in files) { total += f.Length; }
+                long cap = maxMB * 1024L * 1024L;
+                if (files.Length <= maxCount && total <= cap) { return; }
+
+                Array.Sort(files, delegate(FileInfo a, FileInfo b)
+                {
+                    return a.LastWriteTimeUtc.CompareTo(b.LastWriteTimeUtc);
+                });
+                int i = 0;
+                while (i < files.Length && ((files.Length - i) > maxCount || total > cap))
+                {
+                    total -= files[i].Length;
+                    try { files[i].Delete(); } catch { }
+                    i++;
+                }
+            }
+            catch { }
+        }
+
+        /// <summary>某天的原图是否还在（收藏 / 缓存 / 归档 / 老存档 / 照片墙）。</summary>
+        private static bool SourceExists(string d8)
+        {
+            try
+            {
+                string[] dirs = new string[] { favDir, cacheDir, ArchiveImgPath, WallDirPath };
+                foreach (string dir in dirs)
+                {
+                    if (!Directory.Exists(dir)) { continue; }
+                    if (Directory.GetFiles(dir, d8 + "_*.jpg").Length > 0) { return true; }
+                }
+                string om = OldMonthDir(d8);
+                if (om != null && Directory.Exists(om))
+                {
+                    if (Directory.GetFiles(om, d8 + "_*.jpg").Length > 0) { return true; }
+                }
+            }
+            catch { }
+            return false;
+        }
         /// <summary>是否在「这张图是哪儿」里显示每日故事，配置项 showStory，默认开。</summary>
         internal static bool ShowStory { get { try { return GetCfgBool(ReadConfig(), "showStory", true); } catch { return true; } } }
 

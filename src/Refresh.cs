@@ -26,6 +26,16 @@ namespace BingWallpaperLite
 
         /// <summary>刷新编排入口：只负责防重入与调度，不做具体工作。</summary>
         private static SearchForm searchForm;
+        private static PhotoWallForm wallForm;
+
+        /// <summary>照片墙：把历年同一天的图一次摆出来。</summary>
+        private static void DoPhotoWall()
+        {
+            if (wallForm != null && !wallForm.IsDisposed) { wallForm.Activate(); return; }
+            wallForm = new PhotoWallForm();
+            wallForm.FormClosed += delegate { wallForm = null; };
+            wallForm.Show();
+        }
         private static CalendarForm calForm;
 
         private static void RefreshAll()
@@ -1048,6 +1058,13 @@ namespace BingWallpaperLite
                 return;
             }
 
+            ToolStripMenuItem wallItem = new ToolStripMenuItem(S.WallMenu(shown));
+            wallItem.Click += delegate
+            {
+                keepMenuOpenAfterClick = true;
+                anchor.BeginInvoke((MethodInvoker)delegate { DoPhotoWall(); });
+            };
+            ym.DropDownItems.Insert(0, wallItem);
             ym.DropDownItems.Add(new ToolStripSeparator());
             ym.DropDownItems.Add(MakeItem(S.OpenArchiveImg, delegate { OpenTarget(archiveImgDir); }));
         }
