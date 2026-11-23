@@ -2,12 +2,21 @@
 """逐帧动画引擎：每个镜头有自己的运动语言，不再全场统一缓推。
 每个 Scene 在 __init__ 里预渲染好图层，render(t) 只做几何与合成，保证 900 帧在秒级跑完。
 """
+import json
 import math
 import os
 from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageEnhance
 
 W, H = 1920, 1080
 IMG = r"D:\Tools\bing-wallpaper\archive\images"
+_CFG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
+CFG = json.load(open(_CFG_PATH, encoding="utf-8")) if os.path.exists(_CFG_PATH) else {}
+MATS = CFG.get("materials", {})
+
+
+def MAT(scene, default):
+    """底图取 config.materials 里的值，没配就用默认"""
+    return MATS.get(scene, default)
 AMMONITE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "screens", "ammonite.jpg")
 FB = r"C:\Windows\Fonts\Noto Sans SC Bold (TrueType).otf"
 FR = r"C:\Windows\Fonts\Noto Sans SC Medium (TrueType).otf"
@@ -226,7 +235,7 @@ class S01Window(Scene):
     dur = 1.61
 
     def setup(self):
-        self.base = load_photo("20161122_OHR.KuanmiaoNoodles.jpg", 1.30)
+        self.base = load_photo(MAT("S01Window", "20161122_OHR.KuanmiaoNoodles.jpg"), 1.30)
         self.scrim = scrim_layer(0.34, 0.92)
         self.vig = vignette_layer(140)
         self.lead = text_layer("官方接口窗口", font(40), MUT)
@@ -270,7 +279,7 @@ class S02Span(Scene):
     dur = 1.84
 
     def setup(self):
-        self.base = load_photo("20220424_OHR.YosemiteNightSky.jpg", 1.34)
+        self.base = load_photo(MAT("S02Span", "20220424_OHR.YosemiteNightSky.jpg"), 1.34)
         self.scrim = scrim_layer(0.32, 0.90)
         self.vig = vignette_layer(150)
         self.big = text_layer("17 年", font(132), WHITE)
@@ -338,7 +347,7 @@ class S04Popup(Scene):
     dur = 1.95
 
     def setup(self):
-        self.base = load_photo("20261122_OHR.JustaHermitage.jpg", 1.26)
+        self.base = load_photo(MAT("S04Popup", "20261122_OHR.JustaHermitage.jpg"), 1.26)
         self.scrim = scrim_layer(0.30, 0.80)
         self.vig = vignette_layer(130)
         # 浮窗整块预渲染成一张图层
@@ -391,7 +400,7 @@ class S05Split(Scene):
     dur = 1.79
 
     def setup(self):
-        self.base = load_photo("20261121_OHR.RedNice.jpg", 1.24)
+        self.base = load_photo(MAT("S05Split", "20261121_OHR.RedNice.jpg"), 1.24)
         self.scrim = scrim_layer(0.30, 0.92)
         self.vig = vignette_layer(140)
         self.l_y = text_layer("昨天", font(58), MUT)
@@ -483,7 +492,7 @@ class S07Card(Scene):
     dur = 2.99
 
     def setup(self):
-        self.base = load_photo("20261122_OHR.JustaHermitage.jpg", 1.42)
+        self.base = load_photo(MAT("S07Card", "20261122_OHR.JustaHermitage.jpg"), 1.42)
         self.scrim = scrim_layer(0.22, 0.86)
         self.vig = vignette_layer(130)
         # 卡片整块
@@ -492,7 +501,7 @@ class S07Card(Scene):
         d = ImageDraw.Draw(card)
         d.rounded_rectangle([0, 0, cw - 1, ch - 1], radius=20, fill=(18, 23, 33, 238),
                             outline=(255, 255, 255, 44), width=2)
-        thumb = load_photo("20261122_OHR.JustaHermitage.jpg", 1.0).crop((180, 140, 1060, 660)).resize((720, 480), Image.LANCZOS)
+        thumb = load_photo(MAT("S07Card", "20261122_OHR.JustaHermitage.jpg"), 1.0).crop((180, 140, 1060, 660)).resize((720, 480), Image.LANCZOS)
         card.paste(thumb.convert("RGBA"), (40, 44))
         d = ImageDraw.Draw(card)
         d.rectangle([40, 44, 760, 524], outline=(255, 255, 255, 48), width=2)
@@ -568,7 +577,7 @@ class S09Timeline(Scene):
     dur = 1.97
 
     def setup(self):
-        self.base = load_photo("20261114_OHR.BlueHK.jpg", 1.30)
+        self.base = load_photo(MAT("S09Timeline", "20261114_OHR.BlueHK.jpg"), 1.30)
         self.scrim = scrim_layer(0.28, 0.90)
         self.vig = vignette_layer(140)
         self.head = text_layer("时间轴", font(48), MUT)
@@ -616,7 +625,7 @@ class S10Fossil(Scene):
     dur = 1.97
 
     def setup(self):
-        self.base = load_photo(AMMONITE, 1.30)
+        self.base = load_photo(MATS.get("S10Fossil", AMMONITE), 1.30)
         self.vig = vignette_layer(160)
         self.date = text_layer("2025-11-23", font(42), ACC)
         self.title = text_layer("大自然的秘密代码", font(88), WHITE)
@@ -654,7 +663,7 @@ class S11Search(Scene):
     dur = 1.86
 
     def setup(self):
-        self.base = load_photo("20261101_OHR.SchwarzwaldAutumn.jpg", 1.28)
+        self.base = load_photo(MAT("S11Search", "20261101_OHR.SchwarzwaldAutumn.jpg"), 1.28)
         self.scrim = scrim_layer(0.28, 0.86)
         self.vig = vignette_layer(140)
         self.head = text_layer("离线可搜 · 6339 条本地索引", font(42), MUT)
@@ -757,7 +766,7 @@ class S13Star(Scene):
     dur = 2.27
 
     def setup(self):
-        self.base = load_photo("20261114_OHR.BlueHK.jpg", 1.32)
+        self.base = load_photo(MAT("S13Star", "20261114_OHR.BlueHK.jpg"), 1.32)
         self.scrim = scrim_layer(0.20, 0.72)
         self.vig = vignette_layer(150)
         self.t1 = text_layer("Star 不是打赏", font(80), MUT)
@@ -792,7 +801,7 @@ class S14End(Scene):
     dur = 3.11
 
     def setup(self):
-        self.base = load_photo("20261115_OHR.FirstFrost.jpg", 1.34)
+        self.base = load_photo(MAT("S14End", "20261115_OHR.FirstFrost.jpg"), 1.34)
         self.vig = vignette_layer(150)
         import qrcode
         q = qrcode.QRCode(box_size=5, border=1)
@@ -831,5 +840,9 @@ class S14End(Scene):
 SCENES = [S01Window, S02Span, S03Number, S04Popup, S05Split, S06Versus, S07Card,
           S08Feather, S09Timeline, S10Fossil, S11Search, S12Repo, S13Star, S14End]
 
-# 每段（clip）内包含哪些场景，与 build_video.py 的 SHOTS 对齐
-CLIP_SCENES = [SCENES[0:3], SCENES[3:6], SCENES[6:8], SCENES[8:11], SCENES[11:14]]
+# 每段（clip）内包含哪些场景：由 config.json 的 shots 决定，改配置即改分镜
+_SCENE_MAP = {c.__name__: c for c in SCENES}
+if CFG.get("shots"):
+    CLIP_SCENES = [[_SCENE_MAP[n] for n in grp] for grp in CFG["shots"]]
+else:
+    CLIP_SCENES = [SCENES[0:3], SCENES[3:6], SCENES[6:8], SCENES[8:11], SCENES[11:14]]

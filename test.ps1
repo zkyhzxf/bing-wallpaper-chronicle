@@ -1209,6 +1209,19 @@ Check '每日故事按实测高度排版，不再按字数硬截' {
     return $true
 }
 
+Check '常驻的信息窗口跟着任何换图刷新' {
+    $i = Get-Content (Join-Path $Root 'src\Info.cs') -Raw
+    if ($i -notmatch 'internal static void ReloadInfoIfOpen') { return '缺 ReloadInfoIfOpen' }
+    $r = Get-Content (Join-Path $Root 'src\Refresh.cs') -Raw
+    $ra = [regex]::Match($r, '(?s)private static void RefreshAll\(\).*?finally \{ refreshing = false; \}')
+    if (-not $ra.Success) { return '找不到 RefreshAll' }
+    if ($ra.Value -notmatch 'ReloadInfoIfOpen\(\)') { return 'RefreshAll 没有同步信息窗口' }
+    $f = Get-Content (Join-Path $Root 'src\Forms\InfoForm.cs') -Raw
+    if ($f -notmatch 'internal void ReloadIfChanged') { return '缺 ReloadIfChanged（同一张不该重载）' }
+    if ($f -notmatch 'curDate == st\[0\] && curFile == st\[3\]') { return 'ReloadIfChanged 没做同图短路' }
+    return $true
+}
+
 # ---------------------------------------------------------------- 汇总
 Write-Host ''
 Write-Host ('-' * 50) -ForegroundColor DarkGray

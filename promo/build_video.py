@@ -15,27 +15,21 @@ FONT_B = r"C:\Windows\Fonts\Noto Sans SC Bold (TrueType).otf"
 
 W, H, FPS = 1920, 1080, 30
 SUB_Y = 760   # 字幕带顶部，对应静帧安全区下限 700
-LEAD, GAP, TAIL = 0.400, 0.900, None   # 语音已切头尾静音，句间停顿由 GAP 控制
+_CFG = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json"), encoding="utf-8"))
+LEAD = _CFG.get("lead", 0.400)
+GAP = _CFG.get("gap", 0.900)
+TAIL = None
 TR_DUR = [0.20, 0.24, 0.18, 0.20]          # 4 个段间转场
 TR_NAME = ["fadewhite", "pixelize", "hlslice", "fade"]
 
 # 每个画面段内的静帧（顺序即播放顺序）
-SHOTS = [
-    ["s01", "s02", "s03"],
-    ["s04", "s05", "s06"],
-    ["s07", "s08"],
-    ["s09", "s10", "s11"],
-    ["s12", "s13", "s14"],
-]
+SHOTS = _CFG.get("shots", [
+    ["s01", "s02", "s03"], ["s04", "s05", "s06"], ["s07", "s08"],
+    ["s09", "s10", "s11"], ["s12", "s13", "s14"],
+])
 
 # 段内切换点（全局秒），与台词断句对齐；None 表示用平均分
-INNER = [                      # 每段内各张静帧所占比例（前缀和）
-    [0.28, 0.60],
-    [0.36, 0.69],
-    [0.55],
-    [0.34, 0.68],
-    [0.36, 0.63],
-]
+INNER = _CFG.get("inner", [[0.28, 0.60], [0.36, 0.69], [0.55], [0.34, 0.68], [0.36, 0.63]])
 
 # 字幕（每段拆几条），与 tts/0N.vtt 的分句一致
 SUBS = [
@@ -81,7 +75,7 @@ for s in segs:
     a_start.append(round(t, 3))
     t += s["dur"] + GAP
 speech_end = round(a_start[-1] + segs[-1]["dur"], 3)
-total = 30.0
+total = _CFG.get("total", 30.0)
 
 centers = []
 for i in range(len(segs) - 1):

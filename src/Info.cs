@@ -60,6 +60,21 @@ namespace BingWallpaperLite
         internal static void ShowInfoPublic() { ShowInfo(); }
 
         /// <summary>
+        /// 任何换图之后同步常驻的信息窗口。常驻窗口只要有一次不刷新，
+        /// 用户看到的就是「这窗口显示的是错的」，比直接关掉更糟。
+        /// </summary>
+        internal static void ReloadInfoIfOpen()
+        {
+            if (infoForm == null || infoForm.IsDisposed) { return; }
+            try
+            {
+                string[] st = ReadStateForInfo();
+                if (st != null) { infoForm.ReloadIfChanged(st); }
+            }
+            catch { }
+        }
+
+        /// <summary>
         /// 打开「这张图是哪儿」。单例非模态：收藏之后会主动调它做引导，
         /// 所以不能再是 ShowDialog —— 每次收藏都强制关一次窗口会劝退收藏。
         /// </summary>

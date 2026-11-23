@@ -125,6 +125,8 @@ namespace BingWallpaperLite
                 RefreshHeader(showDate, showTitle, isLocked);
                 RefreshMenuItems(state, showDate);
                 SyncExternalWallpaper();
+                // 常驻的信息窗口要跟着换图走：菜单、收藏管理、照片墙、自动换图都经过这里
+                try { ReloadInfoIfOpen(); } catch { }
             }
             catch { }
             finally { refreshing = false; }

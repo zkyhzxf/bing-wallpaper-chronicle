@@ -473,6 +473,17 @@ namespace BingWallpaperLite
             catch { }
         }
 
+        /// <summary>
+        /// 外部换图后同步内容，但同一张就不动 —— RefreshAll 触发很频繁，
+        /// 每次都重载会反复拉故事、反复预取相邻图，没必要。
+        /// </summary>
+        internal void ReloadIfChanged(string[] st)
+        {
+            if (st == null || st.Length < 6) { return; }
+            if (curDate == st[0] && curFile == st[3]) { return; }
+            Reload(st[0], st[1], st[2], st[3], st[4], st[5]);
+        }
+
         private void Reload(string date, string title, string copyright, string file, string sizeText, string searchUrl)
         {
             curDate = date;
