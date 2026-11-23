@@ -1,4 +1,4 @@
-﻿using System;
+﻿﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -54,68 +54,47 @@ namespace BingWallpaperLite
             return "https://www.bing.com/search?q=" + Uri.EscapeDataString(kw) + "&form=hpcapt&mkt=zh-cn";
         }
 
+        private static InfoForm infoForm;
+
+        /// <summary>供脚本回调调用：收藏成功后把它摆到面前。</summary>
+        internal static void ShowInfoPublic() { ShowInfo(); }
+
+        /// <summary>
+        /// 打开「这张图是哪儿」。单例非模态：收藏之后会主动调它做引导，
+        /// 所以不能再是 ShowDialog —— 每次收藏都强制关一次窗口会劝退收藏。
+        /// </summary>
         private static void ShowInfo()
         {
-            Dictionary<string, object> state = ReadJson(statePath);
-            if (state == null)
+            // 已经开着：只刷新内容并前置，不叠第二个窗口
+            if (infoForm != null && !infoForm.IsDisposed)
+            {
+                try
+                {
+                    infoForm.ReloadFromState();
+                    if (infoForm.WindowState == FormWindowState.Minimized)
+                    {
+                        infoForm.WindowState = FormWindowState.Normal;
+                    }
+                    infoForm.Activate();
+                    return;
+                }
+                catch { }
+            }
+            string[] a = ReadStateForInfo();
+            if (a == null)
             {
                 MessageBox.Show(S.InfoNone, AppName, MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
-
-            string date = GetStr(state, "date");
-            string title = GetStr(state, "title");
-            string copyright = GetStr(state, "copyright");
-            string file = GetStr(state, "file");
-
-            // 索引里有更完整的标题/版权时优先用
-            Dictionary<string, object> index = ReadJson(indexPath);
-            if (index != null && index.ContainsKey(date))
-            {
-                Dictionary<string, object> entry = index[date] as Dictionary<string, object>;
-                if (entry != null)
-                {
-                    string t2 = GetStr(entry, "title");
-                    if (t2.Length > 0) { title = t2; }
-                    string c2 = GetStr(entry, "copyright");
-                    if (c2.Length > 0) { copyright = c2; }
-                }
-            }
-
-            string sizeText = "";
             try
             {
-                if (file.Length > 0 && File.Exists(file))
-                {
-                    sizeText = ((new FileInfo(file).Length) / 1024.0 / 1024.0).ToString("0.00") + " MB";
-                }
+                infoForm = new InfoForm(a[0], a[1], a[2], a[3], a[4], a[5]);
+                infoForm.FormClosed += delegate { infoForm = null; };
+                infoForm.Show(anchor);
             }
-            catch { }
-
-            string learnUrl = BuildSearchUrl(state);
-            try
-            {
-                Dictionary<string, object> full = LoadArchiveIndex();
-                if (full != null && full.ContainsKey(date))
-                {
-                    Dictionary<string, object> fe = full[date] as Dictionary<string, object>;
-                    if (fe != null)
-                    {
-                        // 索引里的字段名是 l（不是 link），两种都认，免得这段兜底一直是死代码
-                        string lk = "";
-                        if (fe.ContainsKey("l") && fe["l"] != null) { lk = fe["l"].ToString(); }
-                        else if (fe.ContainsKey("link") && fe["link"] != null) { lk = fe["link"].ToString(); }
-                        if (lk.Length > 0) { learnUrl = lk; }
-                    }
-                }
-            }
-            catch { }
-
-            using (InfoForm f = new InfoForm(date, title, copyright, file, sizeText, learnUrl))
-            {
-                f.ShowDialog(anchor);
-            }
+            catch { infoForm = null; }
         }
+
         /// <summary>按 state.json 组装信息窗口六个参数：日期/标题/版权/文件/体积/详情链接。失败返回 null。</summary>
         internal static string[] ReadStateForInfo()
         {

@@ -156,11 +156,18 @@ namespace BingWallpaperLite
             Button btnClose = new Button();
             btnClose.Text = S.BtnOK;
             btnClose.SetBounds(514, by, 86, 32);
-            btnClose.DialogResult = DialogResult.OK;
+            // 非模态窗口：DialogResult 不会关窗，必须显式 Close
+            btnClose.Click += delegate { Close(); };
             Controls.Add(btnClose);
 
             AcceptButton = btnClose;
             CancelButton = btnClose;
+            // 非模态窗体的 CancelButton 不会自动响应 Esc，得自己接
+            KeyPreview = true;
+            KeyDown += delegate(object s0, KeyEventArgs e0)
+            {
+                if (e0.KeyCode == Keys.Escape) { Close(); }
+            };
 
 
 
@@ -315,6 +322,8 @@ namespace BingWallpaperLite
                         }
                         if (st6 != null) { Reload(st6[0], st6[1], st6[2], st6[3], st6[4], st6[5]); }
                         else { RefreshFavState(); }
+                        // 窗口里的收藏改了，托盘菜单那项也得跟着变
+                        try { Program.RefreshAllPublic(); } catch { }
                     });
                 }
                 catch { }
@@ -410,6 +419,18 @@ namespace BingWallpaperLite
         }
 
         /// <summary>用新数据刷新窗口内容，布局保持不动。</summary>
+        /// <summary>按当前 state.json 重载全部内容。窗口常驻期间被再次打开时用它。</summary>
+        internal void ReloadFromState()
+        {
+            try
+            {
+                string[] st = Program.ReadStateForInfo();
+                if (st == null) { return; }
+                Reload(st[0], st[1], st[2], st[3], st[4], st[5]);
+            }
+            catch { }
+        }
+
         private void Reload(string date, string title, string copyright, string file, string sizeText, string searchUrl)
         {
             curDate = date;

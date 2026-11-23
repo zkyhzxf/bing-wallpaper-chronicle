@@ -338,6 +338,9 @@ namespace BingWallpaperLite
                         {
                             Balloon(S.BFavDone, S.FavDoneHint);
                             RefreshAll();
+                            // 收藏之后直接把「这张图是哪儿」摆到面前：
+                            // 翻图、收藏、看详情都在那个窗口里，不主动引导没人会点开
+                            try { ShowInfoPublic(); } catch { }
                         }
                         else if (opMode == "unfav")
                         {

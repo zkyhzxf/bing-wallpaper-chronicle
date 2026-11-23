@@ -1152,6 +1152,26 @@ Check '数量单位抽到 Strings，窗体不再拼中文单位' {
     return $true
 }
 
+Check '收藏后主动弹出「这张图是哪儿」，且窗口单例非模态' {
+    $i = Get-Content (Join-Path $Root 'src\Info.cs') -Raw
+    if ($i -notmatch 'private static InfoForm infoForm') { return '信息窗口不是单例' }
+    if ($i -match 'using \(InfoForm f') { return '还在用 using + ShowDialog（模态）' }
+    if ($i -notmatch 'infoForm\.Show\(anchor\)') { return '没改成非模态 Show' }
+    if ($i -notmatch 'ReloadFromState\(\)') { return '已开窗口时不刷新内容' }
+    if ($i -notmatch 'ShowInfoPublic') { return '缺给回调的公开入口' }
+    $s = Get-Content (Join-Path $Root 'src\Script.cs') -Raw
+    if ($s -notmatch 'ShowInfoPublic\(\)') { return '收藏成功后没弹窗' }
+    $favBlock = [regex]::Match($s, '(?s)opMode == "fav".*?\n                        \}')
+    if (-not $favBlock.Success) { return '找不到 fav 分支' }
+    if ($favBlock.Value -notmatch 'ShowInfoPublic') { return 'fav 分支里没弹窗' }
+    $uf = [regex]::Match($s, '(?s)opMode == "unfav".*?\n                        \}')
+    if ($uf.Success -and $uf.Value -match 'ShowInfoPublic') { return '取消收藏不该弹窗' }
+    $f = Get-Content (Join-Path $Root 'src\Forms\InfoForm.cs') -Raw
+    if ($f -notmatch 'btnClose\.Click \+= delegate \{ Close\(\); \}') { return '非模态后关闭按钮仍是 DialogResult' }
+    if ($f -notmatch 'internal void ReloadFromState') { return '缺 ReloadFromState' }
+    return $true
+}
+
 # ---------------------------------------------------------------- 汇总
 Write-Host ''
 Write-Host ('-' * 50) -ForegroundColor DarkGray
