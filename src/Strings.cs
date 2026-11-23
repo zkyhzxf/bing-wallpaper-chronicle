@@ -35,7 +35,7 @@ namespace BingWallpaperLite
         public static string NextNewer        { get { return T("下一张（更新）", "Next (newer)"); } }
         public static string Library          { get { return T("壁纸库", "Library"); } }
         public static string PickDate         { get { return T("按日期搜索…", "Search by date…"); } }
-        public static string RandomFav        { get { return T("随机一张收藏", "Random favorite"); } }
+        public static string RandomFav        { get { return T("随机换一张", "Switch to a random favorite"); } }
         public static string LockOff          { get { return T("☐ 暂停自动换图", "☐ Pause auto-change"); } }
         public static string LockOn           { get { return T("☑ 已暂停自动换图", "☑ Auto-change paused"); } }
         public static string NotifyOn         { get { return T("☑ 换图后通知", "☑ Notify on change"); } }
@@ -125,21 +125,25 @@ namespace BingWallpaperLite
                 : ("清理完成：删除 " + rm + " 个，保护 " + pt + " 个");
         }
 
-        // ---------------- 自动清理保留
-        public static string PinMenu      { get { return T("自动清理保留…", "Keep during auto-clean…"); } }
-        public static string PinMenuMB(double mb) { return _en ? ("Keep during auto-clean… (" + mb.ToString("0.0") + " MB)") : ("自动清理保留…（" + mb.ToString("0.0") + " MB）"); }
-        public static string PinTitle     { get { return T(" · 自动清理保留", " · Kept from auto-clean"); } }
-        public static string PinIntro1    { get { return T("这里记的是你用「翻页」「按日期」「搜索」取过的历史图。", "Dates recorded when you browsed, picked by date, or searched."); } }
-        public static string PinIntro2    { get { return T("登记过的日期，自动清理和归档超限清理都不会动。", "Those dates are never touched by auto-clean or archive size limits."); } }
+        // ---------------- 换过的图
+        public static string PinMenu      { get { return T("换过的图…", "Switched-to images…"); } }
+        public static string PinMenuMB(double mb) { return _en ? ("Switched-to images… (" + mb.ToString("0.0") + " MB)") : ("换过的图…（" + mb.ToString("0.0") + " MB）"); }
+        public static string PinTitle     { get { return T(" · 换过的图", " · Switched-to images"); } }
+        public static string PinIntro1    { get { return T("你换过壁纸的历史图都记在这里。收藏过的也在，位置列会标出来。", "Historical images you switched to as wallpaper. Favorites are here too — the Location column marks them."); } }
+        public static string PinIntro2    { get { return T("自动清理不会删这些图。想永久留着某张，点「加入收藏」；不想让它占着名单，点「移出名单」—— 移出只影响自动清理，不删文件。", "Auto-clean never removes these. Favorite one to keep it for good, or remove it from the list — that only affects auto-clean, it does not delete files."); } }
         public static string PinColDate   { get { return T("日期", "Date"); } }
         public static string PinColTitle  { get { return T("标题", "Title"); } }
         public static string PinColSize   { get { return T("体积", "Size"); } }
+        public static string PinColWhere  { get { return T("位置", "Location"); } }
+        public static string PinLocFav    { get { return T("收藏", "Favorite"); } }
+        public static string PinLocCache  { get { return T("缓存", "Cache"); } }
+        public static string PinLocLib    { get { return T("历史图库", "Library"); } }
         public static string PinGone      { get { return T("文件已不在", "file missing"); } }
         public static string PinNoTitle   { get { return T("(无标题)", "(no title)"); } }
         public static string PinRemove    { get { return T("移出名单", "Remove"); } }
         public static string PinOpenFile  { get { return T("打开文件", "Open file"); } }
         public static string PinClose     { get { return T("关闭", "Close"); } }
-        public static string PinHintMore  { get { return T("这些日期在自动清理时被跳过，可在「清理 → 自动清理保留」里移出。", "Skipped during auto-clean; manage them under Cleanup → Keep during auto-clean."); } }
+        public static string PinHintMore  { get { return T("这些日期在自动清理时被跳过，可在「换过的图」里移出。", "Skipped during auto-clean; manage them under Switched-to images."); } }
         public static string PinNote      { get { return T("自动清理缓存（30 天规则）会跳过这些日期。手动的「清空缓存」「清理归档图片」不看这份清单，只保留收藏和当前壁纸。归档满了会分两轮清：先删名单外的，空间还不够才动名单里的。", "The 30-day auto-clean skips these dates. Manual \"clear cache\" and \"clean archived images\" ignore this list and keep only favorites and the current wallpaper. When the archive fills up it clears in two passes: unlisted images first, only then the ones on this list."); } }
         public static string PinSum(int n, double mb) { return _en ? (n + " entries · " + mb.ToString("0.0") + " MB") : ("共 " + n + " 项 · " + mb.ToString("0.0") + " MB"); }
         public static string FavSumFiltered(int hit, int total, double mb) { return _en ? (hit + " of " + total + " · " + mb.ToString("0.0") + " MB") : ("匹配 " + hit + " / 共 " + total + " 项 · " + mb.ToString("0.0") + " MB"); }
@@ -172,7 +176,7 @@ namespace BingWallpaperLite
         public static string CleanTotal       { get { return T("图片总数", "Total files"); } }
         public static string CleanSize        { get { return T("占用空间", "Total size"); } }
         public static string CleanFavProtected{ get { return T("已被收藏（保留）", "Favorited (kept)"); } }
-        public static string CleanPinProtected{ get { return T("清单保护（保留，可在「自动清理保留」调整）", "Pinned (kept, adjustable in auto-clean list)"); } }
+        public static string CleanPinProtected{ get { return T("换过的图（不会自动清，可在此调整）", "Switched-to (never auto-cleaned, adjustable here)"); } }
         public static string CleanCurProtected{ get { return T("当前壁纸（保留，删了桌面会黑）", "Current (kept — deleting it would blank the desktop)"); } }
         public static string CleanCurMoved  { get { return T("当前壁纸（将移回缓存）", "Current (will return to cache)"); } }
         public static string CleanActual      { get { return T("实际可清理", "Will remove"); } }
@@ -617,7 +621,7 @@ namespace BingWallpaperLite
                    "To keep one image: open \"Keep during auto-clean\" and click \"Add to favorites\"." + Environment.NewLine +
                    "To move a batch out: use \"Library → Download wallpapers…\".")
                 : ("归档有 " + mb + " MB 上限，满了会从最旧的开始自动清理。" + Environment.NewLine +
-                   "单张留存：在「自动清理保留」里点「加入收藏」。" + Environment.NewLine +
+                   "单张留存：在「换过的图」里点「加入收藏」。" + Environment.NewLine +
                    "批量搬走：用「壁纸库 → 导出已下载壁纸…」，勾上「归档」，复制到指定文件夹。");
         }
         public static string ArchOffLine    { get { return T("已关闭，8 天以外的日期只能走压缩版", "Disabled — dates older than 8 days fall back to compressed"); } }
@@ -663,6 +667,9 @@ namespace BingWallpaperLite
     Images in favorites are never removed automatically.
     ""Clean cache"" and ""Clean archive"" free space by those rules and always keep
     favorites and the current wallpaper.
+    Legacy archive images (before Mar 2016) sit outside that 500 MB quota and are never
+    touched by any automatic clean-up — they cost too much to re-download from the
+    mirrors, and clearing them requires ticking the box manually.
 
 5. Gallery mode
     Turn it on to browse freely without piling up files.
@@ -752,6 +759,8 @@ namespace BingWallpaperLite
     缓存保留 30 天，归档上限 500 MB，超过就从最旧的开始清。
     收藏夹里的图永远不会被自动清理。
     「清理缓存」「清理归档」会按上述规则腾空间，收藏与当前壁纸始终保留。
+    老存档（2016 年 3 月之前的镜像图）在归档额度之外单独保管，任何自动清理都不会动它 ——
+    这些图从第三方站重新下载的成本太高，而且要清得在「清理归档」里显式勾选。
 
 五、画廊模式
     想随手翻着看、又不想攒下一堆文件时打开它。
@@ -963,7 +972,7 @@ namespace BingWallpaperLite
         public static string RecentHeaderN(int n)   { return RecentHeader + n + CountTail; }
         public static string ArchiveHeaderN(int n)  { return ArchiveHeader + n + CountTail; }
         public static string MoreRest(int n)        { return _en ? (n + " more…") : ("还有 " + n + " 张…"); }
-        public static string RandomFavN(int n)      { return _en ? ("Random favorite (" + n + ")") : ("随机一张收藏（" + n + " 张）"); }
+        public static string RandomFavN(int n)      { return _en ? ("Switch to a random favorite (" + n + " total)") : ("随机换一张（共 " + n + " 张）"); }
         public static string RandomCacheN(int n)    { return _en ? ("Random (favorites empty, cache " + n + ")") : ("随机一张（收藏为空，用缓存 " + n + " 张）"); }
         public static string RandomEmpty()          { return _en ? "Random (nothing available)" : "随机一张（没有可选的图）"; }
         public static string TaskNextAt(string next){ return TaskNormal + TaskNext + next; }

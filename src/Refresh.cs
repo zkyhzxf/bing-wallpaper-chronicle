@@ -646,7 +646,7 @@ namespace BingWallpaperLite
             RefreshAll();
         }
 
-        /// <summary>打开「自动清理保留」窗口。</summary>
+        /// <summary>打开「换过的图」窗口。</summary>
         private static void DoPinnedList()
         {
             if (busy) { return; }

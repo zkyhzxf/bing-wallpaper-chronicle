@@ -914,6 +914,37 @@ Check '浏览更多壁纸改成打开本机照片墙' {
     return $true
 }
 
+Check '换过的图：改名、挪位置、加位置列、双击换图' {
+    $s = Get-Content (Join-Path $Root 'src\Strings.cs') -Raw
+    if ($s -match '自动清理保留') { return 'Strings.cs 里还留着「自动清理保留」' }
+    if ($s -notmatch 'PinMenu\s+\{ get \{ return T\("换过的图…"') { return '菜单项没改成「换过的图」' }
+    if ($s -notmatch 'PinColWhere') { return '没有位置列文案' }
+    if ($s -notmatch 'PinLocLib') { return '没有历史图库位置文案' }
+    if ($s -match '随机一张收藏') { return '「随机一张收藏」没改' }
+
+    $m = Get-Content (Join-Path $Root 'src\Menu.cs') -Raw
+    if ($m -notmatch 'pinmgr') { return 'Menu.cs 里找不到 pinmgr' }
+    $pinIdx = $m.IndexOf('pinMgrItem = MakeItem(S.PinMenu')
+    $cleanIdx = $m.IndexOf('ToolStripMenuItem cleanMenu')
+    if ($pinIdx -lt 0) { return '没有在主菜单创建 pinMgrItem' }
+    if ($cleanIdx -gt 0 -and $pinIdx -gt $cleanIdx) { return 'pinMgrItem 仍在清理菜单里创建' }
+
+    $p = Get-Content (Join-Path $Root 'src\Forms\PinnedForm.cs') -Raw
+    if ($p -notmatch 'lst\.DoubleClick \+= delegate \{ ApplySelectedPinned\(\); \}') { return '双击没改成换这张' }
+    if ($p -notmatch 'private void ApplySelectedPinned') { return '没有 ApplySelectedPinned' }
+    if ($p -notmatch 'private static string LocationOf') { return '没有 LocationOf' }
+    if ($p -notmatch 'ContextMenuStrip cm') { return '打开文件没移到右键菜单' }
+    return $true
+}
+
+Check '帮助与 README 说明老存档不受自动清理' {
+    $s = Get-Content (Join-Path $Root 'src\Strings.cs') -Raw
+    if ($s -notmatch '老存档（2016 年 3 月之前的镜像图）在归档额度之外单独保管') { return '帮助第四节没提老存档不受自动清理' }
+    $r = Get-Content (Join-Path $Root 'README.md') -Raw
+    if ($r -notmatch '老存档不受任何自动清理') { return 'README 没写老存档不受自动清理' }
+    return $true
+}
+
 # ---------------------------------------------------------------- 汇总
 Write-Host ''
 Write-Host ('-' * 50) -ForegroundColor DarkGray

@@ -98,6 +98,11 @@ namespace BingWallpaperLite
             };
             m.Items.Add(favMgr);
 
+            // 换过的图：和收藏管理并列 —— 它是「找回我的图」的入口，不是清理工具
+            ToolStripMenuItem pinMgrItem = MakeItem(S.PinMenu, delegate { DoPinnedList(); });
+            pinMgrItem.Name = "pinmgr";
+            m.Items.Add(pinMgrItem);
+
             m.Items.Add(new ToolStripSeparator());
 
             m.Items.Add(MakeKeepOpenItem(S.ChangeToday, "-Index 0"));
@@ -231,9 +236,6 @@ namespace BingWallpaperLite
                 WriteConfig(c);
             };
             cleanMenu.DropDownItems.Add(autoCleanItem);
-            ToolStripMenuItem pinMgrItem = MakeItem(S.PinMenu, delegate { DoPinnedList(); });
-            pinMgrItem.Name = "pinmgr";
-            cleanMenu.DropDownItems.Add(pinMgrItem);
             cleanMenu.DropDownItems.Add(new ToolStripSeparator());
 
             // 缓存

@@ -6,7 +6,7 @@ using System.Windows.Forms;
 
 namespace BingWallpaperLite
 {
-    /// <summary>自动清理保留：查看、预览、移出清单、加入收藏、清理失效项。只解除保留，永不删图。</summary>
+    /// <summary>换过的图：查看、预览、换这张、移出清单、加入收藏、清理失效项。只解除保留，永不删图。</summary>
     internal sealed class PinnedForm : Form
     {
         private readonly ListView lst;
@@ -22,6 +22,7 @@ namespace BingWallpaperLite
         private int sortCol = 0;
         private bool sortAsc = true;
         private int totalRows = 0;
+        private bool busy = false;
         private readonly List<string> dates = new List<string>();
         private readonly List<string> files = new List<string>();
 
@@ -83,12 +84,13 @@ namespace BingWallpaperLite
             lst.FullRowSelect = true;
             lst.MultiSelect = false;
             lst.HideSelection = false;
-            lst.Columns.Add(S.PinColDate, 92);
-            lst.Columns.Add(S.PinColTitle, 360);
-            lst.Columns.Add(S.PinColSize, 96, HorizontalAlignment.Right);
+            lst.Columns.Add(S.PinColDate, 88);
+            lst.Columns.Add(S.PinColTitle, 236);
+            lst.Columns.Add(S.PinColWhere, 84);
+            lst.Columns.Add(S.PinColSize, 90, HorizontalAlignment.Right);
             lst.ItemChecked += delegate { RefreshSum(); };
             lst.SelectedIndexChanged += delegate { OnSelectionChanged(); };
-            lst.DoubleClick += delegate { OpenSelected(); };
+            lst.DoubleClick += delegate { ApplySelectedPinned(); };
             lst.ColumnClick += delegate(object s, ColumnClickEventArgs e) { SortBy(e.Column); };
             Controls.Add(lst);
 
@@ -131,10 +133,16 @@ namespace BingWallpaperLite
             Controls.Add(btnRemove);
 
             btnOpen = new Button();
-            btnOpen.Text = S.PinOpenFile;
+            btnOpen.Text = S.SrchApply;
             btnOpen.SetBounds(380, 512, 96, 30);
-            btnOpen.Click += delegate { OpenSelected(); };
+            btnOpen.Click += delegate { ApplySelectedPinned(); };
             Controls.Add(btnOpen);
+
+            // 「打开文件」从按钮移到右键菜单：按钮位置让给更常用的「换这张」
+            ContextMenuStrip cm = new ContextMenuStrip();
+            cm.Items.Add(S.PinOpenFile, null, delegate { OpenSelected(); });
+            cm.Items.Add(S.WallShowInFolder, null, delegate { ShowSelectedInFolder(); });
+            lst.ContextMenuStrip = cm;
 
             Button btnClose = new Button();
             btnClose.Text = S.PinClose;
@@ -178,7 +186,7 @@ namespace BingWallpaperLite
                     Dictionary<string, object> e = titles[d] as Dictionary<string, object>;
                     if (e != null && e.ContainsKey("copyright") && e["copyright"] != null) { cpr = e["copyright"].ToString(); }
                 }
-                rows.Add(new string[] { d, title, mb.ToString("0.0"), file == null ? "" : file, cpr });
+                rows.Add(new string[] { d, title, mb.ToString("0.0"), file == null ? "" : file, cpr, LocationOf(file) });
             }
             totalRows = rows.Count;
 
@@ -215,6 +223,7 @@ namespace BingWallpaperLite
             {
                 ListViewItem it = new ListViewItem(r[0]);
                 it.SubItems.Add(r[1]);
+                it.SubItems.Add(r.Length > 5 ? r[5] : "");
                 if (r[3].Length == 0) { it.SubItems.Add(S.PinGone); it.ForeColor = SystemColors.GrayText; }
                 else { it.SubItems.Add(r[2] + " MB"); }
                 it.Tag = r[0];
@@ -252,6 +261,21 @@ namespace BingWallpaperLite
                 }
             }
             return S.PinNoTitle;
+        }
+
+        /// <summary>这张图现在在哪儿：收藏 / 缓存 / 历史图库（归档和老存档对用户是一回事）。</summary>
+        private static string LocationOf(string file)
+        {
+            if (string.IsNullOrEmpty(file)) { return ""; }
+            try
+            {
+                string fav = Program.FavDirPath;
+                string cache = Program.CacheDirPath;
+                if (!string.IsNullOrEmpty(fav) && file.StartsWith(fav, StringComparison.OrdinalIgnoreCase)) { return S.PinLocFav; }
+                if (!string.IsNullOrEmpty(cache) && file.StartsWith(cache, StringComparison.OrdinalIgnoreCase)) { return S.PinLocCache; }
+            }
+            catch { }
+            return S.PinLocLib;
         }
 
         private static string FindFileOfDate(string date)
@@ -465,6 +489,47 @@ namespace BingWallpaperLite
                 return;
             }
             try { Program.OpenTarget(files[idx]); } catch { }
+        }
+
+        private void ShowSelectedInFolder()
+        {
+            if (lst.SelectedItems.Count == 0) { return; }
+            int idx = lst.SelectedItems[0].Index;
+            if (idx < 0 || idx >= files.Count || files[idx] == null) { return; }
+            try
+            {
+                System.Diagnostics.Process.Start("explorer.exe", "/select,\"" + files[idx] + "\"");
+            }
+            catch { }
+        }
+
+        /// <summary>把选中这张设为桌面壁纸（和照片墙、关键词搜索同一个动作：走 -Date，顺带升画质）。</summary>
+        private void ApplySelectedPinned()
+        {
+            if (busy || lst.SelectedItems.Count == 0) { return; }
+            string d8 = lst.SelectedItems[0].Tag as string;
+            if (string.IsNullOrEmpty(d8) || d8.Length != 8) { return; }
+            busy = true;
+            Cursor = Cursors.WaitCursor;
+            SetHint(S.SrchWorking);
+            string dd = d8;
+            System.Threading.ThreadPool.QueueUserWorkItem(delegate
+            {
+                int code = Program.RunScriptExit("-Date " + dd);
+                try
+                {
+                    BeginInvoke((MethodInvoker)delegate
+                    {
+                        busy = false;
+                        Cursor = Cursors.Default;
+                        if (code == 0 || code == 8) { SetHint(S.SrchSwitched(dd)); }
+                        else if (code == 2) { SetHint(S.SrchWorking); }
+                        else if (code == 11) { SetHint(S.WallApplyFail); }
+                        else { SetHint(S.SrchSwitchFail); }
+                    });
+                }
+                catch { }
+            });
         }
 
         private static int PickInt(string json, string key)
