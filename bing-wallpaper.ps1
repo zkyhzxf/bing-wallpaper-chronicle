@@ -374,6 +374,10 @@ if ($script:Takeover -and -not $DryRun) {
     if ($CleanArchiveIndex) { $roBlocked += '-CleanArchiveIndex' }
     if ($CleanFavorites) { $roBlocked += '-CleanFavorites' }
     if ($WallKeep) { $roBlocked += '-WallKeep' }
+    # 画廊模式在接管下没有意义：接管是「用我自己的图库」，画廊是「临时试看随手清」，
+    # 两套语义混在一起会让人分不清当前壁纸到底挂在哪个仓库
+    if ($Gallery) { $roBlocked += '-Gallery' }
+    if ($GalleryClear) { $roBlocked += '-GalleryClear' }
     if ($roBlocked.Count -gt 0) {
         Write-Log ("接管模式只读，拒绝执行：" + ($roBlocked -join ' / ')) 'ERROR'
         exit 10

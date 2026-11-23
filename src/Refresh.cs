@@ -103,6 +103,38 @@ namespace BingWallpaperLite
             catch { }
         }
 
+        /// <summary>
+        /// 兜底自愈：注册表里的当前壁纸路径如果已经不存在（被哪条清理路径误删、
+        /// 或者用户手动挪走了），直接退回今天。
+        /// 比「逐个清理函数记得保护当前壁纸」更彻底 —— 它不关心是谁删的。
+        /// 节流 10 分钟，避免今天取不到图时反复重试。
+        /// </summary>
+        private static DateTime lastHealAt = DateTime.MinValue;
+
+        internal static void EnsureWallpaperAlive()
+        {
+            try
+            {
+                if ((DateTime.Now - lastHealAt).TotalMinutes < 10) { return; }
+                string wp = Program.CurrentWallpaperPath();
+                if (string.IsNullOrEmpty(wp)) { return; }          // 压根没设壁纸，不管
+                if (File.Exists(wp)) { return; }                   // 正常
+                // 路径已失效
+                lastHealAt = DateTime.Now;
+                try
+                {
+                    string p = Path.Combine(Path.GetTempPath(), "BingWallpaperLite.log");
+                    File.AppendAllText(p,
+                        DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "  [HEAL]  当前壁纸文件已不存在，退回今天：" + wp + "\r\n",
+                        new UTF8Encoding(false));
+                }
+                catch { }
+                Balloon(S.HealTitle, S.HealHint);
+                anchor.BeginInvoke((MethodInvoker)delegate { RunScriptEx("-Index 0", "heal"); });
+            }
+            catch { }
+        }
+
         private static void RefreshAll()
         {
             if (refreshing) { return; }
@@ -127,6 +159,8 @@ namespace BingWallpaperLite
                 SyncExternalWallpaper();
                 // 常驻的信息窗口要跟着换图走：菜单、收藏管理、照片墙、自动换图都经过这里
                 try { ReloadInfoIfOpen(); } catch { }
+                // 壁纸路径失效就退回今天：不管是被哪条清理路径删的
+                try { EnsureWallpaperAlive(); } catch { }
             }
             catch { }
             finally { refreshing = false; }

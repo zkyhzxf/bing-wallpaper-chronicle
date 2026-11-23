@@ -1322,6 +1322,28 @@ Check '中文标题映射取值正确，不会写出 System.Collections.Hashtabl
     return $true
 }
 
+Check '壁纸路径失效就退回今天，接管下禁用画廊' {
+    $r = Get-Content (Join-Path $Root 'src\Refresh.cs') -Raw
+    if ($r -notmatch 'internal static void EnsureWallpaperAlive') { return '缺 EnsureWallpaperAlive' }
+    $ra = [regex]::Match($r, '(?s)private static void RefreshAll\(\).*?finally \{ refreshing = false; \}')
+    if (-not $ra.Success) { return '找不到 RefreshAll' }
+    if ($ra.Value -notmatch 'EnsureWallpaperAlive\(\)') { return 'RefreshAll 没有调用自愈' }
+    $al = [regex]::Match($r, '(?s)internal static void EnsureWallpaperAlive.*?\n        \}')
+    if (-not $al.Success) { return '找不到 EnsureWallpaperAlive 主体' }
+    if ($al.Value -notmatch 'File\.Exists\(wp\)') { return '没有检查文件是否存在' }
+    if ($al.Value -notmatch '"-Index 0"') { return '失效后没有退回今天' }
+    if ($al.Value -notmatch 'TotalMinutes < 10') { return '没有节流，今天取不到图时会反复重试' }
+
+    $ps = Get-Content (Join-Path $Root 'bing-wallpaper.ps1') -Raw
+    $rb = [regex]::Match($ps, '(?s)roBlocked = @\(\).*?exit 10')
+    if (-not $rb.Success) { return '找不到接管只读拦截' }
+    if ($rb.Value -notmatch '\$Gallery\b') { return '接管下没拦 -Gallery' }
+    if ($rb.Value -notmatch '\$GalleryClear') { return '接管下没拦 -GalleryClear' }
+    $m = Get-Content (Join-Path $Root 'src\Menu.cs') -Raw
+    if ($m -notmatch 'GalleryTakeoverBlocked') { return '菜单里没有接管下的画廊拦截' }
+    return $true
+}
+
 # ---------------------------------------------------------------- 汇总
 Write-Host ''
 Write-Host ('-' * 50) -ForegroundColor DarkGray

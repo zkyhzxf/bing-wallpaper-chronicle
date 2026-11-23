@@ -51,6 +51,17 @@ namespace BingWallpaperLite
             galleryToggle.Click += delegate
             {
                 keepMenuOpenAfterClick = true;
+                // 接管模式下画廊没有意义：接管是「用我自己的图库」，
+                // 画廊是「临时试看、退出即清」，两套语义混在一起会让人分不清
+                if (Program.TakeoverActive())
+                {
+                    anchor.BeginInvoke((MethodInvoker)delegate
+                    {
+                        MessageBox.Show(S.GalleryTakeoverBlocked, Program.AppName,
+                            MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    });
+                    return;
+                }
                 bool turnOn = !GalleryMode;
                 GalleryMode = turnOn;
                 // 开、关都清一次：开时清上次的残留，关时清本次看过的

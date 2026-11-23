@@ -1,4 +1,4 @@
-﻿﻿﻿using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -894,6 +894,9 @@ namespace BingWallpaperLite
         public static string StoryCollapse   { get { return T("收起", "Collapse"); } }
         public static string StoryLoading    { get { return T("正在获取故事…", "Loading story…"); } }
         public static string CrashTitle      { get { return T("遇到一个问题", "Something went wrong"); } }
+        public static string HealTitle       { get { return T("壁纸文件不在了，已退回今天", "Wallpaper file is gone — switched back to today"); } }
+        public static string HealHint        { get { return T("原来的文件可能被清理掉了，这里直接换回今天的图", "The previous file was cleaned up; switched to today's image"); } }
+        public static string GalleryTakeoverBlocked { get { return T("接管模式下不能用画廊模式。\r\n画廊是「临时试看、退出即清」，而接管是换一个长期图库，两者语义冲突。\r\n\r\n要试看临时图片，先退出接管。", "Gallery mode is unavailable while a takeover folder is active.\r\nGallery is a throwaway preview area, takeover is a long-term library.\r\n\r\nLeave takeover first if you want to browse temporary images."); } }
         public static string CrashHint       { get { return T("已经记下现场，程序继续运行。日志：%TEMP%\\BingWallpaperLite.log", "Details were logged and the app keeps running. Log: %TEMP%\\BingWallpaperLite.log"); } }
         /// <summary>数量 + 单位。中文用「12 张」，英文用「12 images」，别在窗体里直接拼中文单位。</summary>
         public static string UnitImg(int n)  { return _en ? (n + " images") : (n + " 张"); }
