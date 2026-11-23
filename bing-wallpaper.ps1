@@ -106,7 +106,8 @@ param(
     [switch]$Festivals,
     [string]$Festival = '',
     [switch]$MigrateOld,
-    [switch]$FillLibrary
+    [switch]$FillLibrary,
+    [switch]$UpdateStoryMap
 )
 
 # ---------------------------------------------------------------- 退出码约定
@@ -667,7 +668,20 @@ function Get-Story {
     }
     if ($NoFetch) { return '' }
     $map = Get-StoryMap
-    if (-not $map.ContainsKey($Date)) { return '' }
+    if (-not $map.ContainsKey($Date)) {
+        # 映射表是静态打包的，新日子没有 slug 就永远取不到故事。
+        # 只对最近 30 天自愈一次 —— 早期日期没有就是没有，不该每次触发网络请求。
+        $recentS = $false
+        try { $recentS = ($Date -ge (Get-Date).AddDays(-30).ToString('yyyyMMdd')) } catch { }
+        if ($recentS) {
+            try {
+                & $PSCommandPath -UpdateStoryMap *> $null
+                $script:StoryMap = $null          # 子进程写过盘了，本进程缓存要失效
+                $map = Get-StoryMap
+            } catch { }
+        }
+        if (-not $map.ContainsKey($Date)) { return '' }
+    }
     $slug = [string]$map[$Date]
     if (-not $slug) { return '' }
     try {
@@ -2590,6 +2604,18 @@ if ($Status) {
     $cacheCount = @(Get-ChildItem $CacheDir -Filter '*.jpg' -File -ErrorAction SilentlyContinue).Count
     $archCount = @(Get-ChildItem $ArchiveImgDir -Filter '*.jpg' -File -ErrorAction SilentlyContinue).Count
 
+    # 故事映射表新鲜度：静态打包的表会随时间过期，过期后新日子取不到故事
+    $smNow = @{}
+    $storyLast = ''
+    $storyStale = 0
+    try {
+        $smNow = Get-StoryMap
+        if ($smNow.Count -gt 0) {
+            $storyLast = (@($smNow.Keys) | Sort-Object)[-1]
+            $storyStale = [int]((Get-Date).Date - [datetime]::ParseExact($storyLast, 'yyyyMMdd', $null)).Days
+        }
+    } catch { }
+
     $obj = [ordered]@{
         current = [ordered]@{
             date      = $(if ($st) { [string]$st.date } else { '' })
@@ -2617,6 +2643,11 @@ if ($Status) {
             ageDays  = $idxAgeDays
             minDate  = $ArchiveMinDate
         }
+        storyMap = [ordered]@{
+            entries  = $(if ($storyLast) { $smNow.Count } else { 0 })
+            lastDate = $storyLast
+            staleDays = $storyStale
+        }
         version = $appVer
     }
     $txt = $obj | ConvertTo-Json -Depth 5
@@ -2626,6 +2657,10 @@ if ($Status) {
         Write-Output ('当前：' + $obj.current.title + '（' + $obj.current.date + '）')
         Write-Output ('收藏 ' + $favCount + ' / 缓存 ' + $cacheCount + ' / 归档 ' + $archCount)
         Write-Output ('索引 ' + $idxCount + ' 条，' + $idxAgeDays + ' 天前')
+        if ($storyLast) {
+            $staleMsg = if ($storyStale -gt 3) { ' ← 已过期 ' + $storyStale + ' 天，跑 -UpdateStoryMap 可补' } else { '' }
+            Write-Output ('故事映射 ' + $smNow.Count + ' 条，最晚 ' + $storyLast + $staleMsg)
+        }
     }
     # -Status 自己已输出结果，直接退出，不走 Exit-Run（否则 -Json 会再输出一段）
     exit 0
@@ -3274,6 +3309,58 @@ try {
     }
 
 # 补齐图库：把范围内索引里有、图库里没有的日期一张张补进来。只增，不覆盖。
+# 补齐故事映射表：story-map.json 是静态打包的「日期 → todaybing slug」，
+# 不更新的话新日子即使源站有故事也取不到（没有 slug 就直接返回空）。
+# 做法：官方 API 给图名（OHR.FibonacciFern），todaybing 的 slug 也含图名
+# （fibonacci-fern-zh-233497），两边按图名对齐，不猜顺序。
+if ($UpdateStoryMap) {
+    $addedS = 0
+    $matchedS = 0
+    try {
+        $pS = Invoke-Web @{ Uri = 'https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=8&mkt=zh-CN'; TimeoutSec = 30; UseBasicParsing = $true }
+        $rS = Invoke-WebRequest @pS
+        $objS = $rS.Content | ConvertFrom-Json
+        $pS2 = Invoke-Web @{ Uri = 'https://www.todaybing.com/'; TimeoutSec = 30; UseBasicParsing = $true }
+        $rS2 = Invoke-WebRequest @pS2
+        $slugs = @([regex]::Matches([string]$rS2.Content, '/bing/([a-z0-9-]+-zh-\d+)') |
+                   ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique)
+
+        Write-Log ('故事映射：官方 ' + @($objS.images).Count + ' 天，站上 slug ' + $slugs.Count + ' 个')
+
+        $mapS = Get-StoryMap
+        foreach ($img in @($objS.images)) {
+            $ub = [string]$img.urlbase
+            $mS = [regex]::Match($ub, 'OHR\.([A-Za-z0-9]+)')
+            if (-not $mS.Success) { continue }
+            $nameS = $mS.Groups[1].Value
+            # 驼峰转中划线小写：FibonacciFern -> fibonacci-fern
+            $kebab = ($nameS -creplace '([a-z0-9])([A-Z])', '$1-$2').ToLowerInvariant()
+            $hitS = $slugs | Where-Object { $_ -like ($kebab + '-zh-*') } | Select-Object -First 1
+            if (-not $hitS) { continue }
+            $matchedS++
+            # Bing 的 startdate 是 UTC；国内这张图在次日 00:00 上线
+            $dS = ''
+            try { $dS = [datetime]::ParseExact([string]$img.startdate, 'yyyyMMdd', $null).AddDays(1).ToString('yyyyMMdd') } catch { continue }
+            if ($mapS.ContainsKey($dS)) { continue }
+            $mapS[$dS] = $hitS
+            $addedS++
+            Write-Log ('  补进 ' + $dS + ' → ' + $hitS)
+        }
+
+        if ($addedS -gt 0) {
+            [System.IO.File]::WriteAllText($StoryMapPath, ($mapS | ConvertTo-Json -Depth 3), (New-Object System.Text.UTF8Encoding($false)))
+            Write-Log ('故事映射已更新：新增 ' + $addedS + ' 条（匹配 ' + $matchedS + ' 天）')
+        } else {
+            Write-Log ('故事映射无需更新（匹配 ' + $matchedS + ' 天，都已在表里）')
+        }
+        Write-Output ('{"added":' + $addedS + ',"matched":' + $matchedS + '}')
+        Exit-Run 0
+    } catch {
+        Write-Log ('故事映射更新失败：' + $_.Exception.Message) 'ERROR'
+        Exit-Run 1
+    }
+}
+
 if ($FillLibrary) {
     # 正常模式的归档受 archiveMaxMB 上限自动清理，补进去的图很快会被删掉，补了白补还耗流量。
     if (-not $script:Takeover) {

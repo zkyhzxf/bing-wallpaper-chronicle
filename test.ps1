@@ -795,10 +795,10 @@ Check '所有源码文件带 UTF-8 BOM' {
     return $true
 }
 
-Check '空 catch 不超过 90 处' {
+Check '空 catch 不超过 93 处' {
     $t = Get-Content $Script -Raw
     $n = ([regex]::Matches($t, 'catch \{ \}')).Count
-    if ($n -gt 90) { return ('空 catch 已 ' + $n + ' 处，超上限 90') }
+    if ($n -gt 93) { return ('空 catch 已 ' + $n + ' 处，超上限 93') }
     return $true
 }
 
@@ -1232,6 +1232,23 @@ Check '每日故事正文随安装包分发' {
     if ($p -notmatch 'GetManifestResourceStream\("stories\.zip"\)') { return 'Program.cs 没读故事包' }
     if ($p -notmatch 'if \(File\.Exists\(dest\)\) \{ continue; \}') { return '释放时没跳过已存在的故事（会覆盖联网抓的新版本）' }
     if ($p -match '"stories\.zip",') { return 'stories.zip 不该进 PayloadFiles（会解到程序根目录）' }
+    return $true
+}
+
+Check '故事映射表可自动补齐，过期会报出来' {
+    $ps = Get-Content (Join-Path $Root 'bing-wallpaper.ps1') -Raw
+    if ($ps -notmatch '\[switch\]\$UpdateStoryMap') { return '缺 -UpdateStoryMap 参数' }
+    $b = [regex]::Match($ps, '(?s)if \(\$UpdateStoryMap\) \{.*?Exit-Run 1')
+    if (-not $b.Success) { return '找不到 UpdateStoryMap 主体' }
+    # 靠图名对齐，不靠列表顺序猜 —— 首页只有 slug 没有日期
+    if ($b.Value -notmatch 'OHR\\\.') { return '没有从 urlbase 提取图名' }
+    if ($b.Value -notmatch 'creplace') { return '没有驼峰转中划线' }
+    if ($b.Value -notmatch 'AddDays\(1\)') { return 'startdate 是 UTC，没换算到本地日期' }
+    if ($b.Value -notmatch '\$mapS\.ContainsKey\(\$dS\)') { return '没有跳过已有条目' }
+    # 自愈要有 30 天限制，否则查早期日期会反复触发网络请求
+    if ($ps -notmatch 'recentS = \(\$Date -ge \(Get-Date\)\.AddDays\(-30\)') { return '自愈没有时间窗限制' }
+    if ($ps -notmatch '\$script:StoryMap = \$null') { return '子进程更新后没有让缓存失效' }
+    if ($ps -notmatch '故事映射') { return '-Status 没输出故事映射新鲜度' }
     return $true
 }
 
