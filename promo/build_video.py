@@ -2,7 +2,7 @@
 """必应壁纸编年史 · 30s animatic 渲染管线
 读 promo/tts/durations.json -> 算时间轴 -> 出字幕 -> 跑 ffmpeg -> ffprobe 验收
 """
-import json, os, re, subprocess, sys
+import json, os, re, subprocess, sys, time
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 SCR = os.path.join(BASE, "screens")
@@ -197,29 +197,42 @@ def make_sub_png(text, path):
 
 sub_pngs = [make_sub_png(s["text"], os.path.join(TMP, f"sub_{i:02d}.png")) for i, s in enumerate(subs, 1)]
 
-# ---------- 5. 静帧 -> 带缓推的片段 ----------
+# ---------- 5. 场景 -> 逐帧渲染片段（每个镜头独立运动） ----------
+import scenes
+from PIL import Image
+
+print("场景类:", [c.__name__ for grp in scenes.CLIP_SCENES for c in grp])
 concat_files = []
 for ci, p in enumerate(plan):
-    parts = []
-    for k, (img, d) in enumerate(p["items"]):
-        src = os.path.join(SCR, img + ".png")
-        seg_out = os.path.join(TMP, f"c{p['clip']}_{k}.mp4")
-        frames = max(2, int(round(d * FPS)))
-        vf = (f"scale=2400:1350:force_original_aspect_ratio=increase,crop=2400:1350,"
-              f"zoompan=z='min(1+0.055*on/{frames},1.055)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
-              f"d=1:s={W}x{H}:fps={FPS},setsar=1,format=yuv420p")
-        run([FF, "-y", "-loop", "1", "-framerate", str(FPS), "-i", src, "-t", f"{d:.3f}",
-             "-vf", vf, "-c:v", "libx264", "-crf", "18", "-preset", "medium",
-             "-pix_fmt", "yuv420p", "-an", seg_out], tag=f"seg{img}")
-        parts.append(seg_out)
-    lst = os.path.join(TMP, f"clip{p['clip']}.txt")
-    with open(lst, "w", encoding="utf-8") as f:
-        for pp in parts:
-            f.write("file '%s'\n" % pp.replace("\\", "/"))
+    classes = scenes.CLIP_SCENES[ci]
+    if len(classes) != len(p["items"]):
+        raise SystemExit(f"clip{p['clip']} 场景数 {len(classes)} 与静帧数 {len(p['items'])} 不符")
+    durations = [round(x[1], 3) for x in p["items"]]
     clip_out = os.path.join(TMP, f"clip{p['clip']}.mp4")
-    run([FF, "-y", "-f", "concat", "-safe", "0", "-i", lst, "-c", "copy", clip_out], tag=f"concat{p['clip']}")
+    cmd = [FF, "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-r", str(FPS),
+           "-i", "-", "-c:v", "libx264", "-crf", "18", "-preset", "medium",
+           "-pix_fmt", "yuv420p", "-an", clip_out]
+    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    canvas = Image.new("RGBA", (W, H), (0, 0, 0, 255))
+    instances = [c() for c in classes]
+    t_start = time.time()
+    n_frames = 0
+    for inst, d in zip(instances, durations):
+        n = max(2, round(d * FPS))
+        n_frames += n
+        for k in range(n):
+            tint = k / (n - 1) if n > 1 else 1.0
+            inst.render(canvas, tint)
+            proc.stdin.write(canvas.convert("RGB").tobytes())
+            canvas.paste((0, 0, 0, 255), (0, 0, W, H))
+    proc.stdin.close()
+    err = proc.stderr.read().decode("utf-8", "replace")
+    proc.wait()
+    if proc.returncode != 0:
+        print("[FAIL render]", err[-1500:])
+        sys.exit(1)
+    print(f"  clip{p['clip']}: {p['len']}s  {durations}  {n_frames}f  {time.time()-t_start:.1f}s")
     concat_files.append(clip_out)
-    print(f"  clip{p['clip']}: {p['len']}s  {[round(x[1],2) for x in p['items']]}")
 
 # ---------- 6. xfade 串联 ----------
 inputs = []

@@ -94,7 +94,15 @@ def place(canvas, layer, cx, cy, scale=1.0, alpha=1.0, rot=0.0, anchor="mm"):
         x, y = int(cx - im.width), int(cy - im.height / 2)
     else:
         x, y = int(cx), int(cy)
-    canvas.alpha_composite(im, (x, y))
+    # 裁到画布内，越界直接跳过（长页面滚动时会超出）
+    x0, y0 = max(0, -x), max(0, -y)
+    x1 = im.width - max(0, x + im.width - canvas.width)
+    y1 = im.height - max(0, y + im.height - canvas.height)
+    if x1 <= x0 or y1 <= y0:
+        return
+    if (x0, y0, x1, y1) != (0, 0, im.width, im.height):
+        im = im.crop((x0, y0, x1, y1))
+    canvas.alpha_composite(im, (max(0, x), max(0, y)))
 
 
 def rect_layer(w, h, radius=0, fill=None, outline=None, width=3):
@@ -226,13 +234,13 @@ class S01Window(Scene):
                 d.line([(xx, y - (12 if on else 5)), (xx, y + (12 if on else 5))],
                        fill=ACC if on else (255, 255, 255, 70), width=4 if on else 2)
         el = ease_out(seg(t, 0.05, 0.55))
-        place(c, self.lead, 100, 152 - 14 * (1 - el), alpha=el)
+        place(c, self.lead, 100, 152 - 14 * (1 - el), alpha=el, anchor="lm")
         e2 = ease_out(seg(t, 0.12, 0.62))
-        place(c, self.big, 100, 246 - 22 * (1 - e2), alpha=e2)
+        place(c, self.big, 100, 246 - 22 * (1 - e2), alpha=e2, anchor="lm")
         e3 = ease_out(seg(t, 0.22, 0.72))
-        place(c, self.sub, 100, 336 - 16 * (1 - e3), alpha=e3)
+        place(c, self.sub, 100, 336 - 16 * (1 - e3), alpha=e3, anchor="lm")
         e4 = ease_out(seg(t, 0.45, 0.95))
-        place(c, self.y09, 108, 546, alpha=e4)
+        place(c, self.y09, 108, 546, alpha=e4, anchor="lm")
         place(c, self.y26, 1812, 546, alpha=e4, anchor="rm")
         place(c, BR, 1812, 58, anchor="rm")
 
@@ -267,9 +275,9 @@ class S02Span(Scene):
             d.text((xx, y + 26), str(2009 + i), font=font(25 if on else 19),
                    fill=(ACC if on else (255, 255, 255)) + (a if on else 88,), anchor="ma")
         el = ease_out(seg(t, 0.0, 0.5))
-        place(c, self.big, 100, 232 - 18 * (1 - el), alpha=el)
+        place(c, self.big, 100, 232 - 18 * (1 - el), alpha=el, anchor="lm")
         e2 = ease_out(seg(t, 0.15, 0.65))
-        place(c, self.sub, 100, 348, alpha=e2)
+        place(c, self.sub, 100, 348, alpha=e2, anchor="lm")
         place(c, BR, 1812, 58, anchor="rm")
 
 
@@ -342,19 +350,19 @@ class S04Popup(Scene):
         c.alpha_composite(self.scrim)
         c.alpha_composite(self.vig)
         # 浮窗从右侧 520px 外滑入，带轻微过冲
-        e = ease_out_back(seg(t, 0.10, 0.48), 1.3)
+        e = ease_out(seg(t, 0.02, 0.52))
         wx = 1090 + 520 * (1 - e)
         place(c, self.win, wx, 150)
         ea = ease_out(seg(t, 0.42, 0.62))
         place(c, self.badge_bg, wx + 8, 432, anchor="lm")
-        place(c, self.badge, wx + 8 + 18, 436, alpha=ea)
-        place(c, self.h1, 100, 210 - 12 * (1 - ease_out(seg(t, 0.0, 0.4))), alpha=ease_out(seg(t, 0.0, 0.4)))
+        place(c, self.badge, wx + 8 + 18, 436, alpha=ea, anchor="lm")
+        place(c, self.h1, 100, 210 - 12 * (1 - ease_out(seg(t, 0.0, 0.4))), alpha=ease_out(seg(t, 0.0, 0.4)), anchor="lm")
         for i, (num, lab) in enumerate(self.items):
             a0, a1 = 0.30 + i * 0.12, 0.55 + i * 0.12
             e = ease_out(seg(t, a0, a1))
             y = 300 + i * 96 + 18 * (1 - e)
-            place(c, num, 100, y, alpha=e)
-            place(c, lab, 168, y + 22, alpha=e, anchor="lm")
+            place(c, num, 100, y, alpha=e, anchor="lm")
+            place(c, lab, 176, y + 6, alpha=e, anchor="lm")
         place(c, BR, 1812, 58, anchor="rm")
 
 
@@ -398,8 +406,8 @@ class S05Split(Scene):
                    fill=WARN + (215,), width=8)
         place(c, self.l_y, W // 4, 200, alpha=ease_out(seg(t, 0.05, 0.32)))
         place(c, self.r_y, W * 3 // 4, 200, alpha=br_)
-        place(c, self.l_s, W // 4, 540, alpha=ease_out(seg(t, 0.40, 0.68)))
-        place(c, self.r_s, W * 3 // 4, 540, alpha=br_)
+        place(c, self.l_s, W // 4, 630, alpha=ease_out(seg(t, 0.40, 0.68)))
+        place(c, self.r_s, W * 3 // 4, 630, alpha=br_)
         place(c, BR, 1812, 58, anchor="rm")
 
 
@@ -423,21 +431,21 @@ class S06Versus(Scene):
     def render(self, c, t):
         c.alpha_composite(solid_bg())
         c.alpha_composite(scrim_layer(0.0, 0.5))
-        place(c, self.cap, 100, 142, alpha=ease_out(seg(t, 0.0, 0.30)))
+        place(c, self.cap, 100, 142, alpha=ease_out(seg(t, 0.0, 0.30)), anchor="lm")
         # 左块从左外推进
         el = ease_out(seg(t, 0.06, 0.40))
         lx = 358 + (-320) * (1 - el)
         place(c, self.left, lx, 330)
         place(c, self.n8, lx, 322, alpha=el, scale=1.0 + 0.12 * (1 - el))
         place(c, self.u8, lx, 412, alpha=el)
-        place(c, self.l1, 100, 478, alpha=el)
+        place(c, self.l1, 100, 478, alpha=el, anchor="lm")
         # 右块从右外推进
         er = ease_out(seg(t, 0.20, 0.55))
         rx = 1272 + 360 * (1 - er)
         place(c, self.right, rx, 330)
         place(c, self.n6339, rx + 24, 322, alpha=er, scale=1.0 + 0.08 * (1 - er))
         place(c, self.u6339, rx + 340, 412, alpha=er)
-        place(c, self.l2, 724, 478, alpha=er)
+        place(c, self.l2, 724, 478, alpha=er, anchor="lm")
         # 比例条从左往右生长，红段在最左
         d = ImageDraw.Draw(c)
         g = ease_out(seg(t, 0.35, 0.92))
@@ -483,11 +491,11 @@ class S07Card(Scene):
         self.card = card
 
     def render(self, c, t):
-        c.alpha_composite(bg_view(self.base, 1.02 + 0.05 * ease_inout(t), bright=0.40, blur=10))
+        c.alpha_composite(bg_view(self.base, 1.04 + 0.09 * ease_inout(t), bright=0.40, blur=10))
         c.alpha_composite(self.scrim)
         c.alpha_composite(self.vig)
-        e = ease_out(seg(t, 0.0, 0.34))
-        place(c, self.card, W // 2, 398 + 60 * (1 - e), alpha=clamp01(e * 1.3))
+        e = ease_out(seg(t, 0.0, 0.46))
+        place(c, self.card, W // 2, 398 + 96 * (1 - e), alpha=clamp01(e * 1.35))
         place(c, BR, 1812, 58, anchor="rm")
 
 
@@ -525,13 +533,13 @@ class S08Feather(Scene):
         e = ease_out(seg(t, 0.0, 0.50))
         place(c, self.feather, 450, 400, scale=0.82 + 0.18 * e, rot=-14 * (1 - e), alpha=clamp01(e * 1.6))
         e1 = ease_out(seg(t, 0.12, 0.50))
-        place(c, self.t1, 850 + 60 * (1 - e1), 322, alpha=e1)
+        place(c, self.t1, 850 + 60 * (1 - e1), 322, alpha=e1, anchor="lm")
         e2 = ease_out(seg(t, 0.24, 0.60))
-        place(c, self.t2, 856 + 60 * (1 - e2), 428, alpha=e2)
+        place(c, self.t2, 856 + 60 * (1 - e2), 428, alpha=e2, anchor="lm")
         e3 = ease_out(seg(t, 0.38, 0.72))
-        place(c, self.t3, 856 + 50 * (1 - e3), 498, alpha=e3)
+        place(c, self.t3, 856 + 50 * (1 - e3), 498, alpha=e3, anchor="lm")
         e4 = ease_out(seg(t, 0.48, 0.82))
-        place(c, self.t4, 856 + 50 * (1 - e4), 574, alpha=e4)
+        place(c, self.t4, 856 + 50 * (1 - e4), 574, alpha=e4, anchor="lm")
         place(c, BR, 1812, 58, anchor="rm")
 
 
@@ -554,7 +562,7 @@ class S09Timeline(Scene):
         c.alpha_composite(bg_view(self.base, 1.0, px=0.30 - 0.30 * ease_inout(t), bright=0.40, blur=2))
         c.alpha_composite(self.scrim)
         c.alpha_composite(self.vig)
-        place(c, self.head, 100, 152, alpha=ease_out(seg(t, 0.0, 0.3)))
+        place(c, self.head, 100, 152, alpha=ease_out(seg(t, 0.0, 0.3)), anchor="lm")
         # 高亮框从 2026 滑到 2025
         swipe = ease_inout(seg(t, 0.18, 0.62))
         hx = 1180 + 130 + (760 - 1180) * swipe
@@ -579,7 +587,7 @@ class S09Timeline(Scene):
                    width=6 if on else 2)
             d.text((x, y + 34), f"{i+1}月", font=font(24 if on else 18),
                    fill=ACC + (255,) if on else (255, 255, 255, 88), anchor="ma")
-        place(c, self.arrow, 100, 596, alpha=ease_out(seg(t, 0.5, 0.85)))
+        place(c, self.arrow, 100, 596, alpha=ease_out(seg(t, 0.5, 0.85)), anchor="lm")
         place(c, BR, 1812, 58, anchor="rm")
 
 
@@ -602,18 +610,18 @@ class S10Fossil(Scene):
         c.alpha_composite(self.vig)
         c.alpha_composite(scrim_layer(0.26, 0.92))
         e1 = ease_out(seg(t, 0.10, 0.45))
-        place(c, self.date, 100 + 30 * (1 - e1), 162, alpha=e1)
+        place(c, self.date, 100 + 30 * (1 - e1), 162, alpha=e1, anchor="lm")
         e2 = ease_out(seg(t, 0.18, 0.55))
-        place(c, self.title, 100 + 40 * (1 - e2), 236, alpha=e2)
+        place(c, self.title, 100 + 40 * (1 - e2), 236, alpha=e2, anchor="lm")
         e3 = ease_out(seg(t, 0.30, 0.65))
-        place(c, self.loc, 100 + 40 * (1 - e3), 340, alpha=e3)
+        place(c, self.loc, 100 + 40 * (1 - e3), 340, alpha=e3, anchor="lm")
         # 金色下划线从左抽出
         d = ImageDraw.Draw(c)
         k = ease_out(seg(t, 0.42, 0.78))
         if k > 0.01:
             d.line([(96, 404), (96 + 604 * k, 404)], fill=GOLD + (210,), width=5)
         e4 = ease_out(seg(t, 0.55, 0.88))
-        place(c, self.tag, 100, 440, alpha=e4)
+        place(c, self.tag, 100, 440, alpha=e4, anchor="lm")
         place(c, BR, 1812, 58, anchor="rm")
 
 
@@ -646,7 +654,7 @@ class S11Search(Scene):
         c.alpha_composite(bg_view(self.base, 1.0, py=0.10 * ease_out(t), bright=0.38, blur=12))
         c.alpha_composite(self.scrim)
         c.alpha_composite(self.vig)
-        place(c, self.head, 100, 142, alpha=ease_out(seg(t, 0.0, 0.28)))
+        place(c, self.head, 100, 142, alpha=ease_out(seg(t, 0.0, 0.28)), anchor="lm")
         # 搜索框从上落下
         e = ease_out(seg(t, 0.04, 0.32))
         place(c, self.box, 96 + 552, 240 - 24 * (1 - e), alpha=e)
@@ -660,7 +668,7 @@ class S11Search(Scene):
         if cut >= len(full) and (int(t * 26) % 2 == 0):
             d = ImageDraw.Draw(c)
             d.line([(1120, 216), (1120, 264)], fill=ACC + (255,), width=3)
-        place(c, self.hit, 100, 322, alpha=ease_out(seg(t, 0.40, 0.60)))
+        place(c, self.hit, 100, 322, alpha=ease_out(seg(t, 0.40, 0.60)), anchor="lm")
         for i, (bg, dt, t1, t2) in enumerate(self.rows):
             a0 = 0.44 + i * 0.14
             e = ease_out(seg(t, a0, a0 + 0.24))
@@ -694,8 +702,8 @@ class S12Repo(Scene):
         d.text((40, 108), "zkyhzxf / bing-wallpaper-chronicle", font=font(48), fill=WHITE)
         d.text((40, 186), "必应壁纸编年史 · 6339 天档案，一天不缺", font=font(32), fill=MUT)
         d.rounded_rectangle([1300, 98, 1650, 168], radius=12, fill=GREEN + (255,))
-        d.text((1370, 133), "★  Star", font=font(32), fill=WHITE, anchor="lm")
-        d.text((1472, 133), "1.2k", font=font(28), fill=(200, 255, 210), anchor="lm")
+        d.text((1368, 133), "★  Star", font=font(32), fill=WHITE, anchor="lm")
+        d.text((1518, 133), "1.2k", font=font(28), fill=(200, 255, 210), anchor="lm")
         x = 40
         for tt, cc in [("PowerShell", ACC), ("Windows", (140, 200, 255)), ("MIT", GOLD)]:
             b = d.textbbox((0, 0), tt, font=font(24))
@@ -717,7 +725,7 @@ class S12Repo(Scene):
         c.alpha_composite(scrim_layer(0.0, 0.45))
         e = ease_out(seg(t, 0.0, 0.35))
         # 整页从 y=+150 落到 0，之后继续缓慢上滚 60px
-        scroll = -60 * ease_inout(seg(t, 0.35, 1.0))
+        scroll = -26 * ease_inout(seg(t, 0.35, 1.0))
         y = 720 + 150 * (1 - e) + scroll
         place(c, self.card, W // 2, 110 + (self.card.height / 2) + 150 * (1 - e) + scroll,
               alpha=clamp01(e * 1.4))
@@ -780,15 +788,15 @@ class S14End(Scene):
         c.alpha_composite(scrim_layer(0.34, 0.94))
         c.alpha_composite(self.vig)
         e1 = ease_out(seg(t, 0.0, 0.38))
-        place(c, self.t1, 108 + 40 * (1 - e1), 300, alpha=e1)
+        place(c, self.t1, 108 + 40 * (1 - e1), 300, alpha=e1, anchor="lm")
         e2 = ease_out(seg(t, 0.14, 0.52))
-        place(c, self.t2, 112 + 40 * (1 - e2), 440, alpha=e2)
+        place(c, self.t2, 112 + 40 * (1 - e2), 440, alpha=e2, anchor="lm")
         d = ImageDraw.Draw(c)
         k = ease_out(seg(t, 0.30, 0.60))
         if k > 0.01:
             d.line([(112, 500), (112 + 788 * k, 500)], fill=ACC + (255,), width=5)
         e3 = ease_out(seg(t, 0.44, 0.72))
-        place(c, self.t3, 112, 548, alpha=e3)
+        place(c, self.t3, 112, 548, alpha=e3, anchor="lm")
         # 二维码：0.55 倍弹到 1.0，之后停住
         eq = ease_out_back(seg(t, 0.30, 0.72), 2.2)
         place(c, self.qr, 1633, 470, scale=0.55 + 0.45 * eq, alpha=clamp01(seg(t, 0.28, 0.42) * 1.4))

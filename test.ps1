@@ -1185,12 +1185,13 @@ Check '收藏会移动文件，必须把 state 里的路径改到新位置' {
     return $true
 }
 
-Check '收藏不再只认缓存来源：归档/老存档/图库走复制' {
+Check '收藏不再只认缓存来源，且不重复存两份' {
     $ps = Get-Content (Join-Path $Root 'bing-wallpaper.ps1') -Raw
     if ($ps -match '只有缓存或画廊里的壁纸才能收藏') { return '还在拒绝非缓存来源的收藏' }
-    if ($ps -notmatch '\$copyOnly = \$script:Takeover -or -not \$inCache') { return '缺 $copyOnly 判定' }
-    if ($ps -notmatch 'if \(\$copyOnly\) \{\s*\r?\n\s*Copy-Item -LiteralPath \$cur') { return '收藏时没有按来源走复制分支' }
-    if ($ps -notmatch '已收藏（复制进收藏夹）') { return '缺复制分支的日志' }
+    # 只有接管模式才复制（图库只读）；其余一律移动，避免归档与收藏各存一份
+    if ($ps -notmatch '(?m)^\s*\$copyOnly = \$script:Takeover\s*$') { return '$copyOnly 应只对 Takeover 成立' }
+    if ($ps -match '\$copyOnly = \$script:Takeover -or -not \$inCache') { return '还在按来源复制，会产生第二份' }
+    if ($ps -notmatch 'if \(\$copyOnly\) \{\s*\r?\n\s*Copy-Item -LiteralPath \$cur') { return '缺接管模式的复制分支' }
     return $true
 }
 

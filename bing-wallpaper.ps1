@@ -3022,10 +3022,10 @@ try {
         $inGallery = ($srcDir -ieq $GalleryDir.TrimEnd('\'))
         $inCache = ($srcDir -ieq $CacheDir.TrimEnd('\')) -or $inGallery
         $inFav   = ($srcDir -ieq $FavDir.TrimEnd('\'))
-        # 缓存里的图可以直接移走（反正 30 天后也要清）；归档、老存档、接管图库里的
-        # 只复制一份进收藏夹 —— 那是用户的历史库，不能因为收藏就少一张。
-        # 以前这里直接拒绝非缓存来源，从归档翻到一张想收藏时会被挡下来。
-        $copyOnly = $script:Takeover -or -not $inCache
+        # 收藏是「换个地方存」，不是「再存一份」：非接管模式一律移动，避免同一张图
+        # 在归档和收藏各占 3.5 MB。归档本来也不是完整档案（500 MB 上限会滚动删除），
+        # 少这一张不影响它的定位。只有接管模式必须复制 —— 那是用户的图库，只读。
+        $copyOnly = $script:Takeover
         if ($Unfavorite -and -not $inFav) {
             Write-Log "当前壁纸不在收藏夹里，无需取消：$cur" 'ERROR'
             Exit-Run 3
@@ -3049,7 +3049,7 @@ try {
             # 归档 / 老存档 / 接管图库来源只复制（那是历史库，不能因为收藏就少一张）
             if ($copyOnly) {
                 Copy-Item -LiteralPath $cur -Destination $dest -Force
-                Write-Log ("收藏：从 " + $srcDir + " 复制一份，原件保留")
+                Write-Log ("收藏：接管模式，从 " + $srcDir + " 复制一份，图库原件保留")
             } else {
                 Move-Item -LiteralPath $cur -Destination $dest -Force
             }
