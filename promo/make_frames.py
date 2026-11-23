@@ -89,7 +89,7 @@ def scrim(im, top=0.0, bottom=0.86):
 
 def brand(ov):
     d = ImageDraw.Draw(ov)
-    d.text((1812, 58), "必应壁纸编年史  ·  v3.6.55", font=font(28), fill=(190, 200, 214, 190), anchor="ra")
+    d.text((1812, 58), "必应壁纸编年史  ·  v3.6.56", font=font(28), fill=(190, 200, 214, 190), anchor="ra")
 
 
 def badge(d, xy, s):
@@ -368,7 +368,7 @@ def s12():
         d.text((x + 20, 392), t, font=font(24), fill=c, anchor="lm")
         x += w + 58
     text(d, (160, 460), "免费开源 · 解压即用 · 不用注册", font(36))
-    d.text((160, 530), "v3.6.55   ·   100 项回归断言全绿   ·   MIT", font=font(28), fill=MUTED)
+    d.text((160, 530), "v3.6.56   ·   102 项回归断言全绿   ·   MIT", font=font(28), fill=MUTED)
     brand(ov); save(finish(im, ov), "s12.png")
 
 

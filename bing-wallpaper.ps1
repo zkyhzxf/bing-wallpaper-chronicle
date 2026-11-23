@@ -3022,10 +3022,10 @@ try {
         $inGallery = ($srcDir -ieq $GalleryDir.TrimEnd('\'))
         $inCache = ($srcDir -ieq $CacheDir.TrimEnd('\')) -or $inGallery
         $inFav   = ($srcDir -ieq $FavDir.TrimEnd('\'))
-        if ($Favorite -and -not $inCache) {
-            Write-Log "只有缓存或画廊里的壁纸才能收藏：$cur" 'ERROR'
-            Exit-Run 3
-        }
+        # 缓存里的图可以直接移走（反正 30 天后也要清）；归档、老存档、接管图库里的
+        # 只复制一份进收藏夹 —— 那是用户的历史库，不能因为收藏就少一张。
+        # 以前这里直接拒绝非缓存来源，从归档翻到一张想收藏时会被挡下来。
+        $copyOnly = $script:Takeover -or -not $inCache
         if ($Unfavorite -and -not $inFav) {
             Write-Log "当前壁纸不在收藏夹里，无需取消：$cur" 'ERROR'
             Exit-Run 3
@@ -3045,10 +3045,14 @@ try {
         $dateKey = ($name -split '_')[0]
 
         if ($Favorite) {
-            # 正常模式移动而非复制：一份文件，缓存清理碰不到收藏
-            # 接管模式只复制：root 里的原图一根手指都不能动
-            if ($script:Takeover) { Copy-Item -LiteralPath $cur -Destination $dest -Force }
-            else { Move-Item -LiteralPath $cur -Destination $dest -Force }
+            # 缓存来源移动（一份文件，清理碰不到收藏）；
+            # 归档 / 老存档 / 接管图库来源只复制（那是历史库，不能因为收藏就少一张）
+            if ($copyOnly) {
+                Copy-Item -LiteralPath $cur -Destination $dest -Force
+                Write-Log ("收藏：从 " + $srcDir + " 复制一份，原件保留")
+            } else {
+                Move-Item -LiteralPath $cur -Destination $dest -Force
+            }
             # 从缓存索引捞元信息
             $meta = $null
             if (Test-Path $IndexPath) {
@@ -3113,7 +3117,8 @@ try {
             if ($stateCur -and [string]$stateCur.date -eq $dateKey) {
                 Write-State -Date $dateKey -File $dest -Title ([string]$favIdx[$dateKey].title) -ImageId ([string]$favIdx[$dateKey].imageId) -AppliedDate $dateKey
             }
-            Write-Log "已收藏（移入收藏夹）：$name"
+            if ($copyOnly) { Write-Log "已收藏（复制进收藏夹）：$name" }
+            else { Write-Log "已收藏（移入收藏夹）：$name" }
             # 文件已离开缓存，缓存索引里的条目要同步删掉，避免越积越多的失效记录
             if (Test-Path $IndexPath) {
                 try {

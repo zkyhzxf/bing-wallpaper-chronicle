@@ -1185,6 +1185,15 @@ Check '收藏会移动文件，必须把 state 里的路径改到新位置' {
     return $true
 }
 
+Check '收藏不再只认缓存来源：归档/老存档/图库走复制' {
+    $ps = Get-Content (Join-Path $Root 'bing-wallpaper.ps1') -Raw
+    if ($ps -match '只有缓存或画廊里的壁纸才能收藏') { return '还在拒绝非缓存来源的收藏' }
+    if ($ps -notmatch '\$copyOnly = \$script:Takeover -or -not \$inCache') { return '缺 $copyOnly 判定' }
+    if ($ps -notmatch 'if \(\$copyOnly\) \{\s*\r?\n\s*Copy-Item -LiteralPath \$cur') { return '收藏时没有按来源走复制分支' }
+    if ($ps -notmatch '已收藏（复制进收藏夹）') { return '缺复制分支的日志' }
+    return $true
+}
+
 # ---------------------------------------------------------------- 汇总
 Write-Host ''
 Write-Host ('-' * 50) -ForegroundColor DarkGray
