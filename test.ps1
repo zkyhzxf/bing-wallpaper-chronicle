@@ -1,4 +1,4 @@
-﻿# 必应壁纸编年史 · 回归测试
+﻿﻿# 必应壁纸编年史 · 回归测试
 # 用法：pwsh -File test.ps1
 # 设计原则：幂等、不碰桌面壁纸、不依赖网络（用本地索引与缓存）
 
@@ -1263,7 +1263,7 @@ Check '取图通道：跑分之前保留本地代理优先的初始顺序' {
     $igh = $g.Value.IndexOf("tag='ghproxy'")
     if ($ipx -lt 0) { return '候选列表没先看本地代理' }
     if ($igh -lt 0 -or $ipx -gt $igh) { return '初始顺序里本地代理没排在 ghproxy 前面' }
-    if (-not $ps.Contains('$pxIdx = Get-LocalProxy')) { return '全量索引还是写死 gh-proxy' }
+    if (-not $ps.Contains("Invoke-ArchiveFetch -RelPath 'Zhu-junwei")) { return '全量索引没接统一候选' }
     return $true
 }
 
@@ -1285,12 +1285,28 @@ Check '取图通道按实测耗时记账，每次取图重排' {
     # 失败封顶，否则连续失败会 1.5^N 爆炸
     if (-not $ps.Contains('[math]::Min(60000.0, $curMs * 1.5)')) { return '失败耗时不封顶' }
     # 三天没动过向默认值回归，坏通道能翻身
-    if (-not $ps.Contains('$ms * 0.5 + 1500.0 * 0.5')) { return '陈旧记录没有向默认值回归' }
+    if (-not $ps.Contains('$ms * 0.5 + 2500.0 * 0.5')) { return '陈旧记录没有向默认值回归' }
     if (-not $ps.Contains('return @($ranked')) { return '候选列表没有排序' }
     if (-not $ps.Contains('.eff }; Descending = $false')) { return '排序不是按有效耗时升序' }
     if (-not $ps.Contains('.ord };')) { return '同耗时没有按原始顺序稳定排列' }
     if (-not $ps.Contains('Set-ViaStat -Tag $tag -Ok $true')) { return '成功没有记账' }
     if (-not $ps.Contains('Set-ViaStat -Tag $tag -Ok $false')) { return '失败没有记账' }
+    return $true
+}
+
+Check '全量索引也走同一套候选与记账' {
+    $ps = Get-Content (Join-Path $Root 'bing-wallpaper.ps1') -Raw
+    if (-not $ps.Contains("Invoke-ArchiveFetch -RelPath 'Zhu-junwei/bing-wallpaper-archive/master/Bing_zh-CN_all.json'")) {
+        return '全量索引没走统一候选（或 RelPath 少了仓库前缀）'
+    }
+    if (-not $ps.Contains('-TimeoutSec 40')) { return '全量索引没有放宽超时（1.6 MB 用 8 秒不够）' }
+    if (-not $ps.Contains('function Invoke-ArchiveFetch {')) { return '缺 Invoke-ArchiveFetch' }
+    $g = [regex]::Match($ps, '(?s)function Invoke-ArchiveFetch.*?function Save-ArchiveVia')
+    if (-not $g.Success) { return '找不到 Invoke-ArchiveFetch 主体' }
+    if (-not $g.Value.Contains('[int]$TimeoutSec = 8')) { return '超时参数没有默认值' }
+    if (-not $g.Value.Contains('Set-ViaStat -Tag $tag')) { return '全量索引路径没有记账' }
+    # 没跑过的通道默认值要比实测快的更差，否则未知会压过已知
+    if (-not $ps.Contains('$eff = 2500.0')) { return '未知通道的默认基准不是 2500' }
     return $true
 }
 

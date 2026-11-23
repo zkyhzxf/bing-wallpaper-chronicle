@@ -531,7 +531,7 @@ function Get-ViaStats {
             $o = Get-Content $ViaScorePath -Raw -Encoding UTF8 | ConvertFrom-Json
             $now = Get-Date
             foreach ($q in $o.PSObject.Properties) {
-                $ms = 1500.0
+                $ms = 2500.0
                 try { $ms = [double]$q.Value.ms } catch { }
                 $fail = 0
                 try { $fail = [int]$q.Value.fail } catch { }
@@ -541,7 +541,7 @@ function Get-ViaStats {
                 # 否则一次故障会把它永远压在队尾
                 if ($days -ge 3) {
                     $fail = [int][math]::Floor($fail / 2)
-                    $ms = $ms * 0.5 + 1500.0 * 0.5
+                    $ms = $ms * 0.5 + 2500.0 * 0.5
                 }
                 $eff = $ms * (1.0 + $fail * 0.5)
                 $m[$q.Name] = [pscustomobject]@{ ms = $ms; fail = $fail; eff = $eff }
@@ -564,7 +564,7 @@ function Set-ViaStat {
                 }
             } catch { }
         }
-        $curMs = 1500.0
+        $curMs = 2500.0
         $curFail = 0
         if ($raw.ContainsKey($Tag)) { $curMs = [double]$raw[$Tag].ms; $curFail = [int]$raw[$Tag].fail }
         if ($Ok) {
@@ -648,11 +648,11 @@ function Get-ArchiveCandidateUrls {
         if (-not $seen.ContainsKey($k)) { $seen[$k] = $true; $out += $c }
     }
 
-    # 按实测有效耗时排序：快的先试；没跑过的给默认 1500 ms，排在已知的之后
+    # 按实测有效耗时排序：快的先试；没跑过的给默认 2500 ms，排在已知的之后
     $stats = Get-ViaStats
     $i0 = 0
     $ranked = foreach ($c in $out) {
-        $eff = 1500.0
+        $eff = 2500.0
         if ($stats.ContainsKey([string]$c.tag)) { $eff = [double]$stats[[string]$c.tag].eff }
         [pscustomobject]@{ tag = $c.tag; url = $c.url; proxy = $c.proxy; eff = $eff; ord = $i0++ }
     }
@@ -661,7 +661,7 @@ function Get-ArchiveCandidateUrls {
 }
 
 function Invoke-ArchiveFetch {
-    param([string]$RelPath)
+    param([string]$RelPath, [int]$TimeoutSec = 8)
     $reqHeaders = @{'User-Agent' = 'Mozilla/5.0'}
     $cands = Get-ArchiveCandidateUrls -RelPath $RelPath
     $lastErr = ''
@@ -680,7 +680,7 @@ function Invoke-ArchiveFetch {
                 $owner = $parts[0]; $repo = $parts[1]; $branch = $parts[2]
                 $filePath = ($parts[3..($parts.Length - 1)] -join '/')
                 $apiUrl = "https://api.github.com/repos/$owner/$repo/contents/$filePath" + "?ref=$branch"
-                $r = Invoke-WebRequest -Uri $apiUrl -TimeoutSec 8 -UseBasicParsing -Headers $reqHeaders
+                $r = Invoke-WebRequest -Uri $apiUrl -TimeoutSec $TimeoutSec -UseBasicParsing -Headers $reqHeaders
                 $obj = $r.Content | ConvertFrom-Json
                 if (-not $obj.content) { throw 'API 无 content 字段' }
                 $txt = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(($obj.content -replace '\s', '')))
@@ -693,9 +693,9 @@ function Invoke-ArchiveFetch {
             } else {
                 $ht = $reqHeaders
                 if ($c.proxy) {
-                    $r = Invoke-WebRequest -Uri $u -TimeoutSec 8 -UseBasicParsing -Headers $ht -Proxy $c.proxy
+                    $r = Invoke-WebRequest -Uri $u -TimeoutSec $TimeoutSec -UseBasicParsing -Headers $ht -Proxy $c.proxy
                 } else {
-                    $r = Invoke-WebRequest -Uri $u -TimeoutSec 8 -UseBasicParsing -Headers $ht
+                    $r = Invoke-WebRequest -Uri $u -TimeoutSec $TimeoutSec -UseBasicParsing -Headers $ht
                 }
                 if ($r) {
                     Set-ViaStat -Tag $tag -Ok $true -Ms $sw.ElapsedMilliseconds
@@ -1385,27 +1385,10 @@ function Get-FullIndex {
     }
     $resp = $null
     # 有本地代理就先用它直连 raw：比绕 gh-proxy.com 这个第三方中转快，也不把请求交给它
-    $pxIdx = Get-LocalProxy
-    $rawAll = 'https://raw.githubusercontent.com/Zhu-junwei/bing-wallpaper-archive/master/Bing_zh-CN_all.json'
-    if ($pxIdx) {
-        try {
-            $resp = Invoke-WebRequest -Uri $rawAll -TimeoutSec 40 -UseBasicParsing -Proxy $pxIdx -Headers @{'User-Agent' = 'Mozilla/5.0'}
-        } catch {
-            Write-Log ("  索引下载失败（via 本地代理）：" + $_.Exception.Message) 'WARN'
-            $resp = $null
-        }
-    }
-    $try = @($AllIndexUrl, $rawAll)
-    foreach ($u in $try) {
-        if ($resp) { break }
-        try {
-            $resp = Invoke-WebRequest -Uri $u -TimeoutSec 40 -UseBasicParsing -Headers @{'User-Agent' = 'Mozilla/5.0'}
-            if ($resp) { break }
-        } catch {
-            Write-Log ("  索引下载失败（" + $u + "）：" + $_.Exception.Message) 'WARN'
-            $resp = $null
-        }
-    }
+    # 全量索引和月度索引走同一套候选与记账：1.6 MB 的文件
+    # 哪条通道快差别更明显，这里最值得按实测排序。
+    # 注意 RelPath 要带仓库前缀，候选构造只负责拼 主机 + RelPath
+    $resp = Invoke-ArchiveFetch -RelPath 'Zhu-junwei/bing-wallpaper-archive/master/Bing_zh-CN_all.json' -TimeoutSec 40
     if (-not $resp) {
         # 降级：有旧索引就用旧的，不阻断搜索
         if (Test-Path $AllIndexPath) {
