@@ -57,3 +57,5 @@ promo/screens/
 promo/transitions/
 promo/out/
 promo/_build/
+promo/_sheet/
+__pycache__/

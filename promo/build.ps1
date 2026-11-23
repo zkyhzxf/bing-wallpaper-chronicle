@@ -1,4 +1,5 @@
 # 必应壁纸编年史 · 30s animatic 构建入口
+# 渲染用 DSH python（带 qrcode），配音用 WorkBuddy python（带 edge_tts）
 # 用法：pwsh -File D:\Tools\bing-wallpaper\promo\build.ps1
 #       加 -Frames 只重出静帧；-Render 只重渲染；都不加则全跑
 
@@ -56,7 +57,7 @@ if ($Render) {
     Write-Host '--- 3. 渲染 + 验收 ---' -ForegroundColor Cyan
     Push-Location $Promo
     # 中间件全部 -y 覆盖，无需先删除整个 _build
-    & $PyWB build_video.py
+    & $PyDSH build_video.py
     if ($LASTEXITCODE -ne 0) { Pop-Location; throw '渲染失败' }
     Pop-Location
 }

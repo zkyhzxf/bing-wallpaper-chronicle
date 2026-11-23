@@ -1,4 +1,4 @@
-﻿using System;
+﻿﻿﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -144,7 +144,6 @@ namespace BingWallpaperLite
         public static string PinColWhere  { get { return T("位置", "Location"); } }
         public static string PinLocFav    { get { return T("收藏", "Favorite"); } }
         public static string PinLocCache  { get { return T("缓存", "Cache"); } }
-        public static string PinLocLib    { get { return T("历史图库", "Library"); } }
         public static string PinLocArch   { get { return T("归档", "Archive"); } }
         public static string PinLocOld    { get { return T("老存档", "Legacy"); } }
         public static string PinGone      { get { return T("文件已不在", "file missing"); } }
@@ -192,14 +191,6 @@ namespace BingWallpaperLite
             {
                 return T("选中的都是老存档或已收藏的图。它们本来就不受自动清理，移出名单没有实际作用，也会继续留在列表里。\r\n\r\n老存档要删：清理 → 清理归档\r\n收藏要删：在「收藏管理」里取消收藏",
                          "Everything you selected is either in the legacy archive or favorited. Those are never auto-cleaned, so removing them from the list has no effect — they stay listed.\r\n\r\nTo delete legacy images: Clean → Clean archive\r\nTo delete a favorite: un-favorite it in Manage favorites");
-            }
-        }
-        public static string PinOldHint
-        {
-            get
-            {
-                return T("这是 2016 年前的老存档，不受任何自动清理。要删请走：清理缓存 → 清理归档 → 勾选「同时清理老存档」。",
-                         "This is legacy archive (before 2016) and is never auto-cleaned. To delete it: Clean cache → Clean archive → tick the legacy archive option.");
             }
         }
         public static string PinPurgeDead(int n) { return _en ? ("Purge missing (" + n + ")") : ("清理失效项（" + n + "）"); }
@@ -902,7 +893,6 @@ namespace BingWallpaperLite
         public static string StoryExpand     { get { return T("展开全文", "Read more"); } }
         public static string StoryCollapse   { get { return T("收起", "Collapse"); } }
         public static string StoryLoading    { get { return T("正在获取故事…", "Loading story…"); } }
-        public static string CleanStories    { get { return T("清理每日故事缓存", "Clear story cache"); } }
         public static string CrashTitle      { get { return T("遇到一个问题", "Something went wrong"); } }
         public static string CrashHint       { get { return T("已经记下现场，程序继续运行。日志：%TEMP%\\BingWallpaperLite.log", "Details were logged and the app keeps running. Log: %TEMP%\\BingWallpaperLite.log"); } }
         /// <summary>数量 + 单位。中文用「12 张」，英文用「12 images」，别在窗体里直接拼中文单位。</summary>
@@ -1086,10 +1076,8 @@ namespace BingWallpaperLite
             sb.AppendLine("  -DryRun             只演示不执行");
             return sb.ToString();
         }
-        public static string CleanStoriesN   { get { return T("清理每日故事缓存（{0} 条）", "Clear story cache ({0})"); } }
         public static string ShowStoryOn     { get { return T("● 显示每日故事", "● Show daily story"); } }
         public static string ShowStoryOff    { get { return T("显示每日故事（关）", "Daily story (off)"); } }
-        public static string CleanStoriesHint { get { return T("删掉的是本地缓存，下次查看时按需重新抓取；不影响壁纸与索引", "Removes the local cache only; stories are re-fetched on demand"); } }
 
         // ---------------- 关于正文
         public static string AboutFeat1      { get { return T("· 覆盖 6339 天：2009-07-13 至今，一天不缺（空缺 3 天，来源本身就缺）", "· 6339 days covered: 2009-07-13 to today, one per day (3 days missing at the source)"); } }

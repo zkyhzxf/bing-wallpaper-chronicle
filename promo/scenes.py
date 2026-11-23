@@ -197,8 +197,28 @@ class Scene:
         pass
 
 
+_ATMO = None
+
+
+def atmosphere():
+    """纯色场景的统一底：暗蓝径向光 + 极轻噪点，避免整屏死黑被判成黑帧"""
+    global _ATMO
+    if _ATMO is None:
+        im = Image.new("RGBA", (W, H), DARK + (255,))
+        ov = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        d = ImageDraw.Draw(ov)
+        cx, cy = W * 0.56, H * 0.30
+        for r in range(760, 0, -8):
+            k = 1 - r / 760
+            d.ellipse([cx - r, cy - r * 0.78, cx + r, cy + r * 0.78],
+                      fill=(58, 108, 168, int(12 * k ** 1.4)))
+        d.ellipse([-200, H - 260, W * 0.5, H + 200], fill=(30, 52, 92, 26))
+        _ATMO = Image.alpha_composite(im, ov)
+    return _ATMO.copy()
+
+
 def solid_bg(bright=1.0):
-    return Image.new("RGBA", (W, H), DARK + (255,))
+    return atmosphere()
 
 
 # ============ 1 · 官方窗口 8 天：横向缓移，文字上浮 ============
@@ -507,7 +527,7 @@ class S08Feather(Scene):
         fw, fh = 760, 760
         im = Image.new("RGBA", (fw, fh), (0, 0, 0, 0))
         d = ImageDraw.Draw(im)
-        d.ellipse([0, 0, fw - 1, fh - 1], fill=ACC + (30,))
+        d.ellipse([0, 0, fw - 1, fh - 1], fill=ACC + (56,))
         cx, cy, L = fw / 2, fh / 2, 520
         col = (255, 255, 255, 235)
         d.line([(cx - L * 0.42, cy - L * 0.30), (cx + L * 0.30, cy + L * 0.42)], fill=col, width=7)
@@ -531,7 +551,7 @@ class S08Feather(Scene):
         c.alpha_composite(scrim_layer(0.0, 0.45))
         # 羽毛：从 -14° 转到 0°，同时 0.8 → 1.0
         e = ease_out(seg(t, 0.0, 0.50))
-        place(c, self.feather, 450, 400, scale=0.82 + 0.18 * e, rot=-14 * (1 - e), alpha=clamp01(e * 1.6))
+        place(c, self.feather, 450, 400, scale=0.82 + 0.18 * e, rot=-14 * (1 - e), alpha=clamp01(e * 3.2))
         e1 = ease_out(seg(t, 0.12, 0.50))
         place(c, self.t1, 850 + 60 * (1 - e1), 322, alpha=e1, anchor="lm")
         e2 = ease_out(seg(t, 0.24, 0.60))
@@ -737,6 +757,9 @@ class S13Star(Scene):
     dur = 2.27
 
     def setup(self):
+        self.base = load_photo("20261114_OHR.BlueHK.jpg", 1.32)
+        self.scrim = scrim_layer(0.20, 0.72)
+        self.vig = vignette_layer(150)
         self.t1 = text_layer("Star 不是打赏", font(80), MUT)
         self.t2 = text_layer("是收藏", font(140), WHITE)
         self.btn = rect_layer(580, 136, 24, fill=GREEN + (255,))
@@ -744,8 +767,9 @@ class S13Star(Scene):
         self.t3 = text_layer("点一下，相当于给这个项目留个书签", font(40), ACC)
 
     def render(self, c, t):
-        c.alpha_composite(solid_bg())
-        c.alpha_composite(scrim_layer(0.0, 0.45))
+        c.alpha_composite(bg_view(self.base, 1.0 + 0.05 * ease_out(t), bright=0.34, blur=13))
+        c.alpha_composite(self.scrim)
+        c.alpha_composite(self.vig)
         place(c, self.t1, W // 2, 190, alpha=ease_out(seg(t, 0.0, 0.26)))
         e2 = ease_out_back(seg(t, 0.10, 0.44), 1.4)
         place(c, self.t2, W // 2, 312, scale=0.88 + 0.12 * e2, alpha=clamp01(e2 * 1.2))

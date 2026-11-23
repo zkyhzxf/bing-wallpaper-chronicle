@@ -919,7 +919,7 @@ Check '换过的图：改名、挪位置、加位置列、双击换图' {
     if ($s -match '自动清理保留') { return 'Strings.cs 里还留着「自动清理保留」' }
     if ($s -notmatch 'PinMenu\s+\{ get \{ return T\("换过的图…"') { return '菜单项没改成「换过的图」' }
     if ($s -notmatch 'PinColWhere') { return '没有位置列文案' }
-    if ($s -notmatch 'PinLocLib') { return '没有历史图库位置文案' }
+    if ($s -notmatch 'PinLocArch') { return '没有「归档」位置文案' }
     if ($s -match '随机一张收藏') { return '「随机一张收藏」没改' }
 
     $m = Get-Content (Join-Path $Root 'src\Menu.cs') -Raw
