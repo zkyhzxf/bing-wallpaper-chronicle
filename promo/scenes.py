@@ -129,7 +129,14 @@ def load_photo(path, zoom_src=1.22):
     key = (path, zoom_src)
     if key in _BG_CACHE:
         return _BG_CACHE[key]
-    p = path if os.path.isabs(path) else os.path.join(IMG, path)
+    if os.path.isabs(path):
+        p = path
+    else:
+        here = os.path.dirname(os.path.abspath(__file__))
+        cand = [os.path.join(IMG, path), os.path.join(here, path), os.path.join(here, "screens", path)]
+        p = next((c for c in cand if os.path.exists(c)), cand[0])
+    if not os.path.exists(p):
+        raise FileNotFoundError(f"素材找不到：{path}（试过 archive/images、promo/、promo/screens/）")
     im = Image.open(p).convert("RGB")
     tw, th = int(W * zoom_src), int(H * zoom_src)
     s = max(tw / im.width, th / im.height)

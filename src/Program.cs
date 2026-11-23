@@ -1,4 +1,4 @@
-﻿﻿﻿﻿using System;
+﻿﻿﻿﻿﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -731,6 +731,58 @@ namespace BingWallpaperLite
                     ok = false;
                 }
             }
+
+            // 离线故事包：把打包时已有的每日故事正文解到 archive\stories\，
+            // 已存在的不覆盖（用户联网抓到的更新版本优先）
+            try
+            {
+                string stDir = Path.Combine(archiveDir, "stories");
+                using (Stream sz = asm.GetManifestResourceStream("stories.zip"))
+                {
+                    if (sz != null)
+                    {
+                        if (!Directory.Exists(stDir)) { Directory.CreateDirectory(stDir); }
+                        string tmp = Path.Combine(Path.GetTempPath(), "bwl-stories-" + Guid.NewGuid().ToString("N") + ".zip");
+                        try
+                        {
+                            using (FileStream fs = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None))
+                            {
+                                byte[] buf = new byte[8192];
+                                int n;
+                                while ((n = sz.Read(buf, 0, buf.Length)) > 0) { fs.Write(buf, 0, n); }
+                            }
+                            using (System.IO.Compression.ZipArchive za =
+                                   System.IO.Compression.ZipFile.OpenRead(tmp))
+                            {
+                                foreach (System.IO.Compression.ZipArchiveEntry e in za.Entries)
+                                {
+                                    string name = Path.GetFileName(e.FullName);
+                                    if (name.Length == 0) { continue; }
+                                    string dest = Path.Combine(stDir, name);
+                                    if (File.Exists(dest)) { continue; }
+                                    // 手动读流写文件：ExtractToFile 是扩展方法，这里没引入命名空间
+                                    try
+                                    {
+                                        using (Stream es = e.Open())
+                                        using (FileStream os = new FileStream(dest, FileMode.Create, FileAccess.Write, FileShare.None))
+                                        {
+                                            byte[] eb = new byte[8192];
+                                            int en;
+                                            while ((en = es.Read(eb, 0, eb.Length)) > 0) { os.Write(eb, 0, en); }
+                                        }
+                                    }
+                                    catch { }
+                                }
+                            }
+                        }
+                        finally
+                        {
+                            try { if (File.Exists(tmp)) { File.Delete(tmp); } } catch { }
+                        }
+                    }
+                }
+            }
+            catch { }
 
             // 离线索引快照：archive 下没有索引时才释放，让全新安装立即能搜全部历史
             try

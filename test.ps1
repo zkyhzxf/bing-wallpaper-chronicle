@@ -1222,6 +1222,19 @@ Check '常驻的信息窗口跟着任何换图刷新' {
     return $true
 }
 
+Check '每日故事正文随安装包分发' {
+    $b = Get-Content (Join-Path $Root 'build.ps1') -Raw
+    if ($b -notmatch 'stories\.zip') { return 'build.ps1 没打包故事正文' }
+    if ($b -notmatch 'CreateEntryFromFile') { return 'build.ps1 没把 txt 压进 zip' }
+    if ($b -notmatch '/resource:\$storyZip,stories\.zip') { return '故事包没作为资源嵌入' }
+    if ($b -notmatch 'System\.IO\.Compression\.FileSystem\.dll') { return '缺压缩库引用' }
+    $p = Get-Content (Join-Path $Root 'src\Program.cs') -Raw
+    if ($p -notmatch 'GetManifestResourceStream\("stories\.zip"\)') { return 'Program.cs 没读故事包' }
+    if ($p -notmatch 'if \(File\.Exists\(dest\)\) \{ continue; \}') { return '释放时没跳过已存在的故事（会覆盖联网抓的新版本）' }
+    if ($p -match '"stories\.zip",') { return 'stories.zip 不该进 PayloadFiles（会解到程序根目录）' }
+    return $true
+}
+
 # ---------------------------------------------------------------- 汇总
 Write-Host ''
 Write-Host ('-' * 50) -ForegroundColor DarkGray

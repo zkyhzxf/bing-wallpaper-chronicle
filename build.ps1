@@ -137,6 +137,8 @@ $buildArgs = @(
     '/reference:System.Windows.Forms.dll'
     '/reference:System.Web.Extensions.dll'
     '/reference:Microsoft.VisualBasic.dll'
+    '/reference:System.IO.Compression.dll'
+    '/reference:System.IO.Compression.FileSystem.dll'
 )
 
 # 离线索引快照：本地有更新的运行时索引时同步到 assets，保证发布产物带最新数据
@@ -181,6 +183,31 @@ if (Test-Path $snapFile) { $buildArgs += @("/resource:$snapFile,all-index.json")
 if (Test-Path $snapOld)  { $buildArgs += @("/resource:$snapOld,old-index.json") }
 if (Test-Path $snapWilii) { $buildArgs += @("/resource:$snapWilii,wilii-index.json") }
 if (Test-Path $storyMap)  { $buildArgs += @("/resource:$storyMap,story-map.json") }
+
+# 离线故事包：把已抓到的每日故事正文压进一个 zip 一起发出去，
+# 装完就能看 2013 至今的故事，不用等联网抓。已存在的文件不会被覆盖。
+$storyDir = Join-Path $repoRoot 'archive\stories'
+$storyZip = Join-Path $repoRoot 'assets\stories.zip'
+if (Test-Path $storyDir) {
+    $txts = @(Get-ChildItem $storyDir -Filter '*.txt' -File -ErrorAction SilentlyContinue)
+    if ($txts.Count -gt 0) {
+        $assetsDir = Split-Path $storyZip -Parent
+        if (-not (Test-Path $assetsDir)) { New-Item -ItemType Directory -Path $assetsDir -Force | Out-Null }
+        try {
+            if (Test-Path $storyZip) { Remove-Item $storyZip -Force }
+            Add-Type -AssemblyName System.IO.Compression.FileSystem
+            $zip = [System.IO.Compression.ZipFile]::Open($storyZip, 'Create')
+            try {
+                foreach ($t in $txts) { [void][System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $t.FullName, $t.Name, 'Optimal') }
+            } finally { $zip.Dispose() }
+            $kb = [math]::Round((Get-Item $storyZip).Length / 1KB, 0)
+            Write-Host ("故事包：$($txts.Count) 条 → assets\stories.zip（$kb KB）") -ForegroundColor DarkGray
+            $buildArgs += @("/resource:$storyZip,stories.zip")
+        } catch {
+            Write-Host ("故事包生成失败，跳过：" + $_.Exception.Message) -ForegroundColor Yellow
+        }
+    }
+}
 
 Write-Host "编译中…" -ForegroundColor Cyan
 $log = & $csc $buildArgs 2>&1 | Out-String
