@@ -518,9 +518,35 @@ $ArchiveMinDate = '20090713'
 $ArchiveProxyBase = 'https://gh-proxy.com/'
 $ArchiveRawBase   = 'https://raw.githubusercontent.com/'
 
+# 本地代理探测结果缓存：同一次进程里只探一次，别每次请求都试端口
+$script:LocalProxyHit = $null
+
+# 返回可用的本地代理地址（'' 表示没有）。用户开着 Clash 时，
+# 走 raw + 本地代理比绕 gh-proxy.com 这个第三方中转更快也更干净。
+function Get-LocalProxy {
+    if ($null -ne $script:LocalProxyHit) { return $script:LocalProxyHit }
+    $script:LocalProxyHit = ''
+    foreach ($px in @('http://127.0.0.1:7897', 'http://127.0.0.1:7890', 'http://127.0.0.1:10809')) {
+        try {
+            $u = [Uri]$px
+            $c = New-Object System.Net.Sockets.TcpClient
+            try {
+                $iar = $c.BeginConnect($u.Host, $u.Port, $null, $null)
+                if ($iar.AsyncWaitHandle.WaitOne(300) -and $c.Connected) { $script:LocalProxyHit = $px; return $px }
+            } finally { try { $c.Close() } catch { } }
+        } catch { }
+    }
+    return ''
+}
+
 function Get-ArchiveCandidateUrls {
     param([string]$RelPath)   # 形如 Zhu-junwei/bing-wallpaper-archive/master/2026/11/all.json
     $urls = @()
+
+    # 本地代理可用就排最前：最快，且不把请求交给第三方中转
+    $px0 = Get-LocalProxy
+    if ($px0) { $urls += @{ tag = ('proxy:' + $px0); url = ($ArchiveRawBase + $RelPath); proxy = $px0 } }
+
     $last = [string]$config['archiveVia']
     if ($last -eq 'ghproxy')  { $urls += @{ tag='ghproxy';  url = $ArchiveProxyBase + $ArchiveRawBase + $RelPath } }
     if ($last -eq 'raw')      { $urls += @{ tag='raw';      url = $ArchiveRawBase + $RelPath } }
@@ -530,8 +556,9 @@ function Get-ArchiveCandidateUrls {
     $urls += @{ tag='raw';     url = $ArchiveRawBase + $RelPath }
     $urls += @{ tag='api';     url = '__API__' + $RelPath }
 
-    # 本地代理端口（有 Clash 时最快）
+    # 兜底再试其余本地代理端口（有的机器开的是 7890 或 10809）
     foreach ($px in @('http://127.0.0.1:7897', 'http://127.0.0.1:7890', 'http://127.0.0.1:10809')) {
+        if ($px -eq $px0) { continue }
         $urls += @{ tag=('proxy:' + $px); url = ($ArchiveRawBase + $RelPath); proxy = $px }
     }
 
@@ -667,6 +694,20 @@ function Get-Story {
         } catch { return '' }
     }
     if ($NoFetch) { return '' }
+
+    # 每天最多自动校准一次映射表：map 里可能有预填的未来日期，
+    # 到那天用官方图名匹配校对一遍，不一致就改过来。
+    try {
+        $stale = $true
+        if (Test-Path $StoryMapPath) {
+            $stale = ((Get-Date) - (Get-Item $StoryMapPath).LastWriteTime).TotalHours -ge 24
+        }
+        if ($stale) {
+            & $PSCommandPath -UpdateStoryMap *> $null
+            $script:StoryMap = $null
+        }
+    } catch { }
+
     $map = Get-StoryMap
     if (-not $map.ContainsKey($Date)) {
         # 映射表是静态打包的，新日子没有 slug 就永远取不到故事。
@@ -1230,7 +1271,6 @@ public static extern int SystemParametersInfo(int uAction, int uParam, string lp
 # 全量索引缓存：1.6 MB，含 2016 至今所有日期的标题与版权
 $AllIndexPath = Join-Path $ArchiveDir 'all-index.json'
 $AllIndexUrl  = 'https://gh-proxy.com/https://raw.githubusercontent.com/Zhu-junwei/bing-wallpaper-archive/master/Bing_zh-CN_all.json'
-
 function Get-FullIndex {
     param([switch]$Force)
 
@@ -1250,8 +1290,20 @@ function Get-FullIndex {
         try { New-Item -ItemType Directory -Path $ArchiveDir -Force | Out-Null } catch { Write-Log ('归档目录创建失败：' + $_.Exception.Message) 'WARN' }
     }
     $resp = $null
-    $try = @($AllIndexUrl, 'https://raw.githubusercontent.com/Zhu-junwei/bing-wallpaper-archive/master/Bing_zh-CN_all.json')
+    # 有本地代理就先用它直连 raw：比绕 gh-proxy.com 这个第三方中转快，也不把请求交给它
+    $pxIdx = Get-LocalProxy
+    $rawAll = 'https://raw.githubusercontent.com/Zhu-junwei/bing-wallpaper-archive/master/Bing_zh-CN_all.json'
+    if ($pxIdx) {
+        try {
+            $resp = Invoke-WebRequest -Uri $rawAll -TimeoutSec 40 -UseBasicParsing -Proxy $pxIdx -Headers @{'User-Agent' = 'Mozilla/5.0'}
+        } catch {
+            Write-Log ("  索引下载失败（via 本地代理）：" + $_.Exception.Message) 'WARN'
+            $resp = $null
+        }
+    }
+    $try = @($AllIndexUrl, $rawAll)
     foreach ($u in $try) {
+        if ($resp) { break }
         try {
             $resp = Invoke-WebRequest -Uri $u -TimeoutSec 40 -UseBasicParsing -Headers @{'User-Agent' = 'Mozilla/5.0'}
             if ($resp) { break }
@@ -3315,6 +3367,7 @@ try {
 # （fibonacci-fern-zh-233497），两边按图名对齐，不猜顺序。
 if ($UpdateStoryMap) {
     $addedS = 0
+    $fixedS = 0
     $matchedS = 0
     try {
         $pS = Invoke-Web @{ Uri = 'https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=8&mkt=zh-CN'; TimeoutSec = 30; UseBasicParsing = $true }
@@ -3341,19 +3394,27 @@ if ($UpdateStoryMap) {
             # Bing 的 startdate 是 UTC；国内这张图在次日 00:00 上线
             $dS = ''
             try { $dS = [datetime]::ParseExact([string]$img.startdate, 'yyyyMMdd', $null).AddDays(1).ToString('yyyyMMdd') } catch { continue }
-            if ($mapS.ContainsKey($dS)) { continue }
+            if ($mapS.ContainsKey($dS)) {
+                # 已存在也要核对：map 里可能预填了未来日期，官方匹配结果才是准的
+                if ([string]$mapS[$dS] -ne $hitS) {
+                    Write-Log ('  校正 ' + $dS + '：' + $mapS[$dS] + ' → ' + $hitS)
+                    $mapS[$dS] = $hitS
+                    $fixedS++
+                }
+                continue
+            }
             $mapS[$dS] = $hitS
             $addedS++
             Write-Log ('  补进 ' + $dS + ' → ' + $hitS)
         }
 
-        if ($addedS -gt 0) {
+        if (($addedS + $fixedS) -gt 0) {
             [System.IO.File]::WriteAllText($StoryMapPath, ($mapS | ConvertTo-Json -Depth 3), (New-Object System.Text.UTF8Encoding($false)))
-            Write-Log ('故事映射已更新：新增 ' + $addedS + ' 条（匹配 ' + $matchedS + ' 天）')
+            Write-Log ('故事映射已更新：新增 ' + $addedS + ' 条，校正 ' + $fixedS + ' 条（匹配 ' + $matchedS + ' 天）')
         } else {
-            Write-Log ('故事映射无需更新（匹配 ' + $matchedS + ' 天，都已在表里）')
+            Write-Log ('故事映射无需更新（匹配 ' + $matchedS + ' 天，全部一致）')
         }
-        Write-Output ('{"added":' + $addedS + ',"matched":' + $matchedS + '}')
+        Write-Output ('{"added":' + $addedS + ',"fixed":' + $fixedS + ',"matched":' + $matchedS + '}')
         Exit-Run 0
     } catch {
         Write-Log ('故事映射更新失败：' + $_.Exception.Message) 'ERROR'

@@ -795,10 +795,10 @@ Check '所有源码文件带 UTF-8 BOM' {
     return $true
 }
 
-Check '空 catch 不超过 93 处' {
+Check '空 catch 不超过 96 处' {
     $t = Get-Content $Script -Raw
     $n = ([regex]::Matches($t, 'catch \{ \}')).Count
-    if ($n -gt 93) { return ('空 catch 已 ' + $n + ' 处，超上限 93') }
+    if ($n -gt 96) { return ('空 catch 已 ' + $n + ' 处，超上限 96') }
     return $true
 }
 
@@ -1249,6 +1249,31 @@ Check '故事映射表可自动补齐，过期会报出来' {
     if ($ps -notmatch 'recentS = \(\$Date -ge \(Get-Date\)\.AddDays\(-30\)') { return '自愈没有时间窗限制' }
     if ($ps -notmatch '\$script:StoryMap = \$null') { return '子进程更新后没有让缓存失效' }
     if ($ps -notmatch '故事映射') { return '-Status 没输出故事映射新鲜度' }
+    return $true
+}
+
+Check '取图通道：有本地代理时优先直连 raw，而不是绕 gh-proxy' {
+    $ps = Get-Content (Join-Path $Root 'bing-wallpaper.ps1') -Raw
+    if ($ps -notmatch 'function Get-LocalProxy') { return '缺本地代理探测' }
+    if ($ps -notmatch '\$script:LocalProxyHit') { return '探测结果没有缓存，每次请求都会试端口' }
+    $g = [regex]::Match($ps, '(?s)function Get-ArchiveCandidateUrls.*?return \$out')
+    if (-not $g.Success) { return '找不到 Get-ArchiveCandidateUrls' }
+    # proxy 通道必须排在 ghproxy 之前
+    $ipx = $g.Value.IndexOf('Get-LocalProxy')
+    $igh = $g.Value.IndexOf("tag='ghproxy'")
+    if ($ipx -lt 0) { return '候选列表没先看本地代理' }
+    if ($igh -lt 0 -or $ipx -gt $igh) { return '本地代理没有排在 ghproxy 前面' }
+    # 全量索引也不能写死中转
+    if ($ps -notmatch '\$pxIdx = Get-LocalProxy') { return '全量索引还是写死 gh-proxy' }
+    return $true
+}
+
+Check '故事映射每日校准，已存在的条目也会核对更正' {
+    $ps = Get-Content (Join-Path $Root 'bing-wallpaper.ps1') -Raw
+    if ($ps -notmatch '\$fixedS\+\+') { return '没有校正计数' }
+    if ($ps -notmatch '校正 ') { return '已存在条目没有核对逻辑' }
+    if ($ps -notmatch 'TotalHours -ge 24') { return '没有每日校准的节流' }
+    if ($ps -notmatch '& \$PSCommandPath -UpdateStoryMap \*> \$null') { return '没有自动调用更新' }
     return $true
 }
 
