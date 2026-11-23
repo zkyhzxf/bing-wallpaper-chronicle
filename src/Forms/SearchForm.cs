@@ -234,6 +234,8 @@ namespace BingWallpaperLite
                         btnApply.Enabled = (lst.SelectedIndex >= 0);
                         if (code == 11) { lblStatus.Text = S.WallApplyFail; }
                         else if (code == 12) { lblStatus.Text = S.FutureDateHint; }
+                        else if (code == 4) { lblStatus.Text = S.SrchNoSource; }
+                        else if (code == 5) { lblStatus.Text = S.SrchNoImage; }
                         else { lblStatus.Text = (code == 0 || code == 8) ? S.SrchSwitched(d8) : S.SrchSwitchFail; }
                     });
                 }

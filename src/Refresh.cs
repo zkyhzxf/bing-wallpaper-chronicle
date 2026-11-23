@@ -511,8 +511,31 @@ namespace BingWallpaperLite
             catch { return ""; }
         }
 
-        private static string PinnedFilePath { get { return Path.Combine(root, "pinned.json"); } }
-        private static string PinnedLegacyFilePath { get { return Path.Combine(cacheDir, "pinned.json"); } }
+        /// <summary>名单文件路径：接管时读 takeover\pinned.json，与脚本写的同一份。</summary>
+        private static string PinnedFilePath
+        {
+            get
+            {
+                try
+                {
+                    if (TakeoverActive()) { return Path.Combine(TakeoverDirPath, "pinned.json"); }
+                }
+                catch { }
+                return Path.Combine(root, "pinned.json");
+            }
+        }
+        private static string PinnedLegacyFilePath
+        {
+            get
+            {
+                try
+                {
+                    if (TakeoverActive()) { return Path.Combine(ActiveCacheDir, "pinned.json"); }
+                }
+                catch { }
+                return Path.Combine(cacheDir, "pinned.json");
+            }
+        }
 
         /// <summary>读保护名单（新位置优先，旧版在 cache\ 下的继续兼容）。</summary>
         internal static Dictionary<string, object> ReadPinnedMap()
@@ -544,7 +567,7 @@ namespace BingWallpaperLite
         internal static string FindImageFilePath(string date, out int where)
         {
             where = 0;   // 0=没有 1=收藏 2=缓存 3=归档 4=老存档
-            string[] dirs = new string[] { FavDirPath, CacheDirPath, ArchiveImgPath };
+            string[] dirs = new string[] { ActiveFavDirPath, ActiveCacheDir, ActiveArchiveImgPath };
             for (int i = 0; i < dirs.Length; i++)
             {
                 try

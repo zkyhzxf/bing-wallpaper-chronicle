@@ -16,6 +16,7 @@ namespace BingWallpaperLite
         private readonly Label lblPath;
         private readonly Button btnPick;
         private readonly Button btnExit;
+        private Button btnFill;
 
         public TakeoverForm()
         {
@@ -25,7 +26,7 @@ namespace BingWallpaperLite
             MaximizeBox = false;
             MinimizeBox = false;
             ShowInTaskbar = true;
-            ClientSize = new Size(620, 268);
+            ClientSize = new Size(620, 312);
             try { Font = new Font("Microsoft YaHei UI", 9F); } catch { }
 
             lblTitle = new Label();
@@ -47,31 +48,66 @@ namespace BingWallpaperLite
 
             btnPick = new Button();
             btnPick.Text = S.TkPick;
-            btnPick.SetBounds(18, 210, 160, 34);
+            btnPick.SetBounds(18, 254, 160, 34);
             btnPick.Click += delegate { DoPick(); };
             Controls.Add(btnPick);
 
             btnExit = new Button();
             btnExit.Text = S.TkExit;
-            btnExit.SetBounds(190, 210, 160, 34);
+            btnExit.SetBounds(190, 254, 160, 34);
             btnExit.Click += delegate { DoExit(); };
             Controls.Add(btnExit);
 
             Button btnImport = new Button();
             btnImport.Text = S.TkImport;
-            btnImport.SetBounds(362, 210, 150, 34);
+            btnImport.SetBounds(362, 254, 150, 34);
             btnImport.Click += delegate { DoImport(); };
             Controls.Add(btnImport);
 
             Button btnClose = new Button();
             btnClose.Text = S.BtnClose;
-            btnClose.SetBounds(524, 210, 90, 34);
+            btnClose.SetBounds(524, 254, 90, 34);
             btnClose.Click += delegate { Close(); };
             Controls.Add(btnClose);
             AcceptButton = btnClose;
             CancelButton = btnClose;
 
+            // 补齐缺失日期：只补图库里没有的那几天，已有的一张都不碰
+            btnFill = new Button();
+            btnFill.Text = S.TkFillBtn;
+            btnFill.SetBounds(18, 210, 220, 30);
+            btnFill.Click += delegate { DoFill(); };
+            Controls.Add(btnFill);
+
             RefreshState();
+        }
+
+        /// <summary>补齐图库里缺的日期。只补缺的，已有的一张都不动。</summary>
+        private void DoFill()
+        {
+            if (!Program.TakeoverActive()) { return; }
+            DateTime to = DateTime.Today;
+            DateTime from = to.AddYears(-3);
+            if (MessageBox.Show(S.TkFillAsk(from, to), Program.AppName,
+                    MessageBoxButtons.OKCancel, MessageBoxIcon.Question) != DialogResult.OK)
+            {
+                return;
+            }
+            lblState.Text = S.TkFilling;
+            btnFill.Enabled = false;
+            string args = "-FillLibrary -RangeFrom " + from.ToString("yyyyMMdd") + " -RangeTo " + to.ToString("yyyyMMdd");
+            System.Threading.ThreadPool.QueueUserWorkItem(delegate
+            {
+                try { Program.RunScriptExit(args); } catch { }
+                try
+                {
+                    BeginInvoke((MethodInvoker)delegate
+                    {
+                        try { RefreshState(); } catch { }
+                    });
+                }
+                catch { }
+            });
         }
 
         private void RefreshState()
@@ -83,11 +119,25 @@ namespace BingWallpaperLite
                 if (active)
                 {
                     int n = 0;
-                    try { n = Directory.GetFiles(root, "*.jpg").Length; } catch { }
+                    int days = 0;
+                    try
+                    {
+                        string[] fs = Directory.GetFiles(root, "*.jpg", SearchOption.AllDirectories);
+                        n = fs.Length;
+                        System.Collections.Generic.HashSet<string> ds = new System.Collections.Generic.HashSet<string>();
+                        foreach (string f in fs)
+                        {
+                            string fn = Path.GetFileName(f);
+                            if (fn.Length >= 8) { ds.Add(fn.Substring(0, 8)); }
+                        }
+                        days = ds.Count;
+                    }
+                    catch { }
                     lblState.Text = S.TkOn;
-                    lblPath.Text = S.TkOnBody(root, n);
+                    lblPath.Text = S.TkOnBody(root, n, days);
                     btnPick.Text = S.TkChange;
                     btnExit.Enabled = true;
+                    if (btnFill != null) { btnFill.Enabled = true; }
                 }
                 else if (!string.IsNullOrEmpty(root))
                 {
@@ -103,6 +153,7 @@ namespace BingWallpaperLite
                     btnPick.Text = S.TkPick;
                     btnExit.Enabled = false;
                 }
+                if (btnFill != null) { btnFill.Enabled = active; }
             }
             catch { }
         }

@@ -269,9 +269,9 @@ namespace BingWallpaperLite
             if (string.IsNullOrEmpty(file)) { return ""; }
             try
             {
-                string fav = Program.FavDirPath;
-                string cache = Program.CacheDirPath;
-                string old = Program.OldDirPath;
+                string fav = Program.ActiveFavDirPath;
+                string cache = Program.ActiveCacheDir;
+                string old = Program.TakeoverActive() ? "" : Program.OldDirPath;
                 if (!string.IsNullOrEmpty(fav) && file.StartsWith(fav, StringComparison.OrdinalIgnoreCase)) { return S.PinLocFav; }
                 if (!string.IsNullOrEmpty(cache) && file.StartsWith(cache, StringComparison.OrdinalIgnoreCase)) { return S.PinLocCache; }
                 if (!string.IsNullOrEmpty(old) && file.StartsWith(old, StringComparison.OrdinalIgnoreCase)) { return S.PinLocOld; }
@@ -282,7 +282,7 @@ namespace BingWallpaperLite
 
         private static string FindFileOfDate(string date)
         {
-            string[] dirs = new string[] { Program.CacheDirPath, Program.FavDirPath, Program.ArchiveImgPath };
+            string[] dirs = new string[] { Program.ActiveCacheDir, Program.ActiveFavDirPath, Program.ActiveArchiveImgPath };
             foreach (string d in dirs)
             {
                 try
@@ -598,6 +598,13 @@ namespace BingWallpaperLite
 
         private void RemoveChecked()
         {
+            // 接管模式：那个目录整个不受自动清理，名单在这里没有保护作用，
+            // 移出只是改一个没人读的字段 —— 直接说明，不做无意义的写入
+            if (Program.TakeoverActive())
+            {
+                MessageBox.Show(S.PinNoEffectTakeover, Program.AppName, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
             List<string> picked = new List<string>();
             List<string> effective = new List<string>();
             int nLegacy = 0, nFav = 0;

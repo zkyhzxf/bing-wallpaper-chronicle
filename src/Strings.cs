@@ -178,6 +178,14 @@ namespace BingWallpaperLite
             sb.Append("本次操作不删除任何文件。确定吗？");
             return sb.ToString();
         }
+        public static string PinNoEffectTakeover
+        {
+            get
+            {
+                return T("当前是接管模式：这个目录是只读的，软件不会清理它里面的任何图。\r\n移出名单在这里不改变任何东西，所以没有执行。\r\n\r\n要处理这些图，请直接在资源管理器里操作那个目录。",
+                         "Takeover mode: this folder is read-only for the app and is never auto-cleaned.\r\nRemoving entries changes nothing here, so nothing was done.\r\n\r\nManage those images directly in Explorer.");
+            }
+        }
         public static string PinNoEffect
         {
             get
@@ -465,15 +473,25 @@ namespace BingWallpaperLite
         public static string TkHeader     { get { return T("接管 = 换一个图片仓库", "Takeover = switch the image store"); } }
         public static string TkTip
         {
-            get { return T("接管后只读这个目录：不清理、不移动、不改名。新下载的图也存进去。\r\n退出接管会删掉 takeover 目录，软件回到接管前的样子，原来的配置一点都没动。", "While taken over, this folder is read-only for the app: nothing is cleaned, moved or renamed.\r\nLeaving takeover deletes the takeover folder and returns to the previous state."); }
+            get { return T("接管后只读这个目录：不清理、不移动、不改名。新下载的图也存进去。\r\n唯一的例外是画质升级：2019 年后的图若不足 UHD，取到原图后会原地覆盖同名文件。\r\n退出接管会删掉 takeover 目录，软件回到接管前的样子，原来的配置一点都没动。", "While taken over, this folder is read-only for the app: nothing is cleaned, moved or renamed. New downloads go here too.\r\nThe one exception is a quality upgrade: a post-2019 image below UHD gets overwritten in place when the original is fetched.\r\nLeaving takeover deletes the takeover folder and returns to the previous state."); }
         }
         public static string TkOff        { get { return T("当前：未接管（用安装目录里的缓存与归档）", "Current: not taken over (using the install folder)"); } }
         public static string TkOn         { get { return T("当前：接管中（只读这个目录）", "Current: taken over (read-only)"); } }
-        public static string TkOnBody(string root, int n)
+        public static string TkOnBody(string root, int n, int days)
         {
-            string tpl = _en ? "Folder: {0}\r\n{1} images found; new downloads go here; cleaning and moving are disabled."
-                             : "目录：{0}\r\n找到 {1} 张图；新下载的图存这里；清理与移动已禁用。";
-            return string.Format(tpl, root, n);
+            string tpl = _en ? "Folder: {0}\r\n{1} images · {2} days covered; new downloads go here; cleaning and moving are disabled."
+                             : "目录：{0}\r\n{1} 张图 · 覆盖 {2} 天；新下载的图存这里；清理与移动已禁用。";
+            return string.Format(tpl, root, n, days);
+        }
+        public static string TkFillBtn  { get { return T("补齐缺失日期（最近 3 年）…", "Fill missing days (last 3 years)…"); } }
+        public static string TkFilling  { get { return T("正在补齐，进度见日志…", "Filling — see the log for progress…"); } }
+        public static string TkFillAsk(DateTime from, DateTime to)
+        {
+            string a = from.ToString("yyyy-MM-dd");
+            string b = to.ToString("yyyy-MM-dd");
+            return _en
+                ? ("Add every day between " + a + " and " + b + " that the library does not have yet.\r\nExisting days are skipped, nothing is overwritten. Roughly 2 seconds per image; close this window to stop.\r\n\r\nStart?")
+                : ("把 " + a + " ~ " + b + " 之间图库还没有的日期逐天补进来。\r\n已有的一张都不动、不覆盖；每张约 2 秒，关掉这个窗口就停。\r\n\r\n开始吗？");
         }
         /// <summary>菜单里的常驻模式标牌：接管时显示「收藏家模式 · 目录名」。</summary>
         public static string ModeBadge(string name)
@@ -601,6 +619,8 @@ namespace BingWallpaperLite
         public static string ReloadIndex    { get { return T("重新载入索引", "Reload index"); } }
         public static string SrchWorking    { get { return T("正在换图…", "Switching…"); } }
         public static string SrchSwitchFail { get { return T("换图失败，可以再点一次", "Switch failed; try again"); } }
+        public static string SrchNoSource   { get { return T("这一天的原图取不到（源不可达），稍后再试试", "Couldn't reach a source for that day — try again later"); } }
+        public static string SrchNoImage    { get { return T("这一天必应没有发布壁纸", "Bing published no wallpaper that day"); } }
         public static string BtnClose       { get { return T("关闭", "Close"); } }
 
         public static string SrchSwitched(string date)

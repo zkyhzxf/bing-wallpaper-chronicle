@@ -105,7 +105,8 @@ param(
     [int]$TestArchiveSweep = 0,
     [switch]$Festivals,
     [string]$Festival = '',
-    [switch]$MigrateOld
+    [switch]$MigrateOld,
+    [switch]$FillLibrary
 )
 
 # ---------------------------------------------------------------- 退出码约定
@@ -208,6 +209,8 @@ $StoryMapPath  = Join-Path $ArchiveDir 'story-map.json'
 $GalleryDir    = Join-Path $CacheDir 'gallery'
 $PinnedPath = Join-Path $Root 'pinned.json'
 $PinnedLegacyPath = Join-Path $Root 'cache\pinned.json'
+# 已知取不到的日期：随机时跳过，窗口点了失败也记这里。30 天后重试（镜像可能修好）
+$DeadDatesPath = Join-Path $Root 'cache\dead-dates.json'
 
 # ---------------------------------------------------------------- 接管模式（沙盒）
 # 有 takeover\config.json 且 root 可用时，只读写 takeover\ 与 root：
@@ -217,6 +220,9 @@ $TakeoverCfg     = Join-Path $TakeoverDir 'config.json'
 $script:Takeover = $false
 $script:TakeoverRoot = ''
 $script:TakeoverBroken = ''
+# 接管时的下载暂存区：所有注定要进图库的文件先落这里，成功了再一次性搬进去。
+# 非接管模式保持空串，所有相关判断短接，行为一字不变。
+$script:LibStaging = ''
 if (Test-Path $TakeoverCfg) {
     try {
         $tc = Get-Content $TakeoverCfg -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -242,9 +248,15 @@ if ($script:Takeover) {
     $GalleryDir    = Join-Path $CacheDir 'gallery'
     $WallDir       = Join-Path $CacheDir 'wall'
     $ArchiveImgDir = $script:TakeoverRoot
+    # 老存档（2009-08~2016-02）在接管模式下整个不用：图库里可能已经有同一张，
+    # 缺的也直接补进图库目录，再从 archive\old 兜底等于绕开了「只用这个目录」的约定。
+    # 指向一个不存在的子目录，让所有 Test-Path 自然落空，不用在各处再加判断。
+    $OldDir        = Join-Path $TakeoverDir 'old-not-used'
     $PinnedPath    = Join-Path $TakeoverDir 'pinned.json'
     $PinnedLegacyPath = $PinnedPath
-    foreach ($dT in @($TakeoverDir, $CacheDir, $FavDir)) {
+    $script:LibStaging = Join-Path $TakeoverDir 'incoming'
+    $DeadDatesPath = Join-Path $TakeoverDir 'dead-dates.json'
+    foreach ($dT in @($TakeoverDir, $CacheDir, $FavDir, $script:LibStaging)) {
         if (-not (Test-Path $dT)) { try { New-Item -ItemType Directory -Path $dT -Force | Out-Null } catch { } }
     }
 }
@@ -1008,9 +1020,61 @@ function Get-ZhTitleMap {
 
 # ---------------------------------------------------------------- 下载
 
+# 把暂存区里的文件搬进图库。图库已有同名文件时一律保留原件（画质升级除外），
+# 保证「只增不减」；任何中间态都留在暂存区，不污染图库目录。
+function Publish-ToLibrary {
+    param([string]$Staged, [string]$Dest)
+    if (-not $Staged -or -not $Dest) { return $false }
+    if (-not (Test-Path -LiteralPath $Staged)) { return $false }
+    $leaf = Split-Path $Dest -Leaf
+    try {
+        if (Test-Path -LiteralPath $Dest) {
+            $isUpgrade = ($script:UpgradeDest -and ($Dest -ieq [string]$script:UpgradeDest))
+            if ($isUpgrade) {
+                Move-Item -LiteralPath $Staged -Destination $Dest -Force
+                Write-Log ('画质升级：覆盖图库里的 ' + $leaf)
+            } else {
+                Remove-Item -LiteralPath $Staged -Force -ErrorAction SilentlyContinue
+                Write-Log ('图库已有这一天，丢弃暂存副本：' + $leaf)
+            }
+            return $true
+        }
+        try {
+            Move-Item -LiteralPath $Staged -Destination $Dest -Force
+        } catch {
+            # 跨卷 Move 会退化成复制+删除，中途失败会留半个文件。
+            # 改成先写同目录 .new 再原子改名，失败就把 .new 清掉。
+            $new = $Dest + '.new'
+            try {
+                Copy-Item -LiteralPath $Staged -Destination $new -Force
+                [System.IO.File]::Move($new, $Dest)
+            } finally {
+                if (Test-Path -LiteralPath $new) { Remove-Item -LiteralPath $new -Force -ErrorAction SilentlyContinue }
+            }
+            Remove-Item -LiteralPath $Staged -Force -ErrorAction SilentlyContinue
+        }
+        return $true
+    } catch {
+        Write-Log ('写入图库失败（文件留在暂存区）：' + $_.Exception.Message) 'WARN'
+        return $false
+    }
+}
+
 function Save-BingImage {
     param([string]$Url, [string]$Dest, [int]$MinKB = 300, [int]$Retry = 2)
-    $tmp = "$Dest.tmp"
+    # 接管模式：目的地落在图库时，先下到暂存区，成功后再一次性搬进去。
+    # 这样断线 / 超时 / 403 只在沙盒里留 .tmp，图库目录永远看不到半成品。
+    $realDest = $Dest
+    $staged = $false
+    if ($script:LibStaging -and $Dest -and $script:TakeoverRoot -and
+        $Dest.StartsWith($script:TakeoverRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+        try {
+            if (-not (Test-Path $script:LibStaging)) { New-Item -ItemType Directory -Path $script:LibStaging -Force | Out-Null }
+            $realDest = Join-Path $script:LibStaging (Split-Path $Dest -Leaf)
+            $staged = $true
+        } catch { $realDest = $Dest; $staged = $false }
+    }
+    $tmp = "$realDest.tmp"
     $attempts = [Math]::Max(1, $Retry + 1)
     $lastErr = ''
     for ($i = 0; $i -lt $attempts; $i++) {
@@ -1020,11 +1084,13 @@ function Save-BingImage {
             Invoke-WebRequest @p
             $size = (Get-Item $tmp).Length
             if ($size -lt ($MinKB * 1024)) { throw "体积异常 $size 字节" }
-            Move-Item -LiteralPath $tmp -Destination $Dest -Force
+            Move-Item -LiteralPath $tmp -Destination $realDest -Force
+            if ($staged) { [void](Publish-ToLibrary -Staged $realDest -Dest $Dest) }
             return $size
         } catch {
             $lastErr = $_.Exception.Message
-            # 半成品 .tmp 留在原地，下一次同名下载会被 OutFile 直接覆盖
+            # 半成品 .tmp 留在原地，下一次同名下载会被 OutFile 直接覆盖。
+            # 接管模式下它在暂存区里，退出接管随沙盒一起消失。
             if ($i -lt ($attempts - 1)) {
                 $pause = [int](800 * [Math]::Pow(2, $i))
                 Write-Log ("下载失败，重试 " + ($i + 1) + "/" + $Retry + "（" + $pause + " ms 后）：" + $lastErr) 'WARN'
@@ -1033,7 +1099,98 @@ function Save-BingImage {
         }
     }
     throw $lastErr
-}# ---------------------------------------------------------------- 设壁纸
+}
+
+# 已知取不到的日期账本。只记「确实是这天没有」，网络问题绝不记账 ——
+# 否则断网时连点几次，好几天就被永久拉黑了。
+function Read-DeadDates {
+    $m = @{}
+    if (-not (Test-Path $DeadDatesPath)) { return $m }
+    try {
+        $o = Get-Content $DeadDatesPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $now = Get-Date
+        foreach ($q in $o.PSObject.Properties) {
+            $dAt = $null
+            try { $dAt = [datetime]::Parse([string]$q.Value.at) } catch { }
+            # 30 天后重新尝试：镜像可能修好了
+            if ($dAt -and ($now - $dAt).TotalDays -lt 30) { $m[$q.Name] = $q.Value }
+        }
+    } catch { }
+    return $m
+}
+
+function Note-DeadDate {
+    param([string]$Date8, [string]$Reason)
+    if (-not $Date8) { return }
+    try {
+        $m = Read-DeadDates
+        $m[$Date8] = @{ reason = $Reason; at = (Get-Date).ToString('s') }
+        $dir = Split-Path $DeadDatesPath -Parent
+        if ($dir -and -not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+        [System.IO.File]::WriteAllText($DeadDatesPath, ($m | ConvertTo-Json -Depth 4), (New-Object System.Text.UTF8Encoding($false)))
+    } catch { }
+}
+
+# 某一天的图还能不能取到。三态：
+#   ok      = 至少一档拿得到
+#   missing = Bing 明确 404，这天确实没有/已删除 —— 可以记账
+#   netfail = 超时 / DNS / 代理失败 —— 网络问题，绝不能记账
+function Test-ArchiveReachable {
+    param([string]$Date8, [string]$ImageId)
+    if (-not $ImageId) { return 'unknown' }
+    $sawNetFail = $false
+    foreach ($sfx in @(($ImageId + '_UHD.jpg'), ($ImageId + '_1920x1080.jpg'))) {
+        $u = 'https://www.bing.com/th?id=' + $sfx
+        try {
+            $p = Invoke-Web @{ Uri = $u; TimeoutSec = 8; UseBasicParsing = $true; Method = 'Head' }
+            $r = Invoke-WebRequest @p
+            if ($r.StatusCode -ge 200 -and $r.StatusCode -lt 400) { return 'ok' }
+        } catch {
+            $msg = $_.Exception.Message
+            if ($msg -notmatch '404|Not Found|找不到') { $sawNetFail = $true }
+        }
+    }
+    if ($sawNetFail) { return 'netfail' }
+    return 'missing'
+}# ---------------------------------------------------------------- 图库索引与补齐
+# 图库目录里只允许这一个非图片文件：它是目录册，删了不影响任何东西，下次重建。
+$LibraryIndexName = '_bing-chronicle-index.json'
+
+function Get-LibraryDates {
+    param([string]$Dir)
+    $set = @{}
+    if (-not $Dir -or -not (Test-Path $Dir)) { return $set }
+    Get-ChildItem $Dir -Filter '*.jpg' -File -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
+        if ($_.Name -match '^(\d{8})') { $set[$matches[1]] = $true }
+    }
+    return $set
+}
+
+function Read-LibraryIndex {
+    param([string]$Dir)
+    $m = @{}
+    if (-not $Dir) { return $m }
+    $p = Join-Path $Dir $LibraryIndexName
+    if (-not (Test-Path $p)) { return $m }
+    try {
+        $o = Get-Content $p -Raw -Encoding UTF8 | ConvertFrom-Json
+        foreach ($q in $o.days.PSObject.Properties) { $m[$q.Name] = $q.Value }
+    } catch { }
+    return $m
+}
+
+function Write-LibraryIndex {
+    param([string]$Dir, $Days)
+    if (-not $Dir -or -not (Test-Path $Dir)) { return }
+    try {
+        $obj = [ordered]@{ updated = (Get-Date).ToString('s'); days = $Days }
+        $p = Join-Path $Dir $LibraryIndexName
+        [System.IO.File]::WriteAllText($p, ($obj | ConvertTo-Json -Depth 5), (New-Object System.Text.UTF8Encoding($false)))
+    } catch { Write-Log ('图库索引写入失败：' + $_.Exception.Message) 'WARN' }
+}
+
+
+# ---------------------------------------------------------------- 设壁纸
 
 function Set-DesktopWallpaper {
     param([string]$Path)
@@ -1240,6 +1397,15 @@ function Read-Pinned {
 # 移动文件；若是当前桌面壁纸，先复制并切过去再删源，避免桌面指向不存在的文件
 function Move-FileKeepWallpaper {
     param([string]$Src, [string]$Dest, [switch]$IsCurrentWallpaper)
+
+    # 接管模式只增不减：源就在图库里时只能复制一份出去，绝不移走或删除
+    $inLibrary = ($script:TakeoverRoot -and $Src -and
+                  $Src.StartsWith($script:TakeoverRoot, [System.StringComparison]::OrdinalIgnoreCase))
+    if ($inLibrary) {
+        Copy-Item -LiteralPath $Src -Destination $Dest -Force
+        Write-Log ('接管模式：复制一份到 ' + (Split-Path $Dest -Leaf) + '，图库原件保留')
+        return
+    }
 
     if ($IsCurrentWallpaper) {
         Copy-Item -LiteralPath $Src -Destination $Dest -Force
@@ -1590,6 +1756,10 @@ function Clear-StoryCache {
 function Clear-ArchiveBySize {
     param([int]$MaxMB)
     if ($MaxMB -le 0) { return 0 }
+    # 接管模式只读：$ArchiveImgDir 这时是用户自己的图库，容量上限是本软件的缓存策略，
+    # 不能拿它去删别人的图 —— 何况这里用的是 File::Delete，永久删除，不进回收站。
+    # 少了这段，「换一张壁纸」就会顺带清空一个几十 GB 的图库。
+    if ($script:Takeover) { return 0 }
     if (-not (Test-Path $ArchiveImgDir)) { return 0 }
 
     $files = @(Get-ChildItem $ArchiveImgDir -Filter '*.jpg' -File -ErrorAction SilentlyContinue | Sort-Object Name)
@@ -3094,6 +3264,75 @@ try {
         Exit-Run 0
     }
 
+# 补齐图库：把范围内索引里有、图库里没有的日期一张张补进来。只增，不覆盖。
+if ($FillLibrary) {
+    $tgtDir = $ArchiveImgDir
+    if (-not $tgtDir -or -not (Test-Path $tgtDir)) { Write-Log '补齐目标目录不存在' 'ERROR'; Exit-Run 5 }
+
+    $d1F = ([string]$RangeFrom) -replace '[^0-9]', ''
+    $d2F = ([string]$RangeTo) -replace '[^0-9]', ''
+    $todayF = (Get-Date).ToString('yyyyMMdd')
+    if ($d2F.Length -ne 8) { $d2F = $todayF }
+    if ($d1F.Length -ne 8) { $d1F = (Get-Date).AddYears(-3).ToString('yyyyMMdd') }
+    if ($d1F -lt $ArchiveMinDate) { $d1F = $ArchiveMinDate }
+    if ($d2F -gt $todayF) { $d2F = $todayF }
+    if ($d1F -gt $d2F) { Write-Log ('日期范围反了：' + $d1F + ' > ' + $d2F) 'ERROR'; Exit-Run 1 }
+
+    $haveF = Get-LibraryDates -Dir $tgtDir
+    $idxF = @()
+    try { $idxF = @(Get-FullIndex) } catch { }
+    if ($idxF.Count -eq 0) { Write-Log '索引为空，无法确定要补哪些日期' 'ERROR'; Exit-Run 5 }
+
+    $todoF = @()
+    foreach ($it in $idxF) {
+        $dd = ([string]$it.d) -replace '[^0-9]', ''
+        if ($dd.Length -ne 8) { continue }
+        if ($dd -lt $d1F -or $dd -gt $d2F) { continue }
+        if ($haveF.ContainsKey($dd)) { continue }
+        $todoF += $it
+    }
+
+    Write-Log ("补齐图库：范围 $d1F ~ $d2F，缺 " + $todoF.Count + " 天")
+
+    $deadF = Read-DeadDates
+    $libIdxF = Read-LibraryIndex -Dir $tgtDir
+    $okF = 0; $skipF = 0; $failF = 0
+    foreach ($it in $todoF) {
+        $dd = ([string]$it.d) -replace '[^0-9]', ''
+        if ($deadF.ContainsKey($dd)) { $skipF++; continue }
+        $imgId = [string]$it.i
+        if (-not $imgId) { $skipF++; continue }
+        $shortIdF = $imgId -replace '_[A-Za-z]{2}-[A-Za-z]{2}\d+$', ''
+        $nameF = "${dd}_$shortIdF.jpg"
+        $destF = Join-Path $tgtDir $nameF
+        if (Test-Path -LiteralPath $destF) { $skipF++; continue }
+        $szF = 0
+        $doneF = $false
+        foreach ($sfx in @(($imgId + '_UHD.jpg'), ($imgId + '_1920x1080.jpg'))) {
+            try {
+                $szF = Save-BingImage -Url ('https://www.bing.com/th?id=' + $sfx) -Dest $destF -MinKB 60 -Retry 1
+                $doneF = $true
+                break
+            } catch { }
+        }
+        if ($doneF) {
+            $okF++
+            $libIdxF[$dd] = @{ file = $nameF; b = $szF; at = (Get-Date).ToString('s') }
+            Write-LibraryIndex -Dir $tgtDir -Days $libIdxF
+            Write-Log ("  补进 $dd（" + [math]::Round($szF / 1KB, 0) + " KB）")
+        } else {
+            Note-DeadDate -Date8 $dd -Reason 'fill-missing'
+            $failF++
+            Write-Log ("  取不到 $dd，已记入失效名单") 'WARN'
+        }
+        Start-Sleep -Milliseconds 400
+    }
+
+    Write-Log ("补齐完成：新增 $okF 天，跳过 $skipF 天，失败 $failF 天")
+    Write-Output ('{"added":' + $okF + ',"skipped":' + $skipF + ',"failed":' + $failF + '}')
+    Exit-Run 0
+}
+
     if ($StoryFor) {
         $sv = Get-Story -Date $StoryFor
         $objS = [ordered]@{ date = ([string]$StoryFor) -replace '[^0-9]', ''; story = $sv }
@@ -3228,7 +3467,7 @@ try {
         foreach ($src in @(
             @{ dir = $FavDir;        from = '收藏';   recurse = $false },
             @{ dir = $CacheDir;      from = '缓存';   recurse = $false },
-            @{ dir = $ArchiveImgDir; from = '归档';   recurse = $false },
+            @{ dir = $ArchiveImgDir; from = '归档';   recurse = $true  },
             @{ dir = $OldDir;        from = '老存档'; recurse = $true  }
         )) {
             $d0 = $src.dir
@@ -3242,19 +3481,53 @@ try {
             }
         }
 
-        # any：先从索引里随机取一天。本地没有这张就不取锁，直接把日期交给下面的「指定日期」
-        # 流程 —— 那边自己会取锁、下载、写 pinned、写 state，副作用一个不少
+        # any：先从索引里随机取一天。本地没有就先做可达性预检 ——
+        # 直接扔给「指定日期」流程的话，一条死链要拉索引、试三个源、重试两轮才知道没用。
         if ($scope -eq 'any') {
             $idxAny = @()
             try { $idxAny = @(Get-FullIndex) } catch { }
             if ($idxAny.Count -eq 0) { Write-Log '索引为空，取不到可随机的日期' 'ERROR'; Exit-Run 5 }
-            $dAny = [string](($idxAny | Get-Random).d) -replace '[^0-9]', ''
-            if ($dAny.Length -ne 8) { Write-Log ('随机到的日期不可用：' + $dAny) 'ERROR'; Exit-Run 5 }
-            if ($byDate.ContainsKey($dAny)) {
-                Write-Log ('随机到 ' + $dAny + '，本地已有这张')
+
+            $dead = Read-DeadDates
+            $poolAny = @($idxAny | Where-Object { -not $dead.ContainsKey([string]$_.d) })
+            if ($poolAny.Count -eq 0) { $poolAny = $idxAny }
+
+            $tried = @()
+            $netFail = 0
+            $picked = ''
+            for ($k = 0; $k -lt 3; $k++) {
+                $cand = $poolAny | Get-Random
+                if (-not $cand) { break }
+                $dc = ([string]$cand.d) -replace '[^0-9]', ''
+                if ($dc.Length -ne 8) { continue }
+                if ($tried -contains $dc) { continue }
+                $tried += $dc
+                if ($byDate.ContainsKey($dc)) { $picked = $dc; break }
+                $rv = Test-ArchiveReachable -Date8 $dc -ImageId ([string]$cand.i)
+                if ($rv -eq 'ok' -or $rv -eq 'unknown') { $picked = $dc; break }
+                if ($rv -eq 'missing') {
+                    Note-DeadDate -Date8 $dc -Reason 'missing'
+                    Write-Log ('随机到 ' + $dc + '，原图已不存在，换一天再抽') 'WARN'
+                } else {
+                    $netFail++
+                    Write-Log ('随机到 ' + $dc + '，预检时网络不通，换一天再抽') 'WARN'
+                }
+            }
+
+            if (-not $picked) {
+                if ($netFail -ge $tried.Count -and $tried.Count -gt 0) {
+                    Write-Log ('随机试了 ' + $tried.Count + ' 天，预检都没连上（网络问题）：' + ($tried -join ' / ')) 'ERROR'
+                    Exit-Run 4
+                }
+                Write-Log ('随机试了 ' + $tried.Count + ' 天都取不到原图：' + ($tried -join ' / ')) 'ERROR'
+                Exit-Run 5
+            }
+
+            if ($byDate.ContainsKey($picked)) {
+                Write-Log ('随机到 ' + $picked + '，本地已有这张')
             } else {
-                Write-Log ('随机到 ' + $dAny + '，本地没有这张，改为下载')
-                $Date = $dAny
+                Write-Log ('随机到 ' + $picked + '，本地没有这张，改为下载')
+                $Date = $picked
             }
         }
 

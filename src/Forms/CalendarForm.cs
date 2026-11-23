@@ -409,6 +409,8 @@ namespace BingWallpaperLite
                         if (code == 2) { lblWhere.Text = S.SrchWorking; }
                         else if (code == 11) { lblWhere.Text = S.WallApplyFail; }
                         else if (code == 12) { lblWhere.Text = S.FutureDateHint; }
+                        else if (code == 4) { lblWhere.Text = S.SrchNoSource; }
+                        else if (code == 5) { lblWhere.Text = S.SrchNoImage; }
                         else { lblWhere.Text = done ? S.SrchSwitched(d8) : S.SrchSwitchFail; }
                     });
                 }

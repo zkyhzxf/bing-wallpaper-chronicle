@@ -19,9 +19,9 @@ using Microsoft.Win32;
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyConfiguration("Release")]
 [assembly: AssemblyCulture("")]
-[assembly: AssemblyVersion("3.6.53.0")]
-[assembly: AssemblyFileVersion("3.6.53.0")]
-[assembly: AssemblyInformationalVersion("3.6.53")]
+[assembly: AssemblyVersion("3.6.54.0")]
+[assembly: AssemblyFileVersion("3.6.54.0")]
+[assembly: AssemblyInformationalVersion("3.6.54")]
 [assembly: ComVisible(false)]
 
 namespace BingWallpaperLite
@@ -31,7 +31,7 @@ namespace BingWallpaperLite
         // ---------------------------------------------------------------- 常量
 
         internal const string AppName     = "必应壁纸编年史";
-        internal const string AppVersion  = "3.6.53";
+        internal const string AppVersion  = "3.6.54";
         private const string TaskName    = "BingWallpaperChronicle";
         private const string RunValue    = "BingWallpaperChronicle";
 
@@ -59,6 +59,20 @@ namespace BingWallpaperLite
         internal static string ArchiveDirPath { get { return archiveDir; } }
         internal static string ScriptPathPublic { get { return scriptPath; } }
         internal static string ArchiveImgPath { get { return Path.Combine(archiveDir, "images"); } }
+        /// <summary>当前生效的归档图目录：接管时就是接管的那个图库根目录。
+        /// 窗口侧的统计、找图、位置列都必须用它，否则会和脚本操作的不是同一个目录。</summary>
+        internal static string ActiveArchiveImgPath
+        {
+            get
+            {
+                try
+                {
+                    if (TakeoverActive()) { return CurrentTakeoverRoot(); }
+                }
+                catch { }
+                return ArchiveImgPath;
+            }
+        }
         internal static string ArchiveDirPath2 { get { return archiveDir; } }
         internal static string CacheDirPath { get { return cacheDir; } }
         internal static string FavDirPath { get { return favDir; } }

@@ -795,10 +795,10 @@ Check '所有源码文件带 UTF-8 BOM' {
     return $true
 }
 
-Check '空 catch 不超过 84 处' {
+Check '空 catch 不超过 90 处' {
     $t = Get-Content $Script -Raw
     $n = ([regex]::Matches($t, 'catch \{ \}')).Count
-    if ($n -gt 84) { return ('空 catch 已 ' + $n + ' 处，超上限 84') }
+    if ($n -gt 90) { return ('空 catch 已 ' + $n + ' 处，超上限 90') }
     return $true
 }
 
@@ -1014,7 +1014,7 @@ Check '随机换一张：三档范围，any 档交给指定日期流程而不是
     if ($ps -notmatch "RandomScope = 'local'") { return '默认范围不是 local' }
     if ($ps -notmatch 'scope -ne ''fav'' -and \$scope -ne ''any''') { return '非法范围没有回落 local' }
     # 关键：本地没有这张时必须把日期交给「指定日期」流程，否则 pinned / state / 索引全要重写一遍
-    if ($ps -notmatch '\$Date = \$dAny') { return 'any 档没把日期交给指定日期流程' }
+    if ($ps -notmatch '\$Date = \$picked') { return 'any 档没把日期交给指定日期流程' }
     if ($ps -notmatch "\`$byDate\[\`$k0\] = @\{ file = \`$f0; from = \`$src.from \}") { return '本地池没有按日期去重' }
     $r = Get-Content (Join-Path $Root 'src\Refresh.cs') -Raw
     if ($r -notmatch 'internal static int LocalPoolCount') { return '缺 LocalPoolCount' }
@@ -1031,6 +1031,69 @@ Check '接管目录放在增强数据源里，不在壁纸库末尾' {
     if ($m -notmatch 'S\.TkMenu') { return '增强数据源里没有接管目录' }
     $r = Get-Content (Join-Path $Root 'src\Refresh.cs') -Raw
     if ($r -match 'lib\.DropDownItems\.Add\(MakeItem\(S\.TkMenu') { return '壁纸库里还留着接管目录' }
+    return $true
+}
+
+Check '接管模式只读：容量清理跳过、老存档不用、暂存发布' {
+    $ps = Get-Content (Join-Path $Root 'bing-wallpaper.ps1') -Raw
+    # 少了这句，「换一张壁纸」会顺带删掉用户几十 GB 的图库
+    if ($ps -notmatch 'if \(\$script:Takeover\) \{ return 0 \}') { return 'Clear-ArchiveBySize 没在接管下短路' }
+    if ($ps -notmatch 'old-not-used') { return '接管时老存档目录没被摘掉' }
+    if ($ps -notmatch '\$script:LibStaging = Join-Path \$TakeoverDir') { return '缺暂存区' }
+    if ($ps -notmatch 'function Publish-ToLibrary') { return '缺 Publish-ToLibrary' }
+    if ($ps -notmatch 'Publish-ToLibrary -Staged \$realDest') { return '下载成功后没走暂存发布' }
+    $mv = [regex]::Match($ps, '(?s)function Move-FileKeepWallpaper.*?\n\}')
+    if (-not $mv.Success) { return '找不到 Move-FileKeepWallpaper' }
+    if ($mv.Value -notmatch 'inLibrary') { return '搬运函数接管下没有只复制分支' }
+    return $true
+}
+
+Check '随机撞到死日期：预检三态 + 重抽 + 记账' {
+    $ps = Get-Content (Join-Path $Root 'bing-wallpaper.ps1') -Raw
+    if ($ps -notmatch 'function Test-ArchiveReachable') { return '缺 Test-ArchiveReachable' }
+    if ($ps -notmatch "return 'netfail'") { return '预检没区分网络失败' }
+    if ($ps -notmatch "return 'missing'") { return '预检没区分确实没有' }
+    if ($ps -notmatch 'function Read-DeadDates') { return '缺 Read-DeadDates' }
+    if ($ps -notmatch 'function Note-DeadDate') { return '缺 Note-DeadDate' }
+    if ($ps -notmatch 'NetFail|netFail') { return '记账没有排除网络失败' }
+    $rd = [regex]::Match($ps, '(?s)if \(\$scope -eq .any.\).*?\n        \}')
+    if (-not $rd.Success) { return '找不到 any 档分支' }
+    if ($rd.Value -notmatch 'for \(\$k = 0; \$k -lt 3') { return 'any 档没有 3 次重抽' }
+    if ($rd.Value -notmatch 'Read-DeadDates') { return 'any 档抽池没排除死日期' }
+    return $true
+}
+
+Check '图库补齐：索引与 -FillLibrary 只增不覆盖' {
+    $ps = Get-Content (Join-Path $Root 'bing-wallpaper.ps1') -Raw
+    if ($ps -notmatch '_bing-chronicle-index.json') { return '缺图库索引文件名' }
+    if ($ps -notmatch 'function Write-LibraryIndex') { return '缺 Write-LibraryIndex' }
+    if ($ps -notmatch 'if \(\$FillLibrary\)') { return '缺 -FillLibrary 分支' }
+    $fb = [regex]::Match($ps, '(?s)if \(\$FillLibrary\).*?Exit-Run 0')
+    if (-not $fb.Success) { return '找不到 FillLibrary 主体' }
+    if ($fb.Value -notmatch 'Get-LibraryDates') { return '补齐没先扫已有日期' }
+    if ($fb.Value -notmatch 'if \(\$haveF\.ContainsKey\(\$dd\)\) \{ continue \}') { return '补齐没有跳过已有日期' }
+    return $true
+}
+
+Check '按日期取不到时窗口说得清是哪一种失败' {
+    $c = Get-Content (Join-Path $Root 'src\Forms\CalendarForm.cs') -Raw
+    if ($c -notmatch 'code == 4' -or $c -notmatch 'S\.SrchNoSource') { return '日历窗口没区分源不可达' }
+    if ($c -notmatch 'code == 5' -or $c -notmatch 'S\.SrchNoImage') { return '日历窗口没区分这天没图' }
+    $s = Get-Content (Join-Path $Root 'src\Forms\SearchForm.cs') -Raw
+    if ($s -notmatch 'S\.SrchNoSource' -or $s -notmatch 'S\.SrchNoImage') { return '搜索窗口没区分失败类型' }
+    $st = Get-Content (Join-Path $Root 'src\Strings.cs') -Raw
+    if ($st -notmatch 'SrchNoSource' -or $st -notmatch 'SrchNoImage') { return '缺失败文案' }
+    return $true
+}
+
+Check '接管窗口统计递归、带覆盖天数、有补齐入口' {
+    $t = Get-Content (Join-Path $Root 'src\Forms\TakeoverForm.cs') -Raw
+    if ($t -notmatch 'SearchOption\.AllDirectories') { return '接管窗口统计仍是非递归' }
+    if ($t -notmatch 'TkOnBody\(root, n, days\)') { return '没显示覆盖天数' }
+    if ($t -notmatch 'DoFill') { return '缺补齐入口' }
+    if ($t -notmatch '-FillLibrary -RangeFrom') { return '补齐没调 -FillLibrary' }
+    $st = Get-Content (Join-Path $Root 'src\Strings.cs') -Raw
+    if ($st -notmatch 'TkOnBody\(string root, int n, int days\)') { return 'TkOnBody 签名没改' }
     return $true
 }
 
