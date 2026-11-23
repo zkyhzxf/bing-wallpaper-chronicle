@@ -945,6 +945,27 @@ Check '帮助与 README 说明老存档不受自动清理' {
     return $true
 }
 
+Check '清理窗口把归档与老存档拆开显示' {
+    $s = Get-Content (Join-Path $Root 'src\Strings.cs') -Raw
+    if ($s -notmatch 'CleanArchRow') { return '没有「归档图片」行文案' }
+    if ($s -notmatch 'CleanOldRow') { return '没有「老存档」行文案' }
+    $c = Get-Content (Join-Path $Root 'src\Forms\CleanForm.cs') -Raw
+    if ($c -match 'CleanOldInline\(oldN') { return '仍在用「含老存档」的旧写法（可清理数会大于总数）' }
+    if ($c -notmatch 'S\.CleanOldRow') { return 'CleanForm 没有渲染老存档行' }
+    return $true
+}
+
+Check '换过的图：位置分四种，移出时跳过老存档与收藏' {
+    $s = Get-Content (Join-Path $Root 'src\Strings.cs') -Raw
+    if ($s -notmatch 'PinLocArch') { return '缺「归档」位置文案' }
+    if ($s -notmatch 'PinLocOld') { return '缺「老存档」位置文案' }
+    $p = Get-Content (Join-Path $Root 'src\Forms\PinnedForm.cs') -Raw
+    if ($p -notmatch 'loc == S\.PinLocOld') { return '移出名单没有跳过老存档' }
+    if ($p -notmatch 'loc == S\.PinLocFav') { return '移出名单没有跳过收藏' }
+    if ($p -notmatch 'S\.PinConfirm2') { return '没有用按类别说明的确认框' }
+    return $true
+}
+
 # ---------------------------------------------------------------- 汇总
 Write-Host ''
 Write-Host ('-' * 50) -ForegroundColor DarkGray

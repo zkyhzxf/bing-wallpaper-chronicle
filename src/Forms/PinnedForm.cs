@@ -263,7 +263,7 @@ namespace BingWallpaperLite
             return S.PinNoTitle;
         }
 
-        /// <summary>这张图现在在哪儿：收藏 / 缓存 / 历史图库（归档和老存档对用户是一回事）。</summary>
+        /// <summary>这张图现在在哪儿。归档和老存档分开标：它俩的清理规则不同，移出名单的效果也不同。</summary>
         private static string LocationOf(string file)
         {
             if (string.IsNullOrEmpty(file)) { return ""; }
@@ -271,11 +271,13 @@ namespace BingWallpaperLite
             {
                 string fav = Program.FavDirPath;
                 string cache = Program.CacheDirPath;
+                string old = Program.OldDirPath;
                 if (!string.IsNullOrEmpty(fav) && file.StartsWith(fav, StringComparison.OrdinalIgnoreCase)) { return S.PinLocFav; }
                 if (!string.IsNullOrEmpty(cache) && file.StartsWith(cache, StringComparison.OrdinalIgnoreCase)) { return S.PinLocCache; }
+                if (!string.IsNullOrEmpty(old) && file.StartsWith(old, StringComparison.OrdinalIgnoreCase)) { return S.PinLocOld; }
             }
             catch { }
-            return S.PinLocLib;
+            return S.PinLocArch;
         }
 
         private static string FindFileOfDate(string date)
@@ -597,17 +599,35 @@ namespace BingWallpaperLite
         private void RemoveChecked()
         {
             List<string> picked = new List<string>();
-            foreach (ListViewItem it in lst.Items) { if (it.Checked) { picked.Add((string)it.Tag); } }
+            List<string> effective = new List<string>();
+            int nLegacy = 0, nFav = 0;
+            foreach (ListViewItem it in lst.Items)
+            {
+                if (!it.Checked) { continue; }
+                picked.Add((string)it.Tag);
+                string loc = it.SubItems.Count > 2 ? it.SubItems[2].Text : "";
+                if (loc == S.PinLocOld) { nLegacy++; continue; }   // 老存档本来就不被清理
+                if (loc == S.PinLocFav) { nFav++; continue; }      // 收藏本来就不被清理
+                effective.Add((string)it.Tag);
+            }
             if (picked.Count == 0) { return; }
 
-            if (MessageBox.Show(S.PinConfirm(picked.Count), Program.AppName,
+            // 选的全是「移出也没用」的，直接说明，不弹确认
+            if (effective.Count == 0)
+            {
+                MessageBox.Show(S.PinNoEffect, Program.AppName, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            string msg = S.PinConfirm2(picked.Count, effective.Count, nLegacy, nFav);
+            if (MessageBox.Show(msg, Program.AppName,
                     MessageBoxButtons.OKCancel, MessageBoxIcon.Question) != DialogResult.OK)
             {
                 return;
             }
 
             Dictionary<string, object> pins = Program.ReadPinnedMap();
-            foreach (string d in picked) { pins.Remove(d); }
+            foreach (string d in effective) { pins.Remove(d); }
             Program.WritePinnedMap(pins);
             LoadList();
         }

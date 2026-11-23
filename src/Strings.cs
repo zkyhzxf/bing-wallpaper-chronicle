@@ -138,6 +138,8 @@ namespace BingWallpaperLite
         public static string PinLocFav    { get { return T("收藏", "Favorite"); } }
         public static string PinLocCache  { get { return T("缓存", "Cache"); } }
         public static string PinLocLib    { get { return T("历史图库", "Library"); } }
+        public static string PinLocArch   { get { return T("归档", "Archive"); } }
+        public static string PinLocOld    { get { return T("老存档", "Legacy"); } }
         public static string PinGone      { get { return T("文件已不在", "file missing"); } }
         public static string PinNoTitle   { get { return T("(无标题)", "(no title)"); } }
         public static string PinRemove    { get { return T("移出名单", "Remove"); } }
@@ -149,6 +151,42 @@ namespace BingWallpaperLite
         public static string FavSumFiltered(int hit, int total, double mb) { return _en ? (hit + " of " + total + " · " + mb.ToString("0.0") + " MB") : ("匹配 " + hit + " / 共 " + total + " 项 · " + mb.ToString("0.0") + " MB"); }
         public static string FavSearchHint { get { return T("搜索标题/版权/日期", "search title/copyright/date"); } }
         public static string PinConfirm(int n) { return _en ? ("These " + n + " dates will no longer be skipped by auto-clean and may be removed next time it runs. Nothing is moved out now. Continue?") : ("这 " + n + " 天将不再被自动清理跳过，下次清理可能删掉它们。本次操作不移出任何文件。确定吗？"); }
+        /// <summary>按位置分类说明移出名单的实际效果 —— 老存档和收藏本来就不受自动清理，移出对它们没有作用。</summary>
+        public static string PinConfirm2(int total, int affected, int legacy, int fav)
+        {
+            System.Text.StringBuilder sb = new System.Text.StringBuilder();
+            if (_en)
+            {
+                sb.AppendLine("Remove " + total + " date(s) from the list:");
+                if (affected > 0) { sb.AppendLine("· " + affected + " in cache or archive — the next clean-up may delete them"); }
+                if (legacy > 0) { sb.AppendLine("· " + legacy + " in the legacy archive — never auto-cleaned, will be skipped"); }
+                if (fav > 0) { sb.AppendLine("· " + fav + " favorited — favorites are unaffected, will be skipped"); }
+                sb.Append("No files are deleted. Continue?");
+                return sb.ToString();
+            }
+            sb.AppendLine("将从名单移出 " + total + " 天：");
+            if (affected > 0) { sb.AppendLine("· " + affected + " 天在缓存或归档里 —— 移出后下次清理可能删掉它们"); }
+            if (legacy > 0) { sb.AppendLine("· " + legacy + " 天是老存档 —— 本来就不受自动清理，会自动跳过"); }
+            if (fav > 0) { sb.AppendLine("· " + fav + " 天已收藏 —— 收藏不受影响，会自动跳过"); }
+            sb.Append("本次操作不删除任何文件。确定吗？");
+            return sb.ToString();
+        }
+        public static string PinNoEffect
+        {
+            get
+            {
+                return T("选中的都是老存档或已收藏的图。它们本来就不受自动清理，移出名单没有实际作用，也会继续留在列表里。",
+                         "Everything you selected is either in the legacy archive or favorited. Those are never auto-cleaned, so removing them from the list has no effect — they stay listed.");
+            }
+        }
+        public static string PinOldHint
+        {
+            get
+            {
+                return T("这是 2016 年前的老存档，不受任何自动清理。要删请走：清理缓存 → 清理归档 → 勾选「同时清理老存档」。",
+                         "This is legacy archive (before 2016) and is never auto-cleaned. To delete it: Clean cache → Clean archive → tick the legacy archive option.");
+            }
+        }
         public static string PinPurgeDead(int n) { return _en ? ("Purge missing (" + n + ")") : ("清理失效项（" + n + "）"); }
         public static string PinFav        { get { return T("加入收藏", "Add to favorites"); } }
         public static string PinFavDone    { get { return T("已加入收藏", "Added to favorites"); } }
@@ -180,6 +218,9 @@ namespace BingWallpaperLite
         public static string CleanCurProtected{ get { return T("当前壁纸（保留，删了桌面会黑）", "Current (kept — deleting it would blank the desktop)"); } }
         public static string CleanCurMoved  { get { return T("当前壁纸（将移回缓存）", "Current (will return to cache)"); } }
         public static string CleanActual      { get { return T("实际可清理", "Will remove"); } }
+        public static string CleanArchRow     { get { return T("归档图片", "Archive images"); } }
+        public static string CleanOldRow      { get { return T("老存档", "Legacy archive"); } }
+        public static string CleanOldNote     { get { return T("第三方镜像，不受任何自动清理", "Third-party mirror, never auto-cleaned"); } }
         public static string CleanModeTitle   { get { return T("删除方式", "Delete method"); } }
         public static string CleanToRecycle   { get { return T("进回收站", "Move to Recycle Bin"); } }
         public static string CleanToRecycle2  { get { return T("可恢复，但磁盘空间不释放", "Recoverable; frees no disk space"); } }

@@ -161,16 +161,39 @@ namespace BingWallpaperLite
             Panel box = new Panel();
             box.BorderStyle = BorderStyle.FixedSingle;
             int boxH = hasMode ? 176 : 96;
-            if (target == Target.Archive) { boxH = 216; }
+            if (target == Target.Archive) { boxH = 260; }
             box.SetBounds(18, 16, 484, boxH);
             Controls.Add(box);
 
             int yy = 10;
-            box.Controls.Add(MkLabel(S.CleanTotal, 12, yy));
-            box.Controls.Add(MkValue(totalN + (target == Target.ArchiveIndex ? " 个" : " 张"), 320, yy));
-            yy += 24;
-            box.Controls.Add(MkLabel(S.CleanSize, 12, yy));
-            box.Controls.Add(MkValue(FmtSize(totalB), 320, yy));
+            if (target == Target.Archive)
+            {
+                // 归档与老存档分两行：原来把老存档「含」在合计里，导致「实际可清理」张数大于「图片总数」
+                box.Controls.Add(MkLabel(S.CleanArchRow, 12, yy));
+                box.Controls.Add(MkValue(totalN + " 张 · " + FmtSize(totalB), 320, yy));
+                yy += 24;
+                if (oldN > 0)
+                {
+                    box.Controls.Add(MkLabel(S.CleanOldRow, 12, yy));
+                    box.Controls.Add(MkValue(oldN + " 张 · " + FmtSize(oldB), 320, yy));
+                    yy += 20;
+                    Label oldNote = new Label();
+                    oldNote.SetBounds(24, yy, 340, 16);
+                    oldNote.ForeColor = SystemColors.GrayText;
+                    try { oldNote.Font = new Font("Microsoft YaHei UI", 8F); } catch { }
+                    oldNote.Text = S.CleanOldNote;
+                    box.Controls.Add(oldNote);
+                    yy += 20;
+                }
+            }
+            else
+            {
+                box.Controls.Add(MkLabel(S.CleanTotal, 12, yy));
+                box.Controls.Add(MkValue(totalN + (target == Target.ArchiveIndex ? " 个" : " 张"), 320, yy));
+                yy += 24;
+                box.Controls.Add(MkLabel(S.CleanSize, 12, yy));
+                box.Controls.Add(MkValue(FmtSize(totalB), 320, yy));
+            }
 
             if (hasMode && target != Target.ArchiveIndex)
             {
@@ -193,8 +216,7 @@ namespace BingWallpaperLite
                 Label l2 = MkLabel(S.CleanActual, 12, yy);
                 l2.Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Bold);
                 box.Controls.Add(l2);
-                string v2txt = (actualN + oldN) + " 张，" + FmtSize(actualB + oldB);
-                if (oldN > 0) { v2txt += S.CleanOldInline(oldN, Math.Round(oldB / 1024.0 / 1024.0, 1)); }
+                string v2txt = (actualN + oldN) + " 张 · " + FmtSize(actualB + oldB);
                 Label v2 = MkValue(v2txt, 320, yy);
                 v2.Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Bold);
                 box.Controls.Add(v2);
@@ -230,7 +252,7 @@ namespace BingWallpaperLite
                 Controls.Add(idxHint);
                 ny += 48;
 
-                ClientSize = new Size(520, 460);
+                ClientSize = new Size(520, 504);
             }
 
             // 删除方式
