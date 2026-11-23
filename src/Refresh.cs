@@ -191,6 +191,7 @@ namespace BingWallpaperLite
             RefreshYearsMenu();
             RefreshRandomCheck();
             RefreshArchiveCheck();
+            RefreshEntryCheck();
             RefreshStartupCheck();
             RefreshLockCheck();
             RefreshCleanCheck();
@@ -590,10 +591,11 @@ namespace BingWallpaperLite
             return FindImageFilePath(date, out w);
         }
 
-        /// <summary>保留清单里那些图合计占多少 MB。</summary>
-        internal static double PinnedTotalMB()
+        /// <summary>换过的图：还在磁盘上的张数与合计体积（MB）。</summary>
+        internal static void PinnedStat(out int count, out double mb)
         {
-            double mb = 0;
+            count = 0;
+            mb = 0;
             try
             {
                 Dictionary<string, object> pins = ReadPinnedMap();
@@ -601,11 +603,29 @@ namespace BingWallpaperLite
                 {
                     int where;
                     string f = FindImageFilePath(d, out where);
-                    if (f != null) { try { mb += new FileInfo(f).Length / 1024.0 / 1024.0; } catch { } }
+                    if (f != null)
+                    {
+                        count++;
+                        try { mb += new FileInfo(f).Length / 1024.0 / 1024.0; }
+                        catch { }
+                    }
                 }
             }
             catch { }
-            return mb;
+        }
+
+        /// <summary>收藏夹：张数与合计体积（MB）。</summary>
+        internal static void FavStat(out int count, out double mb)
+        {
+            count = 0;
+            mb = 0;
+            string[] fs = SafeGetFiles(favDir);
+            count = fs.Length;
+            foreach (string f in fs)
+            {
+                try { mb += new FileInfo(f).Length / 1024.0 / 1024.0; }
+                catch { }
+            }
         }
 
         /// <summary>查某个日期的图在哪：收藏 / 缓存 / 归档 / 没有。回填体积（字节）。</summary>
@@ -999,6 +1019,34 @@ namespace BingWallpaperLite
             it.Text = on ? S.LockOn : S.LockOff;
         }
 
+        /// <summary>「收藏管理」「换过的图」两项后面带上张数与体积，让用户一眼看到规模。</summary>
+        private static void RefreshEntryCheck()
+        {
+            try
+            {
+                ToolStripMenuItem fm = menu.Items["favmgr"] as ToolStripMenuItem;
+                if (fm != null)
+                {
+                    int fn; double fmb;
+                    FavStat(out fn, out fmb);
+                    fm.Text = S.FavManagerN(fn, fmb);
+                }
+            }
+            catch { }
+
+            try
+            {
+                ToolStripMenuItem pm = menu.Items["pinmgr"] as ToolStripMenuItem;
+                if (pm != null)
+                {
+                    int pn; double pmb;
+                    PinnedStat(out pn, out pmb);
+                    pm.Text = S.PinMenuN(pn, pmb);
+                }
+            }
+            catch { }
+        }
+
         private static void RefreshRandomCheck()
         {
             ToolStripMenuItem it = menu.Items["randompick"] as ToolStripMenuItem;
@@ -1070,20 +1118,6 @@ namespace BingWallpaperLite
                 ca.Text = n > 0 ? S.CleanArchN2(n) : S.CleanArchive;
                 ca.Enabled = n > 0;
             }
-
-            // 保留清单那项后面带上占用的体积，让用户知道有多大
-            try
-            {
-                foreach (ToolStripItem x in cm.DropDownItems)
-                {
-                    if (x.Name == "pinmgr")
-                    {
-                        x.Text = S.PinMenuMB(PinnedTotalMB());
-                        break;
-                    }
-                }
-            }
-            catch { }
         }
 
         private static void RefreshYearsMenu()

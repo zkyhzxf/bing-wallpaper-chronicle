@@ -127,7 +127,7 @@ namespace BingWallpaperLite
 
         // ---------------- 换过的图
         public static string PinMenu      { get { return T("换过的图…", "Switched-to images…"); } }
-        public static string PinMenuMB(double mb) { return _en ? ("Switched-to images… (" + mb.ToString("0.0") + " MB)") : ("换过的图…（" + mb.ToString("0.0") + " MB）"); }
+        public static string PinMenuN(int n, double mb) { return _en ? ("Switched-to images… (" + n + " · " + mb.ToString("0.0") + " MB)") : ("换过的图…（" + n + " 张 · " + mb.ToString("0.0") + " MB）"); }
         public static string PinTitle     { get { return T(" · 换过的图", " · Switched-to images"); } }
         public static string PinIntro1    { get { return T("你换过壁纸的历史图都记在这里。收藏过的也在，位置列会标出来。", "Historical images you switched to as wallpaper. Favorites are here too — the Location column marks them."); } }
         public static string PinIntro2    { get { return T("自动清理不会删这些图。想永久留着某张，点「加入收藏」；不想让它占着名单，点「移出名单」—— 移出只影响自动清理，不删文件。", "Auto-clean never removes these. Favorite one to keep it for good, or remove it from the list — that only affects auto-clean, it does not delete files."); } }
@@ -159,14 +159,14 @@ namespace BingWallpaperLite
             {
                 sb.AppendLine("Remove " + total + " date(s) from the list:");
                 if (affected > 0) { sb.AppendLine("· " + affected + " in cache or archive — the next clean-up may delete them"); }
-                if (legacy > 0) { sb.AppendLine("· " + legacy + " in the legacy archive — never auto-cleaned, will be skipped"); }
+                if (legacy > 0) { sb.AppendLine("· " + legacy + " in the legacy archive — never auto-cleaned, will be skipped. To delete: Clean → Clean archive"); }
                 if (fav > 0) { sb.AppendLine("· " + fav + " favorited — favorites are unaffected, will be skipped"); }
                 sb.Append("No files are deleted. Continue?");
                 return sb.ToString();
             }
             sb.AppendLine("将从名单移出 " + total + " 天：");
             if (affected > 0) { sb.AppendLine("· " + affected + " 天在缓存或归档里 —— 移出后下次清理可能删掉它们"); }
-            if (legacy > 0) { sb.AppendLine("· " + legacy + " 天是老存档 —— 本来就不受自动清理，会自动跳过"); }
+            if (legacy > 0) { sb.AppendLine("· " + legacy + " 天是老存档 —— 本来就不受自动清理，会自动跳过；要删请走 清理 → 清理归档"); }
             if (fav > 0) { sb.AppendLine("· " + fav + " 天已收藏 —— 收藏不受影响，会自动跳过"); }
             sb.Append("本次操作不删除任何文件。确定吗？");
             return sb.ToString();
@@ -175,8 +175,8 @@ namespace BingWallpaperLite
         {
             get
             {
-                return T("选中的都是老存档或已收藏的图。它们本来就不受自动清理，移出名单没有实际作用，也会继续留在列表里。",
-                         "Everything you selected is either in the legacy archive or favorited. Those are never auto-cleaned, so removing them from the list has no effect — they stay listed.");
+                return T("选中的都是老存档或已收藏的图。它们本来就不受自动清理，移出名单没有实际作用，也会继续留在列表里。\r\n\r\n老存档要删：清理 → 清理归档\r\n收藏要删：在「收藏管理」里取消收藏",
+                         "Everything you selected is either in the legacy archive or favorited. Those are never auto-cleaned, so removing them from the list has no effect — they stay listed.\r\n\r\nTo delete legacy images: Clean → Clean archive\r\nTo delete a favorite: un-favorite it in Manage favorites");
             }
         }
         public static string PinOldHint
@@ -198,6 +198,7 @@ namespace BingWallpaperLite
                 : ("完成：成功 " + ok + " 张，已在收藏 " + skip + " 张，失败 " + fail + " 张");
         }
         public static string FavManager    { get { return T("收藏管理…", "Manage favorites…"); } }
+        public static string FavManagerN(int n, double mb) { return _en ? ("Manage favorites… (" + n + " · " + mb.ToString("0.0") + " MB)") : ("收藏管理…（" + n + " 张 · " + mb.ToString("0.0") + " MB）"); }
         public static string FavTitle      { get { return T(" · 收藏管理", " · Manage favorites"); } }
         public static string FavIntro      { get { return T("双击任意一张可直接设为桌面壁纸。勾选多张后点「移出收藏」，可以一次移出；文件只是退回缓存，本窗口不删除任何文件，之后进入 30 天清理规则。", "Double-click any row to set it as the desktop wallpaper. Tick several rows, then click Remove to move them all at once — files only go back to cache, nothing is deleted here, and they fall under the 30-day rule afterwards."); } }
         public static string FavSetWall    { get { return T("设置壁纸", "Set as wallpaper"); } }

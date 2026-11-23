@@ -966,6 +966,26 @@ Check '换过的图：位置分四种，移出时跳过老存档与收藏' {
     return $true
 }
 
+Check '菜单入口带规模：换过的图与收藏管理都显示张数和体积' {
+    $s = Get-Content (Join-Path $Root 'src\Strings.cs') -Raw
+    if ($s -notmatch 'PinMenuN\(int n, double mb\)') { return '缺 PinMenuN（张数+体积）' }
+    if ($s -notmatch 'FavManagerN\(int n, double mb\)') { return '缺 FavManagerN（张数+体积）' }
+    $r = Get-Content (Join-Path $Root 'src\Refresh.cs') -Raw
+    if ($r -notmatch 'void RefreshEntryCheck') { return '缺 RefreshEntryCheck' }
+    if ($r -notmatch 'menu\.Items\["pinmgr"\]') { return 'pinmgr 没有从顶层菜单取（曾错取 clean 子项导致数字永不出现）' }
+    if ($r -notmatch 'menu\.Items\["favmgr"\]') { return 'favmgr 没有刷新张数与体积' }
+    if ($r -notmatch 'PinnedStat\(out int') { return '缺 PinnedStat' }
+    if ($r -notmatch 'FavStat\(out int') { return '缺 FavStat' }
+    return $true
+}
+
+Check '老存档要删的去处写进了两个提示' {
+    $s = Get-Content (Join-Path $Root 'src\Strings.cs') -Raw
+    if ($s -notmatch '要删请走 清理 → 清理归档') { return '移出名单确认框没写去哪删老存档' }
+    if ($s -notmatch '老存档要删：清理 → 清理归档') { return '移出无效弹窗没写去哪删老存档' }
+    return $true
+}
+
 # ---------------------------------------------------------------- 汇总
 Write-Host ''
 Write-Host ('-' * 50) -ForegroundColor DarkGray
