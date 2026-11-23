@@ -55,6 +55,7 @@ param(
     [switch]$Unfavorite,
     [string]$Date = '',
     [switch]$Random,
+    [string]$RandomScope = 'local',
     [switch]$CleanArchive,
     [switch]$WithIndex,
     [string]$CleanMode = 'recycle',
@@ -3215,29 +3216,66 @@ try {
         Exit-Run 0
     }
 
-    # ---- 随机一张（收藏优先，排除当前这张）
+    # ---- 随机一张：按随机范围分三档（fav 收藏 / local 本地全部 / any 任意一天）
     if ($Random) {
-        $pool = @(Get-ChildItem $FavDir -Filter *.jpg -File -ErrorAction SilentlyContinue)
-        $from = '收藏'
-        if ($pool.Count -eq 0) {
-            $pool = @(Get-ChildItem $CacheDir -Filter *.jpg -File -ErrorAction SilentlyContinue)
-            $from = '缓存'
-        }
-        if ($pool.Count -eq 0) { Write-Log '没有可随机的图（收藏与缓存都是空的）' 'ERROR'; exit 1 }
+        $scope = ([string]$RandomScope).ToLowerInvariant()
+        if ($scope -ne 'fav' -and $scope -ne 'any') { $scope = 'local' }
 
         $curWp = (Get-ItemProperty 'HKCU:\Control Panel\Desktop' -Name Wallpaper -ErrorAction SilentlyContinue).Wallpaper
-        $filtered = @($pool | Where-Object { $_.FullName -ne $curWp })
-        if ($filtered.Count -gt 0) { $pool = $filtered }
 
-        $pick = $pool | Get-Random
-        $pickDate = ($pick.BaseName -split '_')[0]
+        # 本地池：四个目录按日期去重，收藏优先登记（同一天既有收藏又有归档时用收藏那份）
+        $byDate = @{}
+        foreach ($src in @(
+            @{ dir = $FavDir;        from = '收藏';   recurse = $false },
+            @{ dir = $CacheDir;      from = '缓存';   recurse = $false },
+            @{ dir = $ArchiveImgDir; from = '归档';   recurse = $false },
+            @{ dir = $OldDir;        from = '老存档'; recurse = $true  }
+        )) {
+            $d0 = $src.dir
+            if (-not $d0 -or -not (Test-Path $d0)) { continue }
+            $fs0 = @(Get-ChildItem $d0 -Filter '*.jpg' -File -Recurse:$src.recurse -ErrorAction SilentlyContinue)
+            foreach ($f0 in $fs0) {
+                if ($f0.Name -match '^(\d{8})') {
+                    $k0 = $matches[1]
+                    if (-not $byDate.ContainsKey($k0)) { $byDate[$k0] = @{ file = $f0; from = $src.from } }
+                }
+            }
+        }
+
+        # any：先从索引里随机取一天。本地没有这张就不取锁，直接把日期交给下面的「指定日期」
+        # 流程 —— 那边自己会取锁、下载、写 pinned、写 state，副作用一个不少
+        if ($scope -eq 'any') {
+            $idxAny = @()
+            try { $idxAny = @(Get-FullIndex) } catch { }
+            if ($idxAny.Count -eq 0) { Write-Log '索引为空，取不到可随机的日期' 'ERROR'; Exit-Run 5 }
+            $dAny = [string](($idxAny | Get-Random).d) -replace '[^0-9]', ''
+            if ($dAny.Length -ne 8) { Write-Log ('随机到的日期不可用：' + $dAny) 'ERROR'; Exit-Run 5 }
+            if ($byDate.ContainsKey($dAny)) {
+                Write-Log ('随机到 ' + $dAny + '，本地已有这张')
+            } else {
+                Write-Log ('随机到 ' + $dAny + '，本地没有这张，改为下载')
+                $Date = $dAny
+            }
+        }
+
+        if (-not $Date) {
+        $cands = @($byDate.Values | Where-Object { $scope -ne 'fav' -or $_.from -eq '收藏' })
+        if ($cands.Count -eq 0) {
+            if ($scope -eq 'fav') { Write-Log '收藏是空的（随机范围：收藏）' 'ERROR'; Exit-Run 3 }
+            Write-Log '没有可随机的图（收藏、缓存、归档、老存档都是空的）' 'ERROR'; Exit-Run 5
+        }
+        $filtered = @($cands | Where-Object { $_.file.FullName -ne $curWp })
+        if ($filtered.Count -gt 0) { $cands = $filtered }
+
+        $pick = $cands | Get-Random
+        $pickDate = ($pick.file.BaseName -split '_')[0]
 
         $locked = Enter-RunLock -WaitSec $script:LockWaitSec
         if (-not $locked) { exit 2 }
 
         Set-WallpaperStyle -Name $styleName
-        [void](Set-DesktopWallpaper -Path $pick.FullName)
-        Write-Log "随机切换（$from，共 $($pool.Count) 张候选）：$($pick.Name)"
+        [void](Set-DesktopWallpaper -Path $pick.file.FullName)
+        Write-Log ("随机切换（" + $pick.from + "，共 " + $cands.Count + " 张候选）：" + $pick.file.Name)
 
         $ttl = ''
         $iid = ''
@@ -3253,7 +3291,7 @@ try {
                 } catch { }
             }
         }
-        Write-State -Date $pickDate -File $pick.FullName -Title $ttl -ImageId $iid -AppliedDate $pickDate
+        Write-State -Date $pickDate -File $pick.file.FullName -Title $ttl -ImageId $iid -AppliedDate $pickDate
         Write-Log '--- 完成 ---'
         if ([bool]$config['autoClean']) {
             $capMB2 = 0
@@ -3261,6 +3299,7 @@ try {
             if ($capMB2 -gt 0) { [void](Clear-ArchiveBySize -MaxMB $capMB2) }
         }
         Exit-Run 0
+        }
     }
 
     # ---- 指定日期

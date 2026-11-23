@@ -116,20 +116,27 @@ namespace BingWallpaperLite
             m.Items.Add(cacheMenu);
 
 
+            // 随机换一张：范围是每次都可能变的意图，所以做成子菜单而不是塞进设置
             ToolStripMenuItem randItem = new ToolStripMenuItem(S.RandomFav);
             randItem.Name = "randompick";
-            randItem.Click += delegate
+            foreach (string[] sc in new string[][] {
+                new string[] { "fav",   "randfav"   },
+                new string[] { "local", "randlocal" },
+                new string[] { "any",   "randany"   } })
             {
-                keepMenuOpenAfterClick = true;
-                anchor.BeginInvoke((MethodInvoker)delegate
+                string scopeVal = sc[0];
+                if (scopeVal == "any") { randItem.DropDownItems.Add(new ToolStripSeparator()); }
+                ToolStripMenuItem si = new ToolStripMenuItem(S.RandomScopeFav(0));
+                si.Name = sc[1];
+                si.Tag = scopeVal;
+                si.CheckOnClick = false;
+                si.Click += delegate
                 {
-                    RunScriptEx("-Random", "random");
-                // [排查] 子调用整块注释
-                {
-                    RefreshArchiveCheck();
-                }
-                });
-            };
+                    keepMenuOpenAfterClick = true;
+                    anchor.BeginInvoke((MethodInvoker)delegate { DoRandomPick(scopeVal); });
+                };
+                randItem.DropDownItems.Add(si);
+            }
             m.Items.Add(randItem);
 
             m.Items.Add(new ToolStripSeparator());
@@ -303,6 +310,10 @@ namespace BingWallpaperLite
             ToolStripMenuItem archOpen = new ToolStripMenuItem(S.OpenArchiveDir);
             archOpen.Click += delegate { OpenTarget(archiveDir); };
             archiveMenu.DropDownItems.Add(archOpen);
+
+            // 接管目录属于「换一个图库」—— 和上面的数据源开关同族，不放在「关于」那种只读区
+            archiveMenu.DropDownItems.Add(new ToolStripSeparator());
+            archiveMenu.DropDownItems.Add(MakeItem(S.TkMenu, delegate { DoTakeover(); }));
 
             m.Items.Add(archiveMenu);
 

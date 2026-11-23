@@ -1024,9 +1024,19 @@ namespace BingWallpaperLite
         public static string RecentHeaderN(int n)   { return RecentHeader + n + CountTail; }
         public static string ArchiveHeaderN(int n)  { return ArchiveHeader + n + CountTail; }
         public static string MoreRest(int n)        { return _en ? (n + " more…") : ("还有 " + n + " 张…"); }
-        public static string RandomFavN(int n)      { return _en ? ("Switch to a random favorite (" + n + " total)") : ("随机换一张（共 " + n + " 张）"); }
-        public static string RandomCacheN(int n)    { return _en ? ("Random (favorites empty, cache " + n + ")") : ("随机一张（收藏为空，用缓存 " + n + " 张）"); }
-        public static string RandomEmpty()          { return _en ? "Random (nothing available)" : "随机一张（没有可选的图）"; }
+        // 随机范围三档：按「要付什么代价」分，不按文件在哪个目录分
+        public static string RandomScopeFav(int n)   { return _en ? ("Favorites (" + n + ")") : ("收藏（" + n + " 张）"); }
+        public static string RandomScopeLocal(int n) { return _en ? ("All local (" + n + ")") : ("本地全部（" + n + " 张）"); }
+        public static string RandomScopeAny         { get { return T("任意一天（没下载过的会先下载）", "Any day (downloads if missing)"); } }
+        public static string RandomScopeFavLabel    { get { return T("收藏", "favorites"); } }
+        public static string RandomScopeLocalLabel  { get { return T("本地全部", "local"); } }
+        public static string RandomScopeAnyLabel    { get { return T("任意一天", "any day"); } }
+        public static string RandomTitle(string scopeLabel, int n)
+        {
+            if (n <= 0) { return _en ? "Random image (nothing available)" : "随机换一张（没有可选的图）"; }
+            return _en ? ("Random " + scopeLabel + " (" + n + ")") : ("随机换一张（" + scopeLabel + " " + n + " 张）");
+        }
+        public static string RandomTitleAny { get { return _en ? "Random image (any day)" : "随机换一张（任意一天）"; } }
         public static string TaskNextAt(string next){ return TaskNormal + TaskNext + next; }
         public static string CleanArchN(int n)      { return _en ? ("Clear history archive (" + n + ")") : ("清理历史归档（" + n + " 张）"); }
         public static string AutoCleanDays(int d)   { return (AutoCleanOn) + (_en ? (" (" + d + " days)") : ("（" + d + " 天）")); }

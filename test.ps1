@@ -1008,6 +1008,32 @@ Check '归档窗口有「同时清理每日故事缓存」勾选，默认不勾'
     return $true
 }
 
+Check '随机换一张：三档范围，any 档交给指定日期流程而不是自己下载' {
+    $ps = Get-Content (Join-Path $Root 'bing-wallpaper.ps1') -Raw
+    if ($ps -notmatch '\$RandomScope') { return '缺 -RandomScope 参数' }
+    if ($ps -notmatch "RandomScope = 'local'") { return '默认范围不是 local' }
+    if ($ps -notmatch 'scope -ne ''fav'' -and \$scope -ne ''any''') { return '非法范围没有回落 local' }
+    # 关键：本地没有这张时必须把日期交给「指定日期」流程，否则 pinned / state / 索引全要重写一遍
+    if ($ps -notmatch '\$Date = \$dAny') { return 'any 档没把日期交给指定日期流程' }
+    if ($ps -notmatch "\`$byDate\[\`$k0\] = @\{ file = \`$f0; from = \`$src.from \}") { return '本地池没有按日期去重' }
+    $r = Get-Content (Join-Path $Root 'src\Refresh.cs') -Raw
+    if ($r -notmatch 'internal static int LocalPoolCount') { return '缺 LocalPoolCount' }
+    if ($r -notmatch 'internal static string RandomScopeValue') { return '缺 RandomScopeValue' }
+    $m = Get-Content (Join-Path $Root 'src\Menu.cs') -Raw
+    foreach ($k in @('randfav', 'randlocal', 'randany')) {
+        if ($m -notmatch $k) { return ('随机子菜单缺 ' + $k) }
+    }
+    return $true
+}
+
+Check '接管目录放在增强数据源里，不在壁纸库末尾' {
+    $m = Get-Content (Join-Path $Root 'src\Menu.cs') -Raw
+    if ($m -notmatch 'S\.TkMenu') { return '增强数据源里没有接管目录' }
+    $r = Get-Content (Join-Path $Root 'src\Refresh.cs') -Raw
+    if ($r -match 'lib\.DropDownItems\.Add\(MakeItem\(S\.TkMenu') { return '壁纸库里还留着接管目录' }
+    return $true
+}
+
 # ---------------------------------------------------------------- 汇总
 Write-Host ''
 Write-Host ('-' * 50) -ForegroundColor DarkGray

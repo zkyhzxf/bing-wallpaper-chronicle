@@ -488,7 +488,6 @@ namespace BingWallpaperLite
             lib.DropDownItems.Add(MakeItem(S.OpenCacheDir, delegate { OpenTarget(cacheDir); }));
             lib.DropDownItems.Add(MakeItem(S.OpenFavDir, delegate { OpenTarget(favDir); }));
             lib.DropDownItems.Add(MakeItem(S.OpenArchiveDir, delegate { OpenTarget(archiveImgDir); }));
-            lib.DropDownItems.Add(MakeItem(S.TkMenu, delegate { DoTakeover(); }));
             lib.DropDownItems.Add(MakeItem(S.ExportDownloaded, delegate { DoExportDownloaded(); }));
             lib.DropDownItems.Add(MakeItem(S.DownloadRange, delegate { DoDownloadRange(); }));
         }
@@ -1048,18 +1047,106 @@ namespace BingWallpaperLite
             catch { }
         }
 
+        /// <summary>随机范围配置值；非法值回落 local。</summary>
+        internal static string RandomScopeValue()
+        {
+            try
+            {
+                string v = GetCfgStr(ReadConfig(), "randomScope", "local");
+                if (v == "fav" || v == "local" || v == "any") { return v; }
+            }
+            catch { }
+            return "local";
+        }
+
+        private static void CollectDates(HashSet<string> set, string dir, bool recurse)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) { return; }
+                string[] fs = Directory.GetFiles(dir, "*.jpg", recurse ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly);
+                foreach (string f in fs)
+                {
+                    string n = Path.GetFileName(f);
+                    if (n.Length >= 8) { set.Add(n.Substring(0, 8)); }
+                }
+            }
+            catch { }
+        }
+
+        /// <summary>本地随机池的日期数：收藏 + 缓存 + 归档 + 老存档，按日期去重（与脚本口径一致）。</summary>
+        internal static int LocalPoolCount()
+        {
+            HashSet<string> set = new HashSet<string>();
+            CollectDates(set, favDir, false);
+            CollectDates(set, cacheDir, false);
+            CollectDates(set, archiveImgDir, false);
+            CollectDates(set, OldDirPath, true);
+            return set.Count;
+        }
+
+        /// <summary>收藏里的日期数（收藏档的候选数）。</summary>
+        internal static int FavDateCount()
+        {
+            HashSet<string> set = new HashSet<string>();
+            CollectDates(set, favDir, false);
+            return set.Count;
+        }
+
+        /// <summary>选中某个随机范围：先落盘，再让脚本按这个范围换一张。</summary>
+        internal static void DoRandomPick(string scope)
+        {
+            try
+            {
+                Dictionary<string, object> c = ReadConfig();
+                SetCfg(c, "randomScope", scope);
+                WriteConfig(c);
+            }
+            catch { }
+            string extra = "-Random -RandomScope " + scope;
+            RunScriptEx(extra, "random");
+            try { RefreshRandomCheck(); } catch { }
+        }
+
         private static void RefreshRandomCheck()
         {
             ToolStripMenuItem it = menu.Items["randompick"] as ToolStripMenuItem;
             if (it == null) { return; }
-            int favN = SafeGetFiles(favDir).Length;
-            int cacheN = SafeGetFiles(cacheDir).Length;
 
-            if (favN > 0) { it.Text = S.RandomFavN(favN); }
-            else if (cacheN > 0) { it.Text = S.RandomCacheN(cacheN); }
-            else { it.Text = S.RandomEmpty(); }
+            int favN = FavDateCount();
+            int localN = LocalPoolCount();
+            string scope = RandomScopeValue();
 
-            it.Enabled = (favN + cacheN) > 0;
+            if (localN <= 0)
+            {
+                it.Text = S.RandomTitle("", 0);
+                it.Enabled = false;
+            }
+            else
+            {
+                it.Enabled = true;
+                if (scope == "any") { it.Text = S.RandomTitleAny; }
+                else if (scope == "fav") { it.Text = S.RandomTitle(S.RandomScopeFavLabel, favN); }
+                else { it.Text = S.RandomTitle(S.RandomScopeLocalLabel, localN); }
+            }
+
+            SetRandSub(it, "randfav", S.RandomScopeFav(favN), scope == "fav", favN > 0);
+            SetRandSub(it, "randlocal", S.RandomScopeLocal(localN), scope == "local", localN > 0);
+            SetRandSub(it, "randany", S.RandomScopeAny, scope == "any", true);
+        }
+
+        private static void SetRandSub(ToolStripMenuItem parent, string name, string text, bool isCurrent, bool enabled)
+        {
+            if (parent == null) { return; }
+            foreach (ToolStripItem x in parent.DropDownItems)
+            {
+                if (x.Name != name) { continue; }
+                x.Text = text;
+                x.Enabled = enabled;
+                ToolStripMenuItem mi = x as ToolStripMenuItem;
+                if (mi != null) { mi.Checked = isCurrent; }
+                return;
+            }
         }
 
         private static void RefreshCleanCheck()
