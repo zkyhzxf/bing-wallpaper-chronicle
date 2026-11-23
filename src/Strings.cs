@@ -127,7 +127,7 @@ namespace BingWallpaperLite
 
         // ---------------- 换过的图
         public static string PinMenu      { get { return T("换过的图…", "Switched-to images…"); } }
-        public static string PinMenuN(int n, double mb) { return _en ? ("Switched-to images… (" + n + " · " + mb.ToString("0.0") + " MB)") : ("换过的图…（" + n + " 张 · " + mb.ToString("0.0") + " MB）"); }
+        public static string PinMenuN(int n, double mb) { return _en ? ("Switched-to images… (" + n + " items · " + mb.ToString("0.0") + " MB)") : ("换过的图…（" + n + " 项 · " + mb.ToString("0.0") + " MB）"); }
         public static string PinTitle     { get { return T(" · 换过的图", " · Switched-to images"); } }
         public static string PinIntro1    { get { return T("你换过壁纸的历史图都记在这里。收藏过的也在，位置列会标出来。", "Historical images you switched to as wallpaper. Favorites are here too — the Location column marks them."); } }
         public static string PinIntro2    { get { return T("自动清理不会删这些图。想永久留着某张，点「加入收藏」；不想让它占着名单，点「移出名单」—— 移出只影响自动清理，不删文件。", "Auto-clean never removes these. Favorite one to keep it for good, or remove it from the list — that only affects auto-clean, it does not delete files."); } }

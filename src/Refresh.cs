@@ -591,7 +591,8 @@ namespace BingWallpaperLite
             return FindImageFilePath(date, out w);
         }
 
-        /// <summary>换过的图：还在磁盘上的张数与合计体积（MB）。</summary>
+        /// <summary>换过的图：名单条目数（含文件已不在的）与仍在磁盘上的合计体积（MB）。
+        /// 条目数要和「换过的图」窗口底部的「共 N 项」同口径，否则菜单与窗口数字对不上。</summary>
         internal static void PinnedStat(out int count, out double mb)
         {
             count = 0;
@@ -599,13 +600,13 @@ namespace BingWallpaperLite
             try
             {
                 Dictionary<string, object> pins = ReadPinnedMap();
+                count = pins.Keys.Count;
                 foreach (string d in pins.Keys)
                 {
                     int where;
                     string f = FindImageFilePath(d, out where);
                     if (f != null)
                     {
-                        count++;
                         try { mb += new FileInfo(f).Length / 1024.0 / 1024.0; }
                         catch { }
                     }
