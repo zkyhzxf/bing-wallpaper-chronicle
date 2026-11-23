@@ -1257,7 +1257,7 @@ Check '取图通道：跑分之前保留本地代理优先的初始顺序' {
     if ($ps -notmatch 'function Get-LocalProxy') { return '缺本地代理探测' }
     if (-not $ps.Contains('$script:LocalProxyHit')) { return '探测结果没有缓存' }
     if (-not $ps.Contains('LocalProxyDay -eq $today')) { return '探测缓存没有按日失效' }
-    $g = [regex]::Match($ps, '(?s)function Get-ArchiveCandidateUrls.*?Get-ViaScores')
+    $g = [regex]::Match($ps, '(?s)function Get-ArchiveCandidateUrls.*?Get-ViaStats')
     if (-not $g.Success) { return '找不到候选列表构造' }
     $ipx = $g.Value.IndexOf('Get-LocalProxy')
     $igh = $g.Value.IndexOf("tag='ghproxy'")
@@ -1276,18 +1276,21 @@ Check '故事映射每日校准，已存在的条目也会核对更正' {
     return $true
 }
 
-Check '取图通道按实测速度跑分，不再用固定优先级' {
+Check '取图通道按实测耗时记账，每次取图重排' {
     $ps = Get-Content (Join-Path $Root 'bing-wallpaper.ps1') -Raw
-    if ($ps -notmatch 'function Get-ViaScores') { return '缺 Get-ViaScores' }
-    if ($ps -notmatch 'function Set-ViaScore') { return '缺 Set-ViaScore' }
-    if (-not $ps.Contains('Pow(0.7, $days)')) { return '分数没有按天衰减' }
-    if (-not $ps.Contains('$cur * 0.4')) { return '失败没有重罚' }
-    if (-not $ps.Contains('1.0 / (1.0 + ($Ms / 1000.0))')) { return '成功加分没有考虑耗时' }
-    if (-not $ps.Contains('return @($ranked')) { return '候选列表没有按分数排序' }
-    if (-not $ps.Contains('.score }; Descending = $true')) { return '排序不是分数降序' }
-    if (-not $ps.Contains('.ord };')) { return '同分时没有按原始顺序稳定排列' }
-    if (-not $ps.Contains('Set-ViaScore -Tag $tag -Ok $true')) { return '成功没有记账' }
-    if (-not $ps.Contains('Set-ViaScore -Tag $tag -Ok $false')) { return '失败没有记账' }
+    if ($ps -notmatch 'function Get-ViaStats') { return '缺 Get-ViaStats' }
+    if ($ps -notmatch 'function Set-ViaStat') { return '缺 Set-ViaStat' }
+    # 指数移动平均：不是累加分数，才不会撞上限饱和
+    if (-not $ps.Contains('$curMs * 0.7 + [double]$Ms * 0.3')) { return '成功没有做指数平均' }
+    # 失败封顶，否则连续失败会 1.5^N 爆炸
+    if (-not $ps.Contains('[math]::Min(60000.0, $curMs * 1.5)')) { return '失败耗时不封顶' }
+    # 三天没动过向默认值回归，坏通道能翻身
+    if (-not $ps.Contains('$ms * 0.5 + 1500.0 * 0.5')) { return '陈旧记录没有向默认值回归' }
+    if (-not $ps.Contains('return @($ranked')) { return '候选列表没有排序' }
+    if (-not $ps.Contains('.eff }; Descending = $false')) { return '排序不是按有效耗时升序' }
+    if (-not $ps.Contains('.ord };')) { return '同耗时没有按原始顺序稳定排列' }
+    if (-not $ps.Contains('Set-ViaStat -Tag $tag -Ok $true')) { return '成功没有记账' }
+    if (-not $ps.Contains('Set-ViaStat -Tag $tag -Ok $false')) { return '失败没有记账' }
     return $true
 }
 

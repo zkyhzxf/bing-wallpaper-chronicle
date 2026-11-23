@@ -519,29 +519,39 @@ $ArchiveProxyBase = 'https://gh-proxy.com/'
 $ArchiveRawBase   = 'https://raw.githubusercontent.com/'
 $ViaScorePath     = Join-Path $CacheDir 'via-score.json'
 
-# ---------------------------------------------------------------- 通道跑分
+# ---------------------------------------------------------------- 通道记账
 # 固定优先级永远是错的：今天 gh-proxy 快、明天本地代理快、后天都不通。
-# 改成按实测记账：每次取图记下哪条通道成功、用了多久，下次按分数排序。
-# 分数按天衰减，昨天的优势不会永久锁定；失败重罚，坏通道迅速退后。
-function Get-ViaScores {
+# 记「指数平均耗时 + 失败次数」，按有效期耗时排序，每次取图都重排。
+# 不用「分数」是因为分数会撞上限饱和 —— 一旦三条通道都满分就退化成固定顺序。
+# 这里的值永远不饱和：快的更快、慢的一直慢。
+function Get-ViaStats {
     $m = @{}
     try {
         if (Test-Path $ViaScorePath) {
             $o = Get-Content $ViaScorePath -Raw -Encoding UTF8 | ConvertFrom-Json
             $now = Get-Date
             foreach ($q in $o.PSObject.Properties) {
-                $s = 0.0
-                try { $s = [double]$q.Value.s } catch { }
+                $ms = 1500.0
+                try { $ms = [double]$q.Value.ms } catch { }
+                $fail = 0
+                try { $fail = [int]$q.Value.fail } catch { }
                 $days = 0.0
                 try { $days = [math]::Max(0, ($now - [datetime]::Parse([string]$q.Value.at)).TotalDays) } catch { }
-                $m[$q.Name] = $s * [math]::Pow(0.7, $days)
+                # 三天没动过就向默认值回归：坏过的通道也该有翻身机会，
+                # 否则一次故障会把它永远压在队尾
+                if ($days -ge 3) {
+                    $fail = [int][math]::Floor($fail / 2)
+                    $ms = $ms * 0.5 + 1500.0 * 0.5
+                }
+                $eff = $ms * (1.0 + $fail * 0.5)
+                $m[$q.Name] = [pscustomobject]@{ ms = $ms; fail = $fail; eff = $eff }
             }
         }
     } catch { }
     return $m
 }
 
-function Set-ViaScore {
+function Set-ViaStat {
     param([string]$Tag, [bool]$Ok, [int]$Ms)
     if (-not $Tag) { return }
     try {
@@ -550,20 +560,23 @@ function Set-ViaScore {
             try {
                 $o = Get-Content $ViaScorePath -Raw -Encoding UTF8 | ConvertFrom-Json
                 foreach ($q in $o.PSObject.Properties) {
-                    $raw[$q.Name] = @{ s = [double]$q.Value.s; at = [string]$q.Value.at }
+                    $raw[$q.Name] = @{ ms = [double]$q.Value.ms; fail = [int]$q.Value.fail }
                 }
             } catch { }
         }
-        $cur = 0.0
-        if ($raw.ContainsKey($Tag)) { $cur = [double]$raw[$Tag].s }
+        $curMs = 1500.0
+        $curFail = 0
+        if ($raw.ContainsKey($Tag)) { $curMs = [double]$raw[$Tag].ms; $curFail = [int]$raw[$Tag].fail }
         if ($Ok) {
-            # 越快加分越多，上限 2.0，避免一条通道永久垄断
-            $gain = 1.0 / (1.0 + ($Ms / 1000.0))
-            $nv = [math]::Min(2.0, $cur + $gain)
+            # 指数移动平均：老印象占七成，新样本占三成
+            $newMs = $curMs * 0.7 + [double]$Ms * 0.3
+            $newFail = [math]::Max(0, $curFail - 1)
         } else {
-            $nv = $cur * 0.4
+            # 封顶 60 秒：不封顶的话连续失败会让数字指数爆炸（1.5^300）
+            $newMs = [math]::Min(60000.0, $curMs * 1.5)
+            $newFail = $curFail + 1
         }
-        $raw[$Tag] = @{ s = [math]::Round($nv, 4); at = (Get-Date).ToString('s') }
+        $raw[$Tag] = @{ ms = [math]::Round($newMs, 1); fail = $newFail; at = (Get-Date).ToString('s') }
         $dir = Split-Path $ViaScorePath -Parent
         if ($dir -and -not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
         [System.IO.File]::WriteAllText($ViaScorePath, ($raw | ConvertTo-Json -Depth 4), (New-Object System.Text.UTF8Encoding($false)))
@@ -635,16 +648,16 @@ function Get-ArchiveCandidateUrls {
         if (-not $seen.ContainsKey($k)) { $seen[$k] = $true; $out += $c }
     }
 
-    # 按实测分数排序：跑得快的先试，没跑过的保持默认顺序（分数 0 + 原始序号）
-    $scores = Get-ViaScores
+    # 按实测有效耗时排序：快的先试；没跑过的给默认 1500 ms，排在已知的之后
+    $stats = Get-ViaStats
     $i0 = 0
     $ranked = foreach ($c in $out) {
-        $sc = 0.0
-        if ($scores.ContainsKey([string]$c.tag)) { $sc = [double]$scores[[string]$c.tag] }
-        [pscustomobject]@{ tag = $c.tag; url = $c.url; proxy = $c.proxy; score = $sc; ord = $i0++ }
+        $eff = 1500.0
+        if ($stats.ContainsKey([string]$c.tag)) { $eff = [double]$stats[[string]$c.tag].eff }
+        [pscustomobject]@{ tag = $c.tag; url = $c.url; proxy = $c.proxy; eff = $eff; ord = $i0++ }
     }
-    return @($ranked | Sort-Object -Property @{ Expression = { $_.score }; Descending = $true },
-                                             @{ Expression = { $_.ord };   Descending = $false })
+    return @($ranked | Sort-Object -Property @{ Expression = { $_.eff }; Descending = $false },
+                                             @{ Expression = { $_.ord }; Descending = $false })
 }
 
 function Invoke-ArchiveFetch {
@@ -672,7 +685,7 @@ function Invoke-ArchiveFetch {
                 if (-not $obj.content) { throw 'API 无 content 字段' }
                 $txt = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(($obj.content -replace '\s', '')))
                 if ($txt.Length -gt 0) {
-                    Set-ViaScore -Tag $tag -Ok $true -Ms $sw.ElapsedMilliseconds
+                    Set-ViaStat -Tag $tag -Ok $true -Ms $sw.ElapsedMilliseconds
                     Write-Log ("归档索引取到了（via GitHub API，" + $sw.ElapsedMilliseconds + " ms）")
                     Save-ArchiveVia 'api'
                     return [pscustomobject]@{ Content = $txt }
@@ -685,7 +698,7 @@ function Invoke-ArchiveFetch {
                     $r = Invoke-WebRequest -Uri $u -TimeoutSec 8 -UseBasicParsing -Headers $ht
                 }
                 if ($r) {
-                    Set-ViaScore -Tag $tag -Ok $true -Ms $sw.ElapsedMilliseconds
+                    Set-ViaStat -Tag $tag -Ok $true -Ms $sw.ElapsedMilliseconds
                     Write-Log ("归档索引取到了（via " + $tag + "，" + $sw.ElapsedMilliseconds + " ms）")
                     if ($tag -eq 'ghproxy') { Save-ArchiveVia 'ghproxy' }
                     elseif ($tag -eq 'raw') { Save-ArchiveVia 'raw' }
@@ -695,7 +708,7 @@ function Invoke-ArchiveFetch {
         } catch {
             $lastErr = $_.Exception.Message
             # 超时/连不上就扣分：下一次它会自动往后排
-            Set-ViaScore -Tag $tag -Ok $false -Ms $sw.ElapsedMilliseconds
+            Set-ViaStat -Tag $tag -Ok $false -Ms $sw.ElapsedMilliseconds
             Write-Log ("  通道 " + $tag + " 失败（" + $sw.ElapsedMilliseconds + " ms）：" + $lastErr) 'WARN'
         }
     }
