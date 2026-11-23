@@ -90,7 +90,12 @@ namespace BingWallpaperLite
             lst.Columns.Add(S.PinColDate, 92);
             lst.Columns.Add(S.PinColTitle, 360);
             lst.Columns.Add(S.PinColSize, 96, HorizontalAlignment.Right);
-            lst.ItemChecked += delegate { RefreshSum(); };
+            // 单击勾选框不会触发 SelectedIndexChanged，按钮状态得在这里单独刷
+            lst.ItemChecked += delegate
+            {
+                RefreshSum();
+                if (btnRemove != null) { btnRemove.Enabled = CheckedCount() > 0; }
+            };
             lst.SelectedIndexChanged += delegate { OnSelectionChanged(); };
             lst.DoubleClick += delegate { SetAsWallpaper(); };
             lst.ColumnClick += delegate(object s, ColumnClickEventArgs e) { SortBy(e.Column); };

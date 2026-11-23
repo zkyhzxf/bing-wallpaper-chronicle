@@ -1344,6 +1344,21 @@ Check '壁纸路径失效就退回今天，接管下禁用画廊' {
     return $true
 }
 
+Check '勾选条目立刻刷新按钮状态（不用先点行）' {
+    foreach ($f in @('src\Forms\FavForm.cs', 'src\Forms\PinnedForm.cs')) {
+        $t = Get-Content (Join-Path $Root $f) -Raw
+        # ItemChecked 里必须顺手更新按钮，否则单击勾选框后按钮还是灰的
+        if ($t -match 'lst\.ItemChecked \+= delegate \{ RefreshSum\(\); \};') {
+            return ($f + ' 的 ItemChecked 只刷了统计，没刷按钮')
+        }
+        $m = [regex]::Match($t, '(?s)lst\.ItemChecked \+= delegate.*?\};')
+        if (-not $m.Success) { return ($f + ' 找不到 ItemChecked 绑定') }
+        if ($m.Value -notmatch 'btnRemove\.Enabled') { return ($f + ' 勾选后没更新移出按钮') }
+        if ($m.Value -notmatch 'CheckedCount\(\) > 0') { return ($f + ' 按钮状态判断不对') }
+    }
+    return $true
+}
+
 # ---------------------------------------------------------------- 汇总
 Write-Host ''
 Write-Host ('-' * 50) -ForegroundColor DarkGray
