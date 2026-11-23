@@ -903,6 +903,189 @@ namespace BingWallpaperLite
         public static string StoryCollapse   { get { return T("收起", "Collapse"); } }
         public static string StoryLoading    { get { return T("正在获取故事…", "Loading story…"); } }
         public static string CleanStories    { get { return T("清理每日故事缓存", "Clear story cache"); } }
+        public static string CrashTitle      { get { return T("遇到一个问题", "Something went wrong"); } }
+        public static string CrashHint       { get { return T("已经记下现场，程序继续运行。日志：%TEMP%\\BingWallpaperLite.log", "Details were logged and the app keeps running. Log: %TEMP%\\BingWallpaperLite.log"); } }
+        /// <summary>数量 + 单位。中文用「12 张」，英文用「12 images」，别在窗体里直接拼中文单位。</summary>
+        public static string UnitImg(int n)  { return _en ? (n + " images") : (n + " 张"); }
+        public static string UnitFile(int n) { return _en ? (n + " files")  : (n + " 个"); }
+
+        /// <summary>「复制给 AI 的说明」正文：一段能直接粘给模型的任务描述。</summary>
+        public static string AiPromptBody(string exe)
+        {
+            StringBuilder sb = new StringBuilder();
+            if (_en)
+            {
+                sb.AppendLine("I have a Bing wallpaper tool. Its command line entry is:");
+                sb.AppendLine(exe);
+                sb.AppendLine();
+                sb.AppendLine("Call it with pwsh, for example:");
+                sb.AppendLine("  pwsh -File \"" + exe + "\" -Date 20230615");
+                sb.AppendLine();
+                sb.AppendLine("Supported options:");
+                sb.AppendLine("  -Index 0            switch to today's image");
+                sb.AppendLine("  -Index 1..7         go back 1-7 days");
+                sb.AppendLine("  -Step 1 / -Step -1  previous / next day");
+                sb.AppendLine("  -Date YYYYMMDD      switch to that date (from 2009-07-13)");
+                sb.AppendLine("  -Random -RandomScope local  random image (fav / local / any)");
+                sb.AppendLine("  -Use \"path\"         use a local file");
+                sb.AppendLine("  -Favorite           favorite the current image");
+                sb.AppendLine("  -Unfavorite         unfavorite it");
+                sb.AppendLine("  -Query \"keyword\"    search and list matches");
+                sb.AppendLine("  -Status             current state (JSON)");
+                sb.AppendLine("  -Json               return structured output for any command");
+                sb.AppendLine("  -DryRun             show what would happen");
+                sb.AppendLine();
+                sb.AppendLine("Add -Json after a switch to see which image was applied.");
+                sb.AppendLine("  -Search \"keyword\"   search and switch to the first match");
+                sb.AppendLine();
+                sb.AppendLine("About search:");
+                sb.AppendLine("  · Keywords are space-separated and matched literally against title + copyright");
+                sb.AppendLine("  · Chinese word segmentation is your job — expand 「雪山」 into \"雪 山 冰川 雪峰\"");
+                sb.AppendLine("  · Use -Query first to inspect results, then -Date to switch");
+                sb.AppendLine("  · Dates before 2019 have no UHD; 1080p or a mirror copy is expected, not an error");
+                sb.AppendLine();
+                sb.AppendLine("My request: write what you want here.");
+                return sb.ToString();
+            }
+            sb.AppendLine(@"我有一个必应壁纸工具，命令行入口是：");
+            sb.AppendLine(exe);
+            sb.AppendLine();
+            sb.AppendLine(@"用 pwsh 调用，例如：");
+            sb.AppendLine(@"  pwsh -File """ + exe + @""" -Date 20230615");
+            sb.AppendLine();
+            sb.AppendLine(@"支持的参数：");
+            sb.AppendLine(@"  -Index 0            换今天的");
+            sb.AppendLine(@"  -Index 1..7         往前翻");
+            sb.AppendLine(@"  -Step 1 / -Step -1  前后翻一天");
+            sb.AppendLine(@"  -Date YYYYMMDD      指定日期（2009-07-13 至今）");
+            sb.AppendLine(@"  -Random -RandomScope local  随机一张（fav 收藏 / local 本地全部 / any 任意一天）");
+            sb.AppendLine(@"  -Use ""路径""         用本地图片");
+            sb.AppendLine(@"  -Favorite           收藏当前");
+            sb.AppendLine(@"  -Unfavorite         取消收藏");
+            sb.AppendLine(@"  -Query ""关键词""     搜索并列出匹配项");
+            sb.AppendLine(@"  -Status             查当前状态（返回 JSON）");
+            sb.AppendLine(@"  -Json               加在任何命令后，返回结构化结果");
+            sb.AppendLine(@"  -DryRun             只演示不执行");
+            sb.AppendLine();
+            sb.AppendLine(@"换图后加 -Json 就知道换成了哪张。");
+            sb.AppendLine(@"  -Search ""关键词""    搜索并换第一张匹配的");
+            sb.AppendLine();
+            sb.AppendLine(@"搜索说明：");
+            sb.AppendLine(@"  · 关键词用空格分隔，脚本做字面匹配（标题 + 版权）");
+            sb.AppendLine(@"  · 中文分词要靠你自己扩词，比如「雪山」要拆成 ""雪 山 冰川 雪峰""");
+            sb.AppendLine(@"  · 先用 -Query 看结果，挑好了再用 -Date 换");
+            sb.AppendLine(@"  · 2019 年前的日期没有 UHD，拿到的是 1080p 或镜像档，不是出错");
+            sb.AppendLine();
+            sb.AppendLine(@"我的需求：在这里写你要什么。");
+            return sb.ToString();
+        }
+
+        /// <summary>AI 窗口里的命令行速查表。内容与脚本 param 块保持一致，改参数时记得同步这里。</summary>
+        public static string AiCommands(string exe)
+        {
+            StringBuilder sb = new StringBuilder();
+            if (_en)
+            {
+                sb.AppendLine("Command line entry:");
+                sb.AppendLine(exe);
+                sb.AppendLine();
+                sb.AppendLine("Options:");
+                sb.AppendLine("  -Index 0            switch to today's image");
+                sb.AppendLine("  -Index 1..7         go back 1-7 days");
+                sb.AppendLine("  -Step 1 / -Step -1  previous / next day");
+                sb.AppendLine("  -Date YYYYMMDD      switch to that date (from 2009-07-13; pre-2016-03 comes from mirrors, lower resolution)");
+                sb.AppendLine("  -Random -RandomScope local   random image (fav / local / any)");
+                sb.AppendLine("  -Use \"path\"         use a local file as wallpaper");
+                sb.AppendLine("  -Favorite           favorite the current image");
+                sb.AppendLine("  -Unfavorite         unfavorite it");
+                sb.AppendLine("  -Query \"snow peak\"  search and list matches (does not switch)");
+                sb.AppendLine("  -Status             current state (wallpaper, counts, config)");
+                sb.AppendLine("  -Json               return structured JSON for any operation");
+                sb.AppendLine("  -Search \"snow peak\" search and switch to the first match");
+                sb.AppendLine("  -Clean -Keep 7      clean cache older than 7 days");
+                sb.AppendLine("  -CleanAll           clear cache (keeps the current wallpaper)");
+                sb.AppendLine("  -CleanArchive       clean archive images (-WithIndex adds indexes; the legacy archive goes too)");
+                sb.AppendLine("  -CleanFavorites     clear favorites (current wallpaper moves back to cache)");
+                sb.AppendLine("  -Gallery            gallery mode: files go to cache\\gallery, not pinned");
+                sb.AppendLine("  -GalleryClear       leave gallery mode and clear cache\\gallery");
+                sb.AppendLine("  -FavDate 20261120   add that date to favorites");
+                sb.AppendLine("  -UnfavDate 20261120 move it back to cache");
+                sb.AppendLine("  -ExportLinks -RangeFrom 20261101 -RangeTo 20261121");
+                sb.AppendLine("                      export download links only (JSON)");
+                sb.AppendLine("  -ExportRange -RangeFrom 20261101 -RangeTo 20261121 -DestDir <dir>");
+                sb.AppendLine("                      batch download a date range");
+                sb.AppendLine("  -KeepExisting       skip files that already exist (default checks quality and upgrades)");
+                sb.AppendLine();
+                sb.AppendLine("  [Photo wall and prefetch]");
+                sb.AppendLine("  -WallDate YYYYMMDD  fetch that date into cache\\wall (no wallpaper change)");
+                sb.AppendLine("  -WallFull           with -WallDate, ask for UHD instead of the 1080p preview");
+                sb.AppendLine("  -WallKeep           promote cache\\wall into archive\\images (UHD added)");
+                sb.AppendLine("  -WallDrop           discard cache\\wall");
+                sb.AppendLine("  -PrefetchDate YYYYMMDD  prefetch into cache\\prefetch");
+                sb.AppendLine();
+                sb.AppendLine("  [Lookup and maintenance]");
+                sb.AppendLine("  -KwFile kw.txt      read keywords from a UTF-8 file (safer for non-ASCII)");
+                sb.AppendLine("  -Festivals          how many days each of the nine festivals has");
+                sb.AppendLine("  -Festival <name>    all dates of that festival (JSON, lunar computed on the fly)");
+                sb.AppendLine("  -AuditDates         verify index date coverage");
+                sb.AppendLine("  -AuditOld           verify the legacy index");
+                sb.AppendLine("  -MigrateOld         move misplaced legacy images back into archive\\old\\<month>\\");
+                sb.AppendLine("  -FillLibrary -RangeFrom -RangeTo    fill missing days into the takeover library (takeover only)");
+                sb.AppendLine();
+                sb.AppendLine("  -UpdateIndex        force-refresh the full index");
+                sb.AppendLine("  -DryRun             show what would happen");
+                return sb.ToString();
+            }
+            sb.AppendLine("命令行入口：");
+            sb.AppendLine(exe);
+            sb.AppendLine();
+            sb.AppendLine("可用参数：");
+            sb.AppendLine("  -Index 0            换今天的图");
+            sb.AppendLine("  -Index 1..7         往前翻 1-7 天");
+            sb.AppendLine("  -Step 1 / -Step -1  相对前后翻一天");
+            sb.AppendLine("  -Date YYYYMMDD      换指定日期（2009-07-13 至今；2016-03 前是镜像档，分辨率较低）");
+            sb.AppendLine("  -Random -RandomScope local   随机一张（fav 收藏 / local 本地全部 / any 任意一天）");
+            sb.AppendLine("  -Use \"路径\"         用本地图片");
+            sb.AppendLine("  -Favorite           收藏当前这张");
+            sb.AppendLine("  -Unfavorite         取消收藏");
+            sb.AppendLine("  -Query \"雪 山\"      搜索并列出匹配项（不改图）");
+            sb.AppendLine("  -Status             查当前状态（壁纸、各段计数、配置）");
+            sb.AppendLine("  -Json               让任何操作返回结构化 JSON 结果");
+            sb.AppendLine("  -Search \"雪 山\"     搜索并换第一张匹配的");
+            sb.AppendLine("  -Clean -Keep 7      清理 7 天前的缓存");
+            sb.AppendLine("  -CleanAll           清空缓存（保留当前壁纸）");
+            sb.AppendLine("  -CleanArchive       清理归档图片（可加 -WithIndex 连索引；老存档会一并清）");
+            sb.AppendLine("  -CleanFavorites     清空收藏（当前壁纸移回缓存）");
+            sb.AppendLine("  -Gallery            画廊模式：图落 cache\\gallery，不登记保护名单");
+            sb.AppendLine("  -GalleryClear       退出画廊模式，清空 cache\\gallery");
+            sb.AppendLine("  -FavDate 20261120   把该日期的图加入收藏");
+            sb.AppendLine("  -UnfavDate 20261120 把收藏里该日期移回缓存");
+            sb.AppendLine("  -ExportLinks -RangeFrom 20261101 -RangeTo 20261121");
+            sb.AppendLine("                      只导出下载直链（JSON），不下载图片");
+            sb.AppendLine("  -ExportRange -RangeFrom 20261101 -RangeTo 20261121 -DestDir 目录");
+            sb.AppendLine("                      按日期范围批量下载到指定目录");
+            sb.AppendLine("  -KeepExisting       批量下载时目标已有同名文件就直接跳过（默认会检查画质并升级）");
+            sb.AppendLine();
+            sb.AppendLine("  【照片墙与预取】");
+            sb.AppendLine("  -WallDate YYYYMMDD  取该日期的图到 cache\\wall（不设壁纸、不写状态）");
+            sb.AppendLine("  -WallFull           配合 -WallDate，直接要 UHD 而非 1080p 预览");
+            sb.AppendLine("  -WallKeep           把 cache\\wall 的图转正进 archive\\images（自动补 UHD）");
+            sb.AppendLine("  -WallDrop           丢弃 cache\\wall 的临时图");
+            sb.AppendLine("  -PrefetchDate YYYYMMDD  预取到 cache\\prefetch（不设壁纸）");
+            sb.AppendLine();
+            sb.AppendLine("  【查找与维护】");
+            sb.AppendLine("  -KwFile kw.txt      关键词从 UTF-8 文件读（PS 5.1 传中文更稳）");
+            sb.AppendLine("  -Festivals          九个节日各有多少天");
+            sb.AppendLine("  -Festival 中秋节    该节日的全部日期（JSON，农历现场算）");
+            sb.AppendLine("  -AuditDates         核对索引日期完整性");
+            sb.AppendLine("  -AuditOld           核对老索引");
+            sb.AppendLine("  -MigrateOld         把错位的老存档挪回 archive\\old\\<月份>\\（3.6.48 及更早的遗留）");
+            sb.AppendLine("  -FillLibrary -RangeFrom -RangeTo   补齐接管图库里缺的日期（仅接管模式）");
+            sb.AppendLine();
+            sb.AppendLine("  -UpdateIndex        强制刷新全量索引");
+            sb.AppendLine("  -DryRun             只演示不执行");
+            return sb.ToString();
+        }
         public static string CleanStoriesN   { get { return T("清理每日故事缓存（{0} 条）", "Clear story cache ({0})"); } }
         public static string ShowStoryOn     { get { return T("● 显示每日故事", "● Show daily story"); } }
         public static string ShowStoryOff    { get { return T("显示每日故事（关）", "Daily story (off)"); } }

@@ -826,7 +826,7 @@ Write-Host ''
 Write-Host '[11] 文案校准'
 
 Check 'AI 调用窗口的参数与脚本对齐' {
-    $t = Get-Content (Join-Path $Root 'src\Forms\AiForm.cs') -Raw
+    $t = Get-Content (Join-Path $Root 'src\Strings.cs') -Raw
     if ($t -match '2016-03-05 至今') { return 'AI 窗口仍写 2016-03-05 边界' }
     foreach ($k in @('-MigrateOld', '-WallFull', '-WallKeep', '-PrefetchDate', '-Festivals', '-CleanFavorites', '-KwFile', '-Unfavorite')) {
         if ($t.IndexOf($k) -lt 0) { return ('AI 窗口缺参数：' + $k) }
@@ -1094,6 +1094,61 @@ Check '接管窗口统计递归、带覆盖天数、有补齐入口' {
     if ($t -notmatch '-FillLibrary -RangeFrom') { return '补齐没调 -FillLibrary' }
     $st = Get-Content (Join-Path $Root 'src\Strings.cs') -Raw
     if ($st -notmatch 'TkOnBody\(string root, int n, int days\)') { return 'TkOnBody 签名没改' }
+    return $true
+}
+
+Check '全局异常兜底：UI 线程异常不退出，只记日志' {
+    $p = Get-Content (Join-Path $Root 'src\Program.cs') -Raw
+    if ($p -notmatch 'InstallCrashGuards') { return '缺 InstallCrashGuards' }
+    if ($p -notmatch 'SetUnhandledExceptionMode\(UnhandledExceptionMode\.CatchException\)') { return '没设 CatchException 模式，ThreadException 不会触发' }
+    if ($p -notmatch 'Application\.ThreadException') { return '没挂 ThreadException' }
+    if ($p -notmatch 'AppDomain\.CurrentDomain\.UnhandledException') { return '没挂 AppDomain 兜底' }
+    if ($p -notmatch '\[CRASH\]') { return '崩溃没写进日志' }
+    if ($p -notmatch 'InstallCrashGuards\(\);') { return 'Main 里没调用' }
+    return $true
+}
+
+Check '搜索/链接/收藏三处不再在 UI 线程同步跑脚本' {
+    foreach ($f in @('src\Forms\SearchForm.cs', 'src\Forms\LinkForm.cs', 'src\Forms\FavForm.cs')) {
+        $t = Get-Content (Join-Path $Root $f) -Raw
+        if ($t -match 'Application\.DoEvents') { return ($f + ' 还在用 DoEvents 假解阻塞') }
+        if ($t -notmatch 'ThreadPool\.QueueUserWorkItem') { return ($f + ' 没改成后台线程') }
+    }
+    $s = Get-Content (Join-Path $Root 'src\Forms\SearchForm.cs') -Raw
+    if ($s -notmatch 'RunQueryAsync') { return '搜索窗口缺统一的异步查询入口' }
+    $fz = Get-Content (Join-Path $Root 'src\Forms\FavForm.cs') -Raw
+    if ($fz -notmatch 'busyUse') { return '收藏窗口没有防重入' }
+    return $true
+}
+
+Check '补齐只在接管模式可用' {
+    $ps = Get-Content (Join-Path $Root 'bing-wallpaper.ps1') -Raw
+    $m = [regex]::Match($ps, '(?s)if \(\$FillLibrary\) \{.{0,600}')
+    if (-not $m.Success) { return '找不到 FillLibrary 分支' }
+    if ($m.Value -notmatch 'if \(-not \$script:Takeover\)') { return '没拦非接管模式（补了会被容量上限清掉）' }
+    return $true
+}
+
+Check '命令行速查表抽到 Strings，内容与参数一致' {
+    $a = Get-Content (Join-Path $Root 'src\Forms\AiForm.cs') -Raw
+    if ($a -notmatch 'S\.AiCommands\(Program\.ScriptPathPublic\)') { return 'AiForm 没走 S.AiCommands' }
+    $n = ([regex]::Matches($a, '"[^"]*[一-龥][^"]*"')).Count
+    if ($n -gt 2) { return ('AiForm 还有 ' + $n + ' 处硬编码中文，应全部抽到 Strings') }
+    $st = Get-Content (Join-Path $Root 'src\Strings.cs') -Raw
+    foreach ($k in @('-RandomScope', '-FillLibrary', '-MigrateOld')) {
+        if ($st -notmatch [regex]::Escape($k)) { return ('速查表缺 ' + $k) }
+    }
+    if ($st -match '\-Random             从收藏') { return '速查表还写着「从收藏随机」' }
+    return $true
+}
+
+Check '数量单位抽到 Strings，窗体不再拼中文单位' {
+    $st = Get-Content (Join-Path $Root 'src\Strings.cs') -Raw
+    if ($st -notmatch 'UnitImg\(int n\)') { return '缺 UnitImg' }
+    if ($st -notmatch 'UnitFile\(int n\)') { return '缺 UnitFile' }
+    $c = Get-Content (Join-Path $Root 'src\Forms\CleanForm.cs') -Raw
+    if ($c -match '\+ " 张 · "') { return 'CleanForm 还在拼中文单位' }
+    if ($c -match '\+ " 张"') { return 'CleanForm 还有裸「张」' }
     return $true
 }
 

@@ -3266,6 +3266,11 @@ try {
 
 # 补齐图库：把范围内索引里有、图库里没有的日期一张张补进来。只增，不覆盖。
 if ($FillLibrary) {
+    # 正常模式的归档受 archiveMaxMB 上限自动清理，补进去的图很快会被删掉，补了白补还耗流量。
+    if (-not $script:Takeover) {
+        Write-Log '补齐缺失日期只在接管模式下可用：普通归档受容量上限自动清理，补进去也会被删' 'ERROR'
+        Exit-Run 1
+    }
     $tgtDir = $ArchiveImgDir
     if (-not $tgtDir -or -not (Test-Path $tgtDir)) { Write-Log '补齐目标目录不存在' 'ERROR'; Exit-Run 5 }
 
@@ -3321,9 +3326,16 @@ if ($FillLibrary) {
             Write-LibraryIndex -Dir $tgtDir -Days $libIdxF
             Write-Log ("  补进 $dd（" + [math]::Round($szF / 1KB, 0) + " KB）")
         } else {
-            Note-DeadDate -Date8 $dd -Reason 'fill-missing'
+            # 失败要分清「这天确实没有」和「网络一时不通」：
+            # 后者记账会把好日期永久拉黑，断网时补一次就毁一片
+            $rvF = Test-ArchiveReachable -Date8 $dd -ImageId $imgId
             $failF++
-            Write-Log ("  取不到 $dd，已记入失效名单") 'WARN'
+            if ($rvF -eq 'missing') {
+                Note-DeadDate -Date8 $dd -Reason 'fill-missing'
+                Write-Log ("  取不到 $dd，已记入失效名单") 'WARN'
+            } else {
+                Write-Log ("  取不到 $dd（网络问题，未记入失效名单）") 'WARN'
+            }
         }
         Start-Sleep -Milliseconds 400
     }

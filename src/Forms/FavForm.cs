@@ -10,6 +10,8 @@ namespace BingWallpaperLite
     internal sealed class FavForm : Form
     {
         private readonly ListView lst;
+        /// <summary>换图请求正在后台跑：拦住重复点击，避免重复开脚本进程。</summary>
+        private bool busyUse = false;
         private readonly Label lblSum;
         private readonly Label lblInfo;
         private readonly Label lblCopy;
@@ -404,20 +406,30 @@ namespace BingWallpaperLite
         private void SetAsWallpaper()
         {
             if (lst.SelectedItems.Count == 0) { return; }
+            if (busyUse) { return; }
             int idx = lst.SelectedItems[0].Index;
             if (idx < 0 || idx >= files.Count) { return; }
 
-            Cursor prev = Cursor;
-            try
+            // 换图要跑脚本，同步调用会把窗口冻住；放后台，回来再关
+            busyUse = true;
+            Cursor = Cursors.WaitCursor;
+            string path = files[idx];
+            System.Threading.ThreadPool.QueueUserWorkItem(delegate
             {
-                Cursor = Cursors.WaitCursor;
-                Program.RunScriptCapture("-Use \"" + files[idx] + "\"");
-            }
-            catch { }
-            finally { Cursor = prev; }
-
-            DialogResult = DialogResult.OK;
-            Close();
+                try { Program.RunScriptCapture("-Use \"" + path + "\""); }
+                catch { }
+                try
+                {
+                    BeginInvoke((MethodInvoker)delegate
+                    {
+                        busyUse = false;
+                        Cursor = Cursors.Default;
+                        DialogResult = DialogResult.OK;
+                        Close();
+                    });
+                }
+                catch { }
+            });
         }
 
         private void OpenSelected()

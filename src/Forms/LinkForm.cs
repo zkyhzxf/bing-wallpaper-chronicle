@@ -86,40 +86,45 @@ namespace BingWallpaperLite
 
         private void Generate()
         {
-            Cursor prev = Cursor;
-            try
-            {
-                Cursor = Cursors.WaitCursor;
-                btnCopy.Enabled = false;
-                btnSave.Enabled = false;
-                lblStat.Text = S.LinkGenerating;
-                Application.DoEvents();
+            Cursor = Cursors.WaitCursor;
+            btnCopy.Enabled = false;
+            btnSave.Enabled = false;
+            lblStat.Text = S.LinkGenerating;
 
+            // 导出链接要联网拉索引，原来在 UI 线程同步跑会把窗口冻住直到超时
+            System.Threading.ThreadPool.QueueUserWorkItem(delegate
+            {
                 string outText = "";
+                try { outText = Program.RunScriptCapture("-ExportLinks -RangeFrom " + from + " -RangeTo " + to); }
+                catch { }
                 try
                 {
-                    outText = Program.RunScriptCapture("-ExportLinks -RangeFrom " + from + " -RangeTo " + to);
+                    BeginInvoke((MethodInvoker)delegate
+                    {
+                        Cursor = Cursors.Default;
+                        try
+                        {
+                            List<string> links = ParseLinks(outText);
+                            int miss = PickInt(outText, "miss");
+                            if (links.Count == 0)
+                            {
+                                txt.Text = "";
+                                lblStat.Text = S.LinkNoLinks;
+                                return;
+                            }
+                            txt.Text = string.Join("\r\n", links.ToArray());
+                            lblStat.Text = S.LinkStat(links.Count, miss);
+                            btnCopy.Enabled = true;
+                            btnSave.Enabled = true;
+                        }
+                        catch
+                        {
+                            lblStat.Text = S.LinkNoLinks;
+                        }
+                    });
                 }
                 catch { }
-
-                List<string> links = ParseLinks(outText);
-                int miss = PickInt(outText, "miss");
-
-                if (links.Count == 0)
-                {
-                    txt.Text = "";
-                    lblStat.Text = S.LinkNoLinks;
-                    return;
-                }
-                txt.Text = string.Join("\r\n", links.ToArray());
-                lblStat.Text = S.LinkStat(links.Count, miss);
-                btnCopy.Enabled = true;
-                btnSave.Enabled = true;
-            }
-            finally
-            {
-                Cursor = prev;
-            }
+            });
         }
 
         private static List<string> ParseLinks(string json)

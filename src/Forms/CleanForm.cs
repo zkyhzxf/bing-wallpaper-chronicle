@@ -1,4 +1,4 @@
-﻿using System;
+﻿﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -193,12 +193,12 @@ namespace BingWallpaperLite
             {
                 // 归档与老存档分两行：原来把老存档「含」在合计里，导致「实际可清理」张数大于「图片总数」
                 box.Controls.Add(MkLabel(S.CleanArchRow, 12, yy));
-                box.Controls.Add(MkValue(totalN + " 张 · " + FmtSize(totalB), 320, yy));
+                box.Controls.Add(MkValue(S.UnitImg(totalN) + " · " + FmtSize(totalB), 320, yy));
                 yy += 24;
                 if (oldN > 0)
                 {
                     box.Controls.Add(MkLabel(S.CleanOldRow, 12, yy));
-                    box.Controls.Add(MkValue(oldN + " 张 · " + FmtSize(oldB), 320, yy));
+                    box.Controls.Add(MkValue(S.UnitImg(oldN) + " · " + FmtSize(oldB), 320, yy));
                     yy += 20;
                     Label oldNote = new Label();
                     oldNote.SetBounds(24, yy, 340, 16);
@@ -212,7 +212,7 @@ namespace BingWallpaperLite
             else
             {
                 box.Controls.Add(MkLabel(S.CleanTotal, 12, yy));
-                box.Controls.Add(MkValue(totalN + (target == Target.ArchiveIndex ? " 个" : " 张"), 320, yy));
+                box.Controls.Add(MkValue(target == Target.ArchiveIndex ? S.UnitFile(totalN) : S.UnitImg(totalN), 320, yy));
                 yy += 24;
                 box.Controls.Add(MkLabel(S.CleanSize, 12, yy));
                 box.Controls.Add(MkValue(FmtSize(totalB), 320, yy));
@@ -226,20 +226,20 @@ namespace BingWallpaperLite
                 sep.SetBounds(12, yy, 460, 2);
                 box.Controls.Add(sep);
                 yy += 8;
-                if (favN > 0) { box.Controls.Add(MkLabel(S.CleanFavProtected, 12, yy)); box.Controls.Add(MkValue(favN + " 张", 320, yy)); yy += 22; }
+                if (favN > 0) { box.Controls.Add(MkLabel(S.CleanFavProtected, 12, yy)); box.Controls.Add(MkValue(S.UnitImg(favN), 320, yy)); yy += 22; }
 
                 if (curN > 0)
                 {
                     string curLabel = (target == Target.Favorites) ? S.CleanCurMoved : S.CleanCurProtected;
                     box.Controls.Add(MkLabel(curLabel, 12, yy));
-                    box.Controls.Add(MkValue(curN + " 张", 320, yy));
+                    box.Controls.Add(MkValue(S.UnitImg(curN), 320, yy));
                     yy += 22;
                 }
                 yy += 6;
                 Label l2 = MkLabel(S.CleanActual, 12, yy);
                 l2.Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Bold);
                 box.Controls.Add(l2);
-                string v2txt = (actualN + oldN) + " 张 · " + FmtSize(actualB + oldB);
+                string v2txt = S.UnitImg(actualN + oldN) + " · " + FmtSize(actualB + oldB);
                 Label v2 = MkValue(v2txt, 320, yy);
                 v2.Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Bold);
                 box.Controls.Add(v2);

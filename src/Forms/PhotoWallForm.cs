@@ -1,4 +1,4 @@
-﻿using System;
+﻿﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Imaging;
@@ -333,7 +333,9 @@ namespace BingWallpaperLite
             {
                 try
                 {
+                    Image prevT = thumbs.ContainsKey(d8) ? thumbs[d8] : null;
                     card.Thumb = LoadNoLock(tp);
+                    if (prevT != null && !ReferenceEquals(prevT, card.Thumb)) { try { prevT.Dispose(); } catch { } }
                     thumbs[d8] = card.Thumb;
                     card.Invalidate();
                     return;
@@ -357,7 +359,9 @@ namespace BingWallpaperLite
                     {
                         try
                         {
+                            Image prevT2 = thumbs.ContainsKey(d8) ? thumbs[d8] : null;
                             card.Thumb = LoadNoLock(made);
+                            if (prevT2 != null && !ReferenceEquals(prevT2, card.Thumb)) { try { prevT2.Dispose(); } catch { } }
                             thumbs[d8] = card.Thumb;
                         }
                         catch { }

@@ -19,9 +19,9 @@ using Microsoft.Win32;
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyConfiguration("Release")]
 [assembly: AssemblyCulture("")]
-[assembly: AssemblyVersion("3.6.54.0")]
-[assembly: AssemblyFileVersion("3.6.54.0")]
-[assembly: AssemblyInformationalVersion("3.6.54")]
+[assembly: AssemblyVersion("3.6.55.0")]
+[assembly: AssemblyFileVersion("3.6.55.0")]
+[assembly: AssemblyInformationalVersion("3.6.55")]
 [assembly: ComVisible(false)]
 
 namespace BingWallpaperLite
@@ -31,7 +31,7 @@ namespace BingWallpaperLite
         // ---------------------------------------------------------------- 常量
 
         internal const string AppName     = "必应壁纸编年史";
-        internal const string AppVersion  = "3.6.54";
+        internal const string AppVersion  = "3.6.55";
         private const string TaskName    = "BingWallpaperChronicle";
         private const string RunValue    = "BingWallpaperChronicle";
 
@@ -851,10 +851,65 @@ namespace BingWallpaperLite
 
         // ---------------------------------------------------------------- 入口
 
+        /// <summary>
+        /// 全局异常兜底。没有这两道钩子时，UI 线程任何一个漏网的异常都会让进程
+        /// 直接消失 —— 用户只看到托盘图标不见了，而计划任务还在跑。
+        /// UI 线程：记日志 + 气泡，程序继续；后台线程：拦不住退出，至少留下现场。
+        /// </summary>
+        private static void InstallCrashGuards()
+        {
+            try { Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException); } catch { }
+            Application.ThreadException += delegate(object sender, System.Threading.ThreadExceptionEventArgs e)
+            {
+                try
+                {
+                    WriteCrashLog("UI", e.Exception);
+                    Balloon(S.CrashTitle, S.CrashHint);
+                }
+                catch { }
+            };
+            try
+            {
+                AppDomain.CurrentDomain.UnhandledException += delegate(object sender, UnhandledExceptionEventArgs e)
+                {
+                    try { WriteCrashLog("AppDomain", e.ExceptionObject as Exception); } catch { }
+                };
+            }
+            catch { }
+        }
+
+        /// <summary>把崩溃现场写进同一个日志文件，格式与脚本日志一致，方便对照时间线。</summary>
+        private static void WriteCrashLog(string where, Exception ex)
+        {
+            try
+            {
+                string detail = "未知异常";
+                if (ex != null)
+                {
+                    detail = ex.GetType().Name + ": " + ex.Message;
+                    string st = ex.StackTrace;
+                    if (!string.IsNullOrEmpty(st))
+                    {
+                        string[] lines = st.Split('\n');
+                        int n = lines.Length < 4 ? lines.Length : 4;
+                        StringBuilder sb = new StringBuilder();
+                        for (int i = 0; i < n; i++) { sb.Append(" | ").Append(lines[i].Trim()); }
+                        detail += sb.ToString();
+                    }
+                }
+                detail = detail.Replace("\r", " ").Replace("\n", " ");
+                string p = Path.Combine(Path.GetTempPath(), "BingWallpaperLite.log");
+                string line = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "  [CRASH]  " + where + "：" + detail + "\r\n";
+                File.AppendAllText(p, line, new UTF8Encoding(false));
+            }
+            catch { }
+        }
+
         [STAThread]
         private static void Main(string[] args)
         {
             ResolvePaths();
+            InstallCrashGuards();
 
             // 语言：config 的 uiLanguage 优先；auto 时按系统 UI 语言（中文→中文，其它→英文）
             bool useEn = false;

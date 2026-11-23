@@ -102,35 +102,7 @@ namespace BingWallpaperLite
         private void PickRandomGroup()
         {
             if (busy) { return; }
-            busy = true;
-            Cursor = Cursors.WaitCursor;
-            lblStatus.Text = S.SrchSearching;
-            lst.Items.Clear();
-            results.Clear();
-            btnApply.Enabled = false;
-            Application.DoEvents();
-
-            try
-            {
-                string outText = Program.RunScriptCapture("-PickRandom " + RandomGroupSize);
-                ParseResults(outText);
-            }
-            catch (Exception ex)
-            {
-                lblStatus.Text = ex.Message;
-            }
-
-            Cursor = Cursors.Default;
-            busy = false;
-
-            if (lst.Items.Count == 0)
-            {
-                lblStatus.Text = S.SrchLibEmpty;
-                return;
-            }
-            lblStatus.Text = S.SrchCount + lst.Items.Count + S.SrchCountTail;
-            lst.SelectedIndex = 0;
-            lst.TopIndex = 0;
+            RunQueryAsync("-PickRandom " + RandomGroupSize, S.SrchLibEmpty);
         }
 
         private void DoSearch()
@@ -139,37 +111,49 @@ namespace BingWallpaperLite
             string kw = txtKw.Text.Trim();
             // 空关键词 = 从全库随机抽一组，不再弹确认框
             if (kw.Length == 0) { PickRandomGroup(); return; }
+            RunQueryAsync("-Query \"" + kw.Replace("\"", "") + "\"", S.SrchNone);
+        }
 
+        /// <summary>
+        /// 查询放后台线程跑。原来是 UI 线程同步调 RunScriptCapture，
+        /// 首次搜索要拉 1.6 MB 索引，窗口会一直冻到 120 秒超时。
+        /// </summary>
+        private void RunQueryAsync(string args, string emptyText)
+        {
             busy = true;
             Cursor = Cursors.WaitCursor;
             lblStatus.Text = S.SrchSearching;
             lst.Items.Clear();
             results.Clear();
             btnApply.Enabled = false;
-            Application.DoEvents();
 
-            try
+            System.Threading.ThreadPool.QueueUserWorkItem(delegate
             {
-                string outText = Program.RunScriptCapture("-Query \"" + kw.Replace("\"", "") + "\"");
-                ParseResults(outText);
-            }
-            catch (Exception ex)
-            {
-                lblStatus.Text = ex.Message;
-            }
-
-            Cursor = Cursors.Default;
-            busy = false;
-
-            if (lst.Items.Count == 0)
-            {
-                lblStatus.Text = S.SrchNone;
-                btnApply.Enabled = false;
-                return;
-            }
-            lblStatus.Text = S.SrchCount + lst.Items.Count + S.SrchCountTail;
-            lst.SelectedIndex = 0;
-            lst.TopIndex = 0;
+                string outText = "";
+                string err = null;
+                try { outText = Program.RunScriptCapture(args); }
+                catch (Exception ex) { err = ex.Message; }
+                try
+                {
+                    BeginInvoke((MethodInvoker)delegate
+                    {
+                        busy = false;
+                        Cursor = Cursors.Default;
+                        if (err != null) { lblStatus.Text = err; return; }
+                        try { ParseResults(outText); } catch { }
+                        if (lst.Items.Count == 0)
+                        {
+                            lblStatus.Text = emptyText;
+                            btnApply.Enabled = false;
+                            return;
+                        }
+                        lblStatus.Text = S.SrchCount + lst.Items.Count + S.SrchCountTail;
+                        lst.SelectedIndex = 0;
+                        lst.TopIndex = 0;
+                    });
+                }
+                catch { }
+            });
         }
 
         private void ParseResults(string json)
