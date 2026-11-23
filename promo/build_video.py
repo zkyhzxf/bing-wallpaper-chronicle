@@ -209,10 +209,14 @@ for ci, p in enumerate(plan):
         raise SystemExit(f"clip{p['clip']} 场景数 {len(classes)} 与静帧数 {len(p['items'])} 不符")
     durations = [round(x[1], 3) for x in p["items"]]
     clip_out = os.path.join(TMP, f"clip{p['clip']}.mp4")
-    cmd = [FF, "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-r", str(FPS),
-           "-i", "-", "-c:v", "libx264", "-crf", "18", "-preset", "medium",
+    cmd = [FF, "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgb24",
+           "-s", f"{W}x{H}", "-r", str(FPS),
+           "-i", "-", "-c:v", "libx264", "-crf", "18", "-preset", "veryfast",
            "-pix_fmt", "yuv420p", "-an", clip_out]
-    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    # stderr 必须落文件：管道写满会让 ffmpeg 停止读 stdin，与写入端互锁
+    errlog = os.path.join(TMP, f"enc{ci}.log")
+    errf = open(errlog, "wb")
+    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=errf)
     canvas = Image.new("RGBA", (W, H), (0, 0, 0, 255))
     instances = [c() for c in classes]
     t_start = time.time()
@@ -226,10 +230,10 @@ for ci, p in enumerate(plan):
             proc.stdin.write(canvas.convert("RGB").tobytes())
             canvas.paste((0, 0, 0, 255), (0, 0, W, H))
     proc.stdin.close()
-    err = proc.stderr.read().decode("utf-8", "replace")
     proc.wait()
+    errf.close()
     if proc.returncode != 0:
-        print("[FAIL render]", err[-1500:])
+        print("[FAIL render]", open(errlog, encoding="utf-8", errors="replace").read()[-1500:])
         sys.exit(1)
     print(f"  clip{p['clip']}: {p['len']}s  {durations}  {n_frames}f  {time.time()-t_start:.1f}s")
     concat_files.append(clip_out)

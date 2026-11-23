@@ -221,20 +221,10 @@ namespace BingWallpaperLite
                     BeginInvoke((MethodInvoker)delegate
                     {
                         if (seq != storySeq) { return; }
-                        // 每次换故事都回到收起态：高度、按钮位置、按钮文字一起复位，
-                        // 否则上一张展开过的 150 高度会留到这一张，正文被裁出省略号
-                        bool longText = story.Length > 150;
-                        string brief = longText ? story.Substring(0, 150) + "…" : story;
+                        // 每次换故事都回到收起态，高度与按钮位置全部重算
                         storyFull = story;
                         storyExpanded = false;
-                        lblStoryHd.Visible = true;
-                        lblStory.Text = brief;
-                        lblStory.SetBounds(20, storyY + 22, 580, 56);
-                        lblStory.Visible = true;
-                        btnExpand.Text = S.StoryExpand;
-                        btnExpand.SetBounds(20, storyY + 82, 92, 26);
-                        btnExpand.Visible = longText;
-                        ClientSize = new Size(620, storyY + 22 + (longText ? 92 : 62) + 16);
+                        ApplyStoryLayout(false);
                     });
                 }
                 catch { }
@@ -395,27 +385,79 @@ namespace BingWallpaperLite
         }
 
         /// <summary>展开 / 收起每日故事。展开状态只影响本张图，翻页由 Reload 复位。</summary>
+        /// <summary>故事正文在 580 px 宽下实际需要多高。带换行的中文段落必须实测，不能按字数估算。</summary>
+        private static int MeasureStoryHeight(string text, Font font, int width)
+        {
+            if (string.IsNullOrEmpty(text)) { return 0; }
+            Size sz = TextRenderer.MeasureText(text, font, new Size(width, int.MaxValue),
+                TextFormatFlags.WordBreak | TextFormatFlags.TextBoxControl | TextFormatFlags.NoPadding);
+            return sz.Height;
+        }
+
+        /// <summary>
+        /// 按「实际能放下的高度」排版故事区。原来的做法是正文固定 56/150 px 高、
+        /// 而文字按 150 字符截断 —— 150 个中文字约十行，四个高度里只露出三行，
+        /// 剩下的被 Label 直接裁掉，看起来就是「说了一半」。
+        /// </summary>
+        private void ApplyStoryLayout(bool expanded)
+        {
+            if (lblStory == null || lblStoryHd == null) { return; }
+            const int storyW = 580;
+            const int lineH = 20;
+            Font f = lblStory.Font;
+
+            string brief = storyFull;
+            int briefH = MeasureStoryHeight(storyFull, f, storyW);
+            bool overflow = briefH > lineH * 3;
+
+            if (!expanded && overflow)
+            {
+                // 逐段缩字数，直到真正塞进三行 —— 用测量而不是猜
+                int cut = storyFull.Length;
+                while (cut > 10)
+                {
+                    string t = storyFull.Substring(0, cut) + "…";
+                    if (MeasureStoryHeight(t, f, storyW) <= lineH * 3) { brief = t; break; }
+                    cut -= 10;
+                }
+                if (cut <= 10) { brief = storyFull; }
+                briefH = lineH * 3;
+            }
+
+            int bodyH;
+            if (expanded)
+            {
+                bodyH = MeasureStoryHeight(storyFull, f, storyW);
+                // 别把窗口顶出屏幕
+                int cap = Math.Max(160, Screen.FromControl(this).WorkingArea.Height - 320);
+                if (bodyH > cap) { bodyH = cap; }
+                lblStory.Text = storyFull;
+            }
+            else
+            {
+                bodyH = briefH;
+                lblStory.Text = brief;
+            }
+
+            lblStory.SetBounds(20, storyY + 22, storyW, bodyH);
+            lblStory.Visible = true;
+            lblStoryHd.Visible = true;
+
+            int btnTop = storyY + 22 + bodyH + 8;
+            bool showBtn = overflow || expanded;
+            btnExpand.Text = expanded ? S.StoryCollapse : S.StoryExpand;
+            btnExpand.SetBounds(20, btnTop, 92, 26);
+            btnExpand.Visible = showBtn;
+
+            int bottom = showBtn ? btnTop + 26 + 12 : storyY + 22 + bodyH + 12;
+            ClientSize = new Size(620, bottom);
+        }
+
         private void ToggleStory()
         {
             if (string.IsNullOrEmpty(storyFull)) { return; }
             storyExpanded = !storyExpanded;
-            bool longText = storyFull.Length > 150;
-            if (storyExpanded)
-            {
-                lblStory.Text = storyFull;
-                lblStory.SetBounds(20, storyY + 22, 580, 150);
-                btnExpand.Text = S.StoryCollapse;
-                btnExpand.SetBounds(20, storyY + 22 + 150 + 8, 92, 26);
-                ClientSize = new Size(620, storyY + 22 + 150 + 8 + 26 + 12);
-            }
-            else
-            {
-                lblStory.Text = longText ? (storyFull.Substring(0, 150) + "…") : storyFull;
-                lblStory.SetBounds(20, storyY + 22, 580, 56);
-                btnExpand.Text = S.StoryExpand;
-                btnExpand.SetBounds(20, storyY + 82, 92, 26);
-                ClientSize = new Size(620, storyY + 22 + (longText ? 92 : 62) + 16);
-            }
+            ApplyStoryLayout(storyExpanded);
         }
 
         /// <summary>用新数据刷新窗口内容，布局保持不动。</summary>

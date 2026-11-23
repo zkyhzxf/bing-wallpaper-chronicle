@@ -1195,6 +1195,20 @@ Check '收藏不再只认缓存来源，且不重复存两份' {
     return $true
 }
 
+Check '每日故事按实测高度排版，不再按字数硬截' {
+    $f = Get-Content (Join-Path $Root 'src\Forms\InfoForm.cs') -Raw
+    if ($f -match 'Substring\(0, 150\)') { return '还在按 150 字符硬截' }
+    if ($f -match 'story\.Length > 150') { return '还在用字数判断是否折叠' }
+    if ($f -notmatch 'TextRenderer\.MeasureText') { return '没用实测高度，Label 会把正文裁掉' }
+    if ($f -notmatch 'private void ApplyStoryLayout') { return '缺统一的排版入口' }
+    if ($f -notmatch 'storyFull\.Length') { return '没有完整正文的判据' }
+    # 展开与收起必须都走同一个排版函数，避免两套阈值互相打架
+    $tg = [regex]::Match($f, '(?s)private void ToggleStory\(\).*?\n        \}')
+    if (-not $tg.Success) { return '找不到 ToggleStory' }
+    if ($tg.Value -notmatch 'ApplyStoryLayout\(storyExpanded\)') { return '展开/收起没走统一排版' }
+    return $true
+}
+
 # ---------------------------------------------------------------- 汇总
 Write-Host ''
 Write-Host ('-' * 50) -ForegroundColor DarkGray
