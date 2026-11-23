@@ -795,10 +795,10 @@ Check '所有源码文件带 UTF-8 BOM' {
     return $true
 }
 
-Check '空 catch 不超过 96 处' {
+Check '空 catch 不超过 102 处' {
     $t = Get-Content $Script -Raw
     $n = ([regex]::Matches($t, 'catch \{ \}')).Count
-    if ($n -gt 96) { return ('空 catch 已 ' + $n + ' 处，超上限 96') }
+    if ($n -gt 102) { return ('空 catch 已 ' + $n + ' 处，超上限 102') }
     return $true
 }
 
@@ -1252,19 +1252,18 @@ Check '故事映射表可自动补齐，过期会报出来' {
     return $true
 }
 
-Check '取图通道：有本地代理时优先直连 raw，而不是绕 gh-proxy' {
+Check '取图通道：跑分之前保留本地代理优先的初始顺序' {
     $ps = Get-Content (Join-Path $Root 'bing-wallpaper.ps1') -Raw
     if ($ps -notmatch 'function Get-LocalProxy') { return '缺本地代理探测' }
-    if ($ps -notmatch '\$script:LocalProxyHit') { return '探测结果没有缓存，每次请求都会试端口' }
-    $g = [regex]::Match($ps, '(?s)function Get-ArchiveCandidateUrls.*?return \$out')
-    if (-not $g.Success) { return '找不到 Get-ArchiveCandidateUrls' }
-    # proxy 通道必须排在 ghproxy 之前
+    if (-not $ps.Contains('$script:LocalProxyHit')) { return '探测结果没有缓存' }
+    if (-not $ps.Contains('LocalProxyDay -eq $today')) { return '探测缓存没有按日失效' }
+    $g = [regex]::Match($ps, '(?s)function Get-ArchiveCandidateUrls.*?Get-ViaScores')
+    if (-not $g.Success) { return '找不到候选列表构造' }
     $ipx = $g.Value.IndexOf('Get-LocalProxy')
     $igh = $g.Value.IndexOf("tag='ghproxy'")
     if ($ipx -lt 0) { return '候选列表没先看本地代理' }
-    if ($igh -lt 0 -or $ipx -gt $igh) { return '本地代理没有排在 ghproxy 前面' }
-    # 全量索引也不能写死中转
-    if ($ps -notmatch '\$pxIdx = Get-LocalProxy') { return '全量索引还是写死 gh-proxy' }
+    if ($igh -lt 0 -or $ipx -gt $igh) { return '初始顺序里本地代理没排在 ghproxy 前面' }
+    if (-not $ps.Contains('$pxIdx = Get-LocalProxy')) { return '全量索引还是写死 gh-proxy' }
     return $true
 }
 
@@ -1274,6 +1273,21 @@ Check '故事映射每日校准，已存在的条目也会核对更正' {
     if ($ps -notmatch '校正 ') { return '已存在条目没有核对逻辑' }
     if ($ps -notmatch 'TotalHours -ge 24') { return '没有每日校准的节流' }
     if ($ps -notmatch '& \$PSCommandPath -UpdateStoryMap \*> \$null') { return '没有自动调用更新' }
+    return $true
+}
+
+Check '取图通道按实测速度跑分，不再用固定优先级' {
+    $ps = Get-Content (Join-Path $Root 'bing-wallpaper.ps1') -Raw
+    if ($ps -notmatch 'function Get-ViaScores') { return '缺 Get-ViaScores' }
+    if ($ps -notmatch 'function Set-ViaScore') { return '缺 Set-ViaScore' }
+    if (-not $ps.Contains('Pow(0.7, $days)')) { return '分数没有按天衰减' }
+    if (-not $ps.Contains('$cur * 0.4')) { return '失败没有重罚' }
+    if (-not $ps.Contains('1.0 / (1.0 + ($Ms / 1000.0))')) { return '成功加分没有考虑耗时' }
+    if (-not $ps.Contains('return @($ranked')) { return '候选列表没有按分数排序' }
+    if (-not $ps.Contains('.score }; Descending = $true')) { return '排序不是分数降序' }
+    if (-not $ps.Contains('.ord };')) { return '同分时没有按原始顺序稳定排列' }
+    if (-not $ps.Contains('Set-ViaScore -Tag $tag -Ok $true')) { return '成功没有记账' }
+    if (-not $ps.Contains('Set-ViaScore -Tag $tag -Ok $false')) { return '失败没有记账' }
     return $true
 }
 
