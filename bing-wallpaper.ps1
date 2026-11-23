@@ -3007,6 +3007,10 @@ try {
 
     # ---- 收藏 / 取消收藏
     if ($Favorite -or $Unfavorite) {
+        # 收藏会把文件移走，这里必须拿到最新 state 才能把路径改到新位置。
+        # 全局的 $state 在读在 4000 行之后，这里拿不到 —— 原来那个判断恒为假，
+        # 于是 state.file 一直指向被移走的旧路径，窗口预览就空白了。
+        $stateCur = Read-State
         $cur = (Get-ItemProperty 'HKCU:\Control Panel\Desktop' -Name Wallpaper -ErrorAction SilentlyContinue).Wallpaper
         if (-not $cur -or -not (Test-Path $cur)) {
             Write-Log '当前没有可收藏的壁纸' 'ERROR'
@@ -3074,12 +3078,12 @@ try {
                 } catch { }
             }
             # 还查不到就用 state 里的记录兜底
-            if ((-not $meta -or [string]$meta.title -eq '') -and $state -and [string]$state.date -eq $dateKey) {
+            if ((-not $meta -or [string]$meta.title -eq '') -and $stateCur -and [string]$stateCur.date -eq $dateKey) {
                 $meta = [pscustomobject]@{
-                    title     = [string]$state.title
+                    title     = [string]$stateCur.title
                     titleEn   = ''
                     copyright = ''
-                    imageId   = [string]$state.imageId
+                    imageId   = [string]$stateCur.imageId
                 }
             }
 
@@ -3106,7 +3110,7 @@ try {
             # 文件已经挪走，壁纸路径要跟着改到收藏夹，否则桌面指向一个不存在的文件
             Set-WallpaperStyle -Name $styleName
             [void](Set-DesktopWallpaper -Path $dest)
-            if ($state -and [string]$state.date -eq $dateKey) {
+            if ($stateCur -and [string]$stateCur.date -eq $dateKey) {
                 Write-State -Date $dateKey -File $dest -Title ([string]$favIdx[$dateKey].title) -ImageId ([string]$favIdx[$dateKey].imageId) -AppliedDate $dateKey
             }
             Write-Log "已收藏（移入收藏夹）：$name"
@@ -3136,10 +3140,10 @@ try {
                 $keptId = [string]$favIdx[$dateKey].imageId
                 $keptCpr = [string]$favIdx[$dateKey].copyright
             }
-            if (-not $keptTitle -and $state -and [string]$state.date -eq $dateKey) {
-                $keptTitle = [string]$state.title
-                if (-not $keptId) { $keptId = [string]$state.imageId }
-                if (-not $keptCpr) { $keptCpr = [string]$state.copyright }
+            if (-not $keptTitle -and $stateCur -and [string]$stateCur.date -eq $dateKey) {
+                $keptTitle = [string]$stateCur.title
+                if (-not $keptId) { $keptId = [string]$stateCur.imageId }
+                if (-not $keptCpr) { $keptCpr = [string]$stateCur.copyright }
             }
             if (Test-Path $dest) { Move-Item -LiteralPath $dest -Destination $back -Force }
             if ($favIdx.ContainsKey($dateKey)) { $favIdx.Remove($dateKey) }
@@ -3147,7 +3151,7 @@ try {
             if (Test-Path $back) {
                 Set-WallpaperStyle -Name $styleName
                 [void](Set-DesktopWallpaper -Path $back)
-                if ($state -and [string]$state.date -eq $dateKey) {
+                if ($stateCur -and [string]$stateCur.date -eq $dateKey) {
                     Write-State -Date $dateKey -File $back -Title $keptTitle -Copyright $keptCpr -ImageId $keptId -AppliedDate $dateKey
                 }
             }

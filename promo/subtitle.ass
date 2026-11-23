@@ -1,0 +1,22 @@
+[Script Info]
+ScriptType: v4.00+
+PlayResX: 1920
+PlayResY: 1080
+WrapStyle: 0
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Main,Noto Sans SC,54,&H00FFFFFF,&H00FFFFFF,&H00101010,&H96000000,-1,0,0,0,100,100,1,0,1,4,2,2,120,120,92,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:00.50,0:00:02.48,Main,,0,0,0,,必应官方只留 8 天
+Dialogue: 0,0:00:02.50,0:00:05.16,Main,,0,0,0,,我留了 6339 天，一天不缺
+Dialogue: 0,0:00:06.20,0:00:08.65,Main,,0,0,0,,大会员到账，浮窗也到账
+Dialogue: 0,0:00:08.67,0:00:10.36,Main,,0,0,0,,昨天的图，今天就没了
+Dialogue: 0,0:00:11.40,0:00:14.19,Main,,0,0,0,,必应壁纸编年史，必年代记
+Dialogue: 0,0:00:14.21,0:00:15.59,Main,,0,0,0,,每张壁纸是一根羽毛
+Dialogue: 0,0:00:16.63,0:00:19.42,Main,,0,0,0,,往左是昨天，往上翻是上个月
+Dialogue: 0,0:00:19.44,0:00:21.20,Main,,0,0,0,,去年的今天，菊石还在
+Dialogue: 0,0:00:22.25,0:00:25.11,Main,,0,0,0,,DSH 三天做的，免费开源
+Dialogue: 0,0:00:25.13,0:00:27.17,Main,,0,0,0,,GitHub 搜必应壁纸编年史

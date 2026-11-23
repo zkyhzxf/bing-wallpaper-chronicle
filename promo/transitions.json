@@ -1,0 +1,32 @@
+{
+  "transitions": [
+    {
+      "i": 1,
+      "at": 5.651,
+      "offset": 5.551,
+      "dur": 0.2,
+      "name": "fadewhite"
+    },
+    {
+      "i": 2,
+      "at": 10.848,
+      "offset": 10.728,
+      "dur": 0.24,
+      "name": "pixelize"
+    },
+    {
+      "i": 3,
+      "at": 16.082,
+      "offset": 15.992,
+      "dur": 0.18,
+      "name": "hlslice"
+    },
+    {
+      "i": 4,
+      "at": 21.695,
+      "offset": 21.595,
+      "dur": 0.2,
+      "name": "fade"
+    }
+  ]
+}

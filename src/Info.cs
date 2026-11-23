@@ -107,6 +107,17 @@ namespace BingWallpaperLite
                 string title = GetStr(state, "title");
                 string copyright = GetStr(state, "copyright");
                 string file = GetStr(state, "file");
+                // state 里的路径可能已经失效（历史上收藏移动过文件却没改 state）。
+                // 按日期回退找一次，否则窗口打开时预览图是空白的。
+                if (file.Length == 0 || !File.Exists(file))
+                {
+                    try
+                    {
+                        string alt = FindImageFilePath(date);
+                        if (!string.IsNullOrEmpty(alt)) { file = alt; }
+                    }
+                    catch { }
+                }
 
                 Dictionary<string, object> index = null;
                 try { index = LoadArchiveIndex(); } catch { }

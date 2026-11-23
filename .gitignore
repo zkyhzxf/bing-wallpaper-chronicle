@@ -49,3 +49,10 @@ NUL
 TrayProgram.cs
 src/**/*.bak
 _wilii-raw.json
+
+# --- promo 视频工程产物（文档与脚本入库，产物不入库） ---
+promo/raw/
+promo/tts/
+promo/screens/
+promo/transitions/
+promo/out/

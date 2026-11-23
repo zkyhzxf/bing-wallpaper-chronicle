@@ -1172,6 +1172,19 @@ Check '收藏后主动弹出「这张图是哪儿」，且窗口单例非模态'
     return $true
 }
 
+Check '收藏会移动文件，必须把 state 里的路径改到新位置' {
+    $ps = Get-Content (Join-Path $Root 'bing-wallpaper.ps1') -Raw
+    $m = [regex]::Match($ps, '(?s)if \(\$Favorite -or \$Unfavorite\) \{.{0,400}')
+    if (-not $m.Success) { return '找不到收藏分支' }
+    # 全局 $state 的赋值在主流程后段，收藏分支里拿不到 —— 必须就地读一次
+    if ($m.Value -notmatch '\$stateCur = Read-State') { return '收藏分支没有就地读 state' }
+    $blk = [regex]::Match($ps, '(?s)if \(\$Favorite -or \$Unfavorite\) \{.*?if \(\$Random\) \{')
+    if (-not $blk.Success) { return '找不到收藏分支主体' }
+    if ($blk.Value -match '(?<![A-Za-z])\$state\s+-and') { return '分支里还在用全局 $state（它此时是 null，判断恒假）' }
+    if ($blk.Value -notmatch 'Write-State -Date \$dateKey -File \$dest') { return '收藏后没把 state.file 改到收藏夹路径' }
+    return $true
+}
+
 # ---------------------------------------------------------------- 汇总
 Write-Host ''
 Write-Host ('-' * 50) -ForegroundColor DarkGray
