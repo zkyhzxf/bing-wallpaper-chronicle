@@ -986,6 +986,28 @@ Check '老存档要删的去处写进了两个提示' {
     return $true
 }
 
+Check '故事缓存合并进归档清理：脚本不再提前退出，改由勾选决定' {
+    $ps = Get-Content (Join-Path $Root 'bing-wallpaper.ps1') -Raw
+    if ($ps -notmatch 'function Clear-StoryCache') { return '缺 Clear-StoryCache 函数' }
+    # 关键：带 -CleanArchive 时不能先被故事分支吃掉再 Exit-Run 0，否则归档一张都清不掉
+    if ($ps -notmatch '\$CleanStories -and -not \$CleanArchive') { return '故事分支仍会无条件提前退出，归档清理会被架空' }
+    if ($ps -notmatch 'Clear-StoryCache -Mode \$modeTemp') { return '归档分支没有调用 Clear-StoryCache' }
+    if ($ps -notmatch '"storiesRemoved":') { return '清理结果里没有 storiesRemoved' }
+    return $true
+}
+
+Check '归档窗口有「同时清理每日故事缓存」勾选，默认不勾' {
+    $f = Get-Content (Join-Path $Root 'src\Forms\CleanForm.cs') -Raw
+    if ($f -notmatch 'WithStories') { return 'CleanForm 没有 WithStories' }
+    if ($f -notmatch 'cbStories\.Checked = false') { return '故事勾选默认被勾上了（应默认不勾）' }
+    if ($f -notmatch 'Program\.StoriesDirPath') { return '没统计故事缓存规模' }
+    $t = Get-Content (Join-Path $Root 'src\Tray.cs') -Raw
+    if ($t -notmatch 'if \(f\.WithStories\) \{ extra \+= " -CleanStories"; \}') { return 'Tray 没把勾选拼成 -CleanStories' }
+    $m = Get-Content (Join-Path $Root 'src\Menu.cs') -Raw
+    if ($m -match '"cleanstories"') { return '菜单里还留着独立的清理故事入口' }
+    return $true
+}
+
 # ---------------------------------------------------------------- 汇总
 Write-Host ''
 Write-Host ('-' * 50) -ForegroundColor DarkGray

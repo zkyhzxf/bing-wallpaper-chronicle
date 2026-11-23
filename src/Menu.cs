@@ -254,17 +254,6 @@ namespace BingWallpaperLite
             };
             cleanMenu.DropDownItems.Add(cleanArch);
 
-
-            // 收藏
-            ToolStripMenuItem cleanStories = new ToolStripMenuItem(S.CleanStories);
-            cleanStories.Name = "cleanstories";
-            cleanStories.Click += delegate
-            {
-                keepMenuOpenAfterClick = true;
-                anchor.BeginInvoke((MethodInvoker)delegate { ConfirmCleanStories(); });
-            };
-            cleanMenu.DropDownItems.Add(cleanStories);
-
             cleanMenu.DropDownItems.Add(new ToolStripSeparator());
             cleanMenu.DropDownItems.Add(MakeItem(S.CleanFavMenu, delegate { ConfirmCleanFavorites(); }));
 

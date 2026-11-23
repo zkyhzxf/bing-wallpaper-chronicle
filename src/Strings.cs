@@ -99,6 +99,13 @@ namespace BingWallpaperLite
         public static string CleanDoneIdx(int rm) { return _en ? ("Removed " + rm + " index files") : ("删除 " + rm + " 个索引文件"); }
         public static string CleanWithIndex { get { return T("同时清理索引（15 个月份 + 全量索引）", "Also clear indexes (monthly + full)"); } }
         public static string CleanWithIndexHint { get { return T("删掉的是目录册，不是图片：之后取历史图要联网查，搜索会重下索引", "Removes the catalogue, not the images: later lookups go online and search re-downloads the index"); } }
+        public static string CleanWithStories(int n, string size)
+        {
+            return _en
+                ? ("Also clear the daily-story cache (" + n + " · " + size + ")")
+                : ("同时清理每日故事缓存（" + n + " 条 · " + size + "）");
+        }
+        public static string CleanWithStoriesHint { get { return T("故事是本地缓存，删了下次查看时按需重抓；不影响壁纸与索引", "Story text is a local cache — re-fetched on demand, wallpaper and indexes untouched"); } }
         public static string CleanWithOld(int n, double mb)
         {
             return _en
@@ -781,7 +788,9 @@ namespace BingWallpaperLite
     close them or switch modes.
     A typical steady state: 20-30 MB of cache, an archive near its cap, and
     under 0.3 MB of thumbnails.
-    Daily stories have their own entry: tray menu -> Clean cache."
+    Daily stories are cached as plain text under archive\stories and are
+    re-fetched on demand. Clear them from Clean -> Clean history archive
+    (tick the story-cache option)."
                     : @"一、每天怎么换图
     默认在 00:10 自动换成当天的必应图，8:10 / 12:10 各补查一次。
     想立刻回到今天：托盘菜单 →「换成今天」。
@@ -858,7 +867,8 @@ namespace BingWallpaperLite
     收藏的、手动挑过的、当前正在用的，这三条规则都跳过。
     画廊、照片墙、预取这三个临时目录，关窗或切模式就清空。
     稳态大致是：缓存 20-30 MB、归档接近上限、缩略图 0.3 MB 以下。
-    每日故事另有独立入口：托盘菜单 →「清理缓存」。";
+    每日故事以纯文本缓存在 archive\stories，删了按需重抓。清它走
+    清理 →「清理历史归档」，勾上故事缓存那一项。";
             }
         }
         public static string InfoBtnFaved    { get { return T("★ 已收藏", "★ Favorited"); } }

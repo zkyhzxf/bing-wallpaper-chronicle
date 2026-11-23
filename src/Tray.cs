@@ -140,30 +140,9 @@ namespace BingWallpaperLite
                 string mode = f.Permanent ? "permanent" : "recycle";
                 string extra = f.WithIndex ? " -WithIndex" : "";
                 if (f.WithOld) { extra += " -IncludeOld"; }
+                if (f.WithStories) { extra += " -CleanStories"; }
                 RunScriptEx("-CleanArchive -CleanMode " + mode + extra, "cleanarch");
             }
-        }
-
-        private static void ConfirmCleanStories()
-        {
-            if (busy) { return; }
-            try
-            {
-                string d = StoriesDirPath;
-                int n = 0;
-                if (Directory.Exists(d))
-                {
-                    n = Directory.GetFiles(d, "*.txt").Length;
-                }
-                if (n == 0) { return; }
-                if (MessageBox.Show(S.CleanStoriesN.Replace("{0}", n.ToString()) + "\r\n\r\n" + S.CleanStoriesHint,
-                        AppName, MessageBoxButtons.OKCancel, MessageBoxIcon.Question) != DialogResult.OK)
-                {
-                    return;
-                }
-            }
-            catch { return; }
-            RunScriptEx("-CleanStories", "cleanstories");
         }
 
         private static void ConfirmCleanArchiveIndex()

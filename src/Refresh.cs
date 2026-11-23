@@ -1082,23 +1082,6 @@ namespace BingWallpaperLite
             {
                 if (x.Name == "cleanarch") { ca = x as ToolStripMenuItem; break; }
             }
-            ToolStripMenuItem cs = null;
-            foreach (ToolStripItem x2 in cm.DropDownItems)
-            {
-                if (x2.Name == "cleanstories") { cs = x2 as ToolStripMenuItem; break; }
-            }
-            if (cs != null)
-            {
-                int sn = 0;
-                try
-                {
-                    string sd = StoriesDirPath;
-                    if (!string.IsNullOrEmpty(sd) && Directory.Exists(sd)) { sn = Directory.GetFiles(sd, "*.txt").Length; }
-                }
-                catch { }
-                cs.Text = sn > 0 ? string.Format(S.CleanStoriesN, sn) : S.CleanStories;
-                cs.Enabled = sn > 0;
-            }
 
             if (ca != null)
             {

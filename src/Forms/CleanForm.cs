@@ -19,10 +19,12 @@ namespace BingWallpaperLite
         private readonly Button btnStart;
         private readonly Label lblNothing;
         private readonly CheckBox cbIndex;
+        private readonly CheckBox cbStories;
 
         public bool Permanent { get; private set; }
         public bool WithIndex { get; private set; }
         public bool WithOld { get; private set; }
+        public bool WithStories { get; private set; }
 
         public CleanForm(Target target)
         {
@@ -157,6 +159,27 @@ namespace BingWallpaperLite
                 catch { }
             }
 
+            // 故事缓存单独统计：archive\stories 下的 txt，可再生数据，
+            // 跟归档图片不是一回事，所以只在归档窗口里给一个可选勾选，默认不勾
+            int storyN = 0;
+            long storyB = 0;
+            if (target == Target.Archive)
+            {
+                try
+                {
+                    string sd = Program.StoriesDirPath;
+                    if (Directory.Exists(sd))
+                    {
+                        foreach (string sf in Directory.GetFiles(sd, "*.txt"))
+                        {
+                            storyN++;
+                            try { storyB += new FileInfo(sf).Length; } catch { }
+                        }
+                    }
+                }
+                catch { }
+            }
+
             // 统计区
             Panel box = new Panel();
             box.BorderStyle = BorderStyle.FixedSingle;
@@ -241,7 +264,7 @@ namespace BingWallpaperLite
                 cbIndex.Checked = false;
                 cbIndex.CheckedChanged += delegate
                 {
-                    if (btnStart != null) { btnStart.Enabled = (actualN > 0) || cbIndex.Checked; }
+                    if (btnStart != null) { btnStart.Enabled = (actualN > 0) || cbIndex.Checked || (cbStories != null && cbStories.Checked); }
                 };
                 Controls.Add(cbIndex);
 
@@ -252,7 +275,28 @@ namespace BingWallpaperLite
                 Controls.Add(idxHint);
                 ny += 48;
 
-                ClientSize = new Size(520, 504);
+                // 故事缓存：跟归档图片代价不同（删了可再生），所以单独一个勾选，默认不勾
+                if (storyN > 0)
+                {
+                    cbStories = new CheckBox();
+                    cbStories.Text = S.CleanWithStories(storyN, FmtSize(storyB));
+                    cbStories.SetBounds(18, ny, 484, 22);
+                    cbStories.Checked = false;
+                    cbStories.CheckedChanged += delegate
+                    {
+                        if (btnStart != null) { btnStart.Enabled = (actualN > 0) || cbIndex.Checked || cbStories.Checked; }
+                    };
+                    Controls.Add(cbStories);
+
+                    Label stHint = new Label();
+                    stHint.SetBounds(40, ny + 22, 462, 18);
+                    stHint.ForeColor = SystemColors.GrayText;
+                    stHint.Text = S.CleanWithStoriesHint;
+                    Controls.Add(stHint);
+                    ny += 48;
+                }
+
+                ClientSize = new Size(520, 552);
             }
 
             // 删除方式
@@ -292,7 +336,7 @@ namespace BingWallpaperLite
             btnStart = new Button();
             btnStart.Text = S.CleanStart;
             btnStart.SetBounds(18, by, 120, 34);
-            btnStart.Enabled = (actualN > 0) || (cbIndex != null && cbIndex.Checked);
+            btnStart.Enabled = (actualN > 0) || (cbIndex != null && cbIndex.Checked) || (cbStories != null && cbStories.Checked);
             btnStart.Click += delegate { Accept(); };
             Controls.Add(btnStart);
 
@@ -337,6 +381,7 @@ namespace BingWallpaperLite
             WithIndex = (cbIndex != null && cbIndex.Checked);
             // 老存档是归档的一部分，清理归档时一起清，不再单独开关
             WithOld = true;
+            WithStories = (cbStories != null && cbStories.Checked);
             DialogResult = DialogResult.OK;
             Close();
         }

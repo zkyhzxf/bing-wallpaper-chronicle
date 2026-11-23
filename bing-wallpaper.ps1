@@ -1572,6 +1572,20 @@ function Remove-OneFile {
     }
 }
 
+# 清掉每日故事的本地缓存，返回删除条数。
+# 故事是可再生数据：删了只是下次查看那天时重抓一次，不影响壁纸与索引，
+# 所以它既能单独清，也能挂在「清理历史归档」里当可选步骤一起清。
+function Clear-StoryCache {
+    param([string]$Mode = 'recycle')
+    $n = 0
+    if (-not (Test-Path $StoriesDir)) { return 0 }
+    Get-ChildItem $StoriesDir -Filter '*.txt' -File -ErrorAction SilentlyContinue | ForEach-Object {
+        if ($DryRun) { Write-Log "[DryRun] 将删除故事 $($_.Name)"; $n++ }
+        elseif (Remove-OneFile -Path $_.FullName -Mode $Mode) { $n++ }
+    }
+    return $n
+}
+
 function Clear-ArchiveBySize {
     param([int]$MaxMB)
     if ($MaxMB -le 0) { return 0 }
@@ -3086,14 +3100,10 @@ try {
         Exit-Run 0
     }
 
-    if ($CleanStories) {
-        $nS = 0
-        if (Test-Path $StoriesDir) {
-            Get-ChildItem $StoriesDir -Filter '*.txt' -File -ErrorAction SilentlyContinue | ForEach-Object {
-                if ($DryRun) { Write-Log "[DryRun] 将删除故事 $($_.Name)"; $nS++ }
-                elseif (Remove-OneFile -Path $_.FullName -Mode $modeTemp) { $nS++ }
-            }
-        }
+    # 单独清故事（没有同时清归档时才走这里，直接结束）。
+    # 带 -CleanArchive 时由归档分支顺带处理，否则这里会先删完故事就退出，归档一张都清不掉。
+    if ($CleanStories -and -not $CleanArchive) {
+        $nS = [int](Clear-StoryCache -Mode $modeTemp)
         Write-Log ("清理每日故事：" + $nS + " 条")
         Write-Output ('{"removed":' + $nS + '}')
         Exit-Run 0
@@ -3115,6 +3125,13 @@ try {
     if ($CleanArchive) {
         if (-not (Test-Path $ArchiveImgDir)) {
             Write-Log '历史归档目录不存在，无需清理'
+            # 没有图可清时，故事缓存仍然按勾选处理 —— 两个目录互不依赖
+            $nSX = 0
+            if ($CleanStories) {
+                $nSX = [int](Clear-StoryCache -Mode $modeTemp)
+                Write-Log ("同时清理每日故事缓存：" + $nSX + " 条")
+            }
+            Write-Output ('{"removed":0,"keptFav":0,"keptCur":0,"idxRemoved":0,"oldRemoved":0,"storiesRemoved":' + $nSX + '}')
             Exit-Run 0
         }
         # 保护：收藏过的 / pinned 里的 / 当前壁纸，一律不删
@@ -3187,7 +3204,14 @@ try {
             }
             Write-Log ("清理老存档：删除 " + $removedO + " 张，释放 " + [math]::Round($freedO / 1MB, 1) + " MB")
         }
-        Write-Output ('{"removed":' + $removedA + ',"keptFav":' + $keptFavA + ',"keptCur":' + $keptCurA + ',"idxRemoved":' + $nIdxA + ',"oldRemoved":' + $removedO + '}')
+        # 故事缓存：可选步骤，默认不动。故事删了可再生，图片删了不可再生，
+        # 两者代价不同，所以由勾选框分开决定，不绑在归档按钮本体上
+        $removedS = 0
+        if ($CleanStories) {
+            $removedS = [int](Clear-StoryCache -Mode $modeTemp)
+            Write-Log ("同时清理每日故事缓存：" + $removedS + " 条")
+        }
+        Write-Output ('{"removed":' + $removedA + ',"keptFav":' + $keptFavA + ',"keptCur":' + $keptCurA + ',"idxRemoved":' + $nIdxA + ',"oldRemoved":' + $removedO + ',"storiesRemoved":' + $removedS + '}')
         Exit-Run 0
     }
 
