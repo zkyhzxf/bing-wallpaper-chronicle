@@ -3234,12 +3234,20 @@ try {
                     if ($hit8) {
                         $zhMap = Get-ZhTitleMap
                         $bid = ([string]$hit8.urlbase) -replace '.*id=', '' -replace '_UHD\.jpg$', '' -replace '_[A-Za-z]{2}-[A-Za-z]{2}\d+$', ''
+                        # Get-ZhTitleMap 的值是 @{title;copyright}，取 .title 而不是整个哈希表
+                        # —— 直接赋哈希表会在 [string] 转换时变成 "System.Collections.Hashtable"
                         $zt = [string]$hit8.title
-                        if ($zhMap.ContainsKey($bid)) { $zt = $zhMap[$bid] }
+                        $zc = [string]$hit8.copyright
+                        $en8 = ''
+                        if ($zhMap.ContainsKey($bid)) {
+                            $ze = $zhMap[$bid]
+                            $zt = [string]$ze.title
+                            if (-not $zc) { $zc = [string]$ze.copyright }
+                        }
                         $meta = [pscustomobject]@{
                             title     = $zt
-                            titleEn   = [string]$hit8.title
-                            copyright = [string]$hit8.copyright
+                            titleEn   = $en8
+                            copyright = $zc
                             imageId   = $bid
                         }
                     }

@@ -1310,6 +1310,18 @@ Check '全量索引也走同一套候选与记账' {
     return $true
 }
 
+Check '中文标题映射取值正确，不会写出 System.Collections.Hashtable' {
+    $ps = Get-Content (Join-Path $Root 'bing-wallpaper.ps1') -Raw
+    # Get-ZhTitleMap 的值是 @{title;copyright}，必须取 .title
+    if ($ps -match 'if \(\$zhMap\.ContainsKey\(\$bid\)\) \{ \$zt = \$zhMap\[\$bid\] \}') {
+        return 'zhMap 的值是哈希表，直接赋值会变成 System.Collections.Hashtable'
+    }
+    if (-not $ps.Contains('$zt = [string]$ze.title')) { return '没有从 zhMap 条目里取 .title' }
+    # titleEn 不能用 zh-CN 接口的标题冒充
+    if ($ps -match 'titleEn   = \[string\]\$hit8\.title') { return 'titleEn 用了中文接口的 title' }
+    return $true
+}
+
 # ---------------------------------------------------------------- 汇总
 Write-Host ''
 Write-Host ('-' * 50) -ForegroundColor DarkGray
