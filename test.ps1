@@ -1737,6 +1737,14 @@ Check '单日取图也走 cdn.bimg.cc' {
     return $true
 }
 
+Check '批量任务不吃交互预算' {
+    $t = Get-Content (Join-Path $Root 'bing-wallpaper.ps1') -Raw
+    if ($t -notmatch '\$ExportRange -or \$FillLibrary\) \{ \$BudgetSec = 7200 \}') {
+        return 'ExportRange/FillLibrary 仍沿用交互的 100 秒预算，批量会假失败'
+    }
+    return $true
+}
+
 # ---------------------------------------------------------------- 汇总
 Write-Host ''
 Write-Host ('-' * 50) -ForegroundColor DarkGray

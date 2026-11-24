@@ -166,6 +166,12 @@ if ($WallDate) {
 # 单次进程的下载总预算：交互指令 100 秒、预取 20 秒，可用 -BudgetSec 覆盖
 if ($BudgetSec -le 0) { $BudgetSec = 100 }
 if ($script:NoApply -and -not $PSBoundParameters.ContainsKey('BudgetSec')) { $BudgetSec = 20 }
+# 批量活（按范围下载 / 图库补齐）不能吃交互那 100 秒：
+# 目标几千天时根本跑不完，会冒出一堆「本次预算已用尽」的假失败
+# （实测补 138 张只处理了 20 张，113 张全栽在这上面）
+if (-not $PSBoundParameters.ContainsKey('BudgetSec')) {
+    if ($ExportRange -or $FillLibrary) { $BudgetSec = 7200 }
+}
 $script:deadline = (Get-Date).AddSeconds($BudgetSec)
 
 # 交互指令（翻页 / 指定日期 / 收藏 / 随机）值得为另一实例的锁等一会儿：
