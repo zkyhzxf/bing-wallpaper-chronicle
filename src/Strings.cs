@@ -94,7 +94,7 @@ namespace BingWallpaperLite
         public static string CleanArchiveIndexMenu { get { return T("清除归档索引", "Clear archive index"); } }
         public static string CleanResult(int n) { return _en ? ("Cleaned " + n + " items") : ("清理完成：删除 " + n + " 个"); }
         public static string CleanDoneCache(int rm, int pt) { return _en ? ("Cleaned " + rm + ", protected " + pt) : ("清理完成：删除 " + rm + " 张，保护 " + pt + " 张"); }
-        public static string CleanDoneAll(int rm, int kept) { return _en ? ("Cache cleared — " + rm + " removed, " + kept + " kept (current)") : ("缓存已清空：删除 " + rm + " 张，当前壁纸 " + kept + " 张保留"); }
+        public static string CleanDoneAll(int rm, int kept) { return _en ? ("Cache cleared — " + rm + " item(s) removed (incl. photo-wall thumbnails), current wallpaper kept") : ("缓存已清空：删除 " + rm + " 项（含照片墙缩略图），当前壁纸保留"); }
         public static string CleanDoneFav(int rm, int moved) { return _en ? ("Favorites cleared — " + rm + " removed, " + moved + " moved back to cache") : ("收藏夹已清空：删除 " + rm + " 张，当前壁纸 " + moved + " 张已移回缓存"); }
         public static string CleanDoneIdx(int rm) { return _en ? ("Removed " + rm + " index files") : ("删除 " + rm + " 个索引文件"); }
         public static string CleanWithIndex { get { return T("同时清理索引（15 个月份 + 全量索引）", "Also clear indexes (monthly + full)"); } }
@@ -359,7 +359,7 @@ namespace BingWallpaperLite
         // ---------------- 其它
         public static string WarnNoScript      { get { return T("找不到核心脚本：", "Core script not found: "); } }
         public static string WarnNoScript2     { get { return T("请确认安装目录完整。", "Please verify the install folder is intact."); } }
-        public static string ConfirmCleanAll   { get { return T("将删除缓存目录里除当前壁纸以外的所有图片。\r\n当前壁纸会保留，其它全部清掉。确定吗？", "Delete every image in the cache except the current wallpaper?\r\nThe current one is kept. Continue?"); } }
+        public static string ConfirmCleanAll   { get { return T("将删除缓存目录里的壁纸（当前正在用的那张保留），并清空照片墙缩略图。\r\n\r\n照片墙的临时原图不在此列 —— 关闭照片墙时会单独问你保留还是丢弃。确定吗？", "Delete cached wallpapers (the current one is kept) and clear photo-wall thumbnails.\r\n\r\nPhoto-wall temporary images are handled separately when you close that window. Continue?"); } }
         public static string ConfirmCleanTtl   { get { return T(" · 清理缓存", " · Clear cache"); } }
         public static string ConfirmArchTtl    { get { return T(" · 清理历史归档", " · Clear history archive"); } }
         public static string ConfirmArchBody   { get { return T(" 张图移入回收站？\r\n\r\n当前正在显示的壁纸不动。之后可从回收站找回，\r\n也可以通过「选日期」重新下载。", " images will be moved to the Recycle Bin.\r\n\r\nThe current wallpaper is left untouched. You can restore from the Recycle Bin\r\nor re-download later via Pick a date."); } }

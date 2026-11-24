@@ -2126,6 +2126,18 @@ function Clear-AllCache {
         $sz = $_.Length
         if (Remove-OneFile -Path $_.FullName -Mode $Mode) { $removed++; $freed += $sz }
     }
+    # 照片墙缩略图也是缓存：纯派生数据，删了下次打开照片墙会按需重建，不动任何原图。
+    # cache\wall（照片墙临时原图）不在此列 —— 那条路有关窗询问的语义，不该被顺手抹掉。
+    $thumbDir = Join-Path $CacheDir 'thumbs'
+    $thumbN = 0
+    if (Test-Path $thumbDir) {
+        foreach ($tf in @(Get-ChildItem $thumbDir -Filter '*.jpg' -File -ErrorAction SilentlyContinue)) {
+            if ($DryRun) { Write-Log ("[DryRun] 将删除缩略图 " + $tf.Name); $removed++; $thumbN++; continue }
+            $szT = $tf.Length
+            if (Remove-OneFile -Path $tf.FullName -Mode $Mode) { $removed++; $freed += $szT; $thumbN++ }
+        }
+    }
+
     if (-not $DryRun) {
         # 同步清理 index.json 里指向已删文件的条目
         if (Test-Path $IndexPath) {
@@ -2139,7 +2151,10 @@ function Clear-AllCache {
             } catch { Write-Log ('缓存索引同步失败：' + $_.Exception.Message) 'WARN' }
         }
     }
-    Write-Log "清空缓存：删除 $removed 个，保留当前壁纸 $kept 个"
+    Write-Log "清空缓存：删除 $removed 项，保留当前壁纸 $kept 个"
+    if ($thumbN -gt 0) {
+        Write-Log ("照片墙缩略图已清（$thumbN 张）：下次打开照片墙会按需重建")
+    }
     return $removed
 }
 
@@ -4294,6 +4309,12 @@ if ($FillLibrary) {
                         $cand += @{ url = "https://www.bing.com/th?id=${archId}_UHD.jpg"; tag = '归档原图 UHD'; minKb = 300 }
                         # 2016-2018 的图 Bing 只留了 1080p，UHD 会 404
                         $cand += @{ url = "https://www.bing.com/th?id=${archId}_1920x1080.jpg"; tag = '归档原图 1080p'; minKb = 60 }
+                    }
+                    # 2016-03 ~ 2019-12：Bing 的 th?id 两档实测全 404，cdn.bimg.cc 是唯一稳定来源。
+                    # 这里不补的话，「按日期搜索」「往年的今天」「照片墙拉图」点这几年都会失败。
+                    if ($archId) {
+                        $yb2 = $Date.Substring(0, 4)
+                        $cand += @{ url = "https://cdn.bimg.cc/bing/$yb2/${archId}_1920x1080.jpg"; tag = 'bimg 1080p'; minKb = 60 }
                     }
                     if ($rec.url) {
                         $u2 = [string]$rec.url

@@ -1711,6 +1711,32 @@ Check '只补低画质覆盖坏文件' {
     return $true
 }
 
+Check '清空缓存含照片墙缩略图' {
+    $t = Get-Content (Join-Path $Root 'bing-wallpaper.ps1') -Raw
+    $m = [regex]::Match($t, '(?s)function Clear-AllCache.*?\n    return \$removed')
+    if (-not $m.Success) { return '找不到 Clear-AllCache' }
+    if ($m.Value -notmatch "Join-Path \`$CacheDir 'thumbs'") { return '清空缓存没清照片墙缩略图' }
+    if ($m.Value -match 'cache\\\\wall') { return '不该动 cache\\wall（那有关窗询问语义）' }
+    return $true
+}
+
+Check '清空缓存文案说清范围' {
+    $t = Get-Content (Join-Path $Root 'src\Strings.cs') -Raw
+    $m = [regex]::Match($t, 'ConfirmCleanAll\s*\{ get \{ return T\("([^"]*)"')
+    if (-not $m.Success) { return '找不到 ConfirmCleanAll' }
+    if ($m.Groups[1].Value -notmatch '缩略图') { return '确认框没提缩略图' }
+    if ($m.Groups[1].Value -match '所有图片') { return '仍写「所有图片」，与行为不符' }
+    return $true
+}
+
+Check '单日取图也走 cdn.bimg.cc' {
+    $t = Get-Content (Join-Path $Root 'bing-wallpaper.ps1') -Raw
+    $m = [regex]::Match($t, '(?s)归档原图 1080p.*?if \(\$rec\.url\)')
+    if (-not $m.Success) { return '找不到归档候选段' }
+    if ($m.Value -notmatch 'cdn\.bimg\.cc') { return '归档候选没接 cdn.bimg.cc（2016-2019 单日取图会失败）' }
+    return $true
+}
+
 # ---------------------------------------------------------------- 汇总
 Write-Host ''
 Write-Host ('-' * 50) -ForegroundColor DarkGray
