@@ -3269,15 +3269,28 @@ if ($ExportRange) {
                 $sufsC = @()
                 if ($MaxRes -eq 'uhd') { $sufsC = @('_UHD', '_1920x1080') }
                 elseif ($MaxRes -eq 'fhd') { $sufsC = @('_1920x1080') }
+                $cdnLow = $false
                 foreach ($suf in $sufsC) {
                     $u = "https://www.bing.com/th?id=$($newRec.i)$suf.jpg"
                     try {
                         [void](Save-BingImage -Url $u -Dest $destFile -MinKB 60 -Retry 1)
+                        # UHD 档必须核实真实宽度：实测 2020-2024 的 _UHD 返回的是 1080p，
+                        # 若就此收工，后面 cn4k（&w=3840）永远轮不到 —— 这就是 297 张
+                        # 全报「成功」却全是 1080p 的原因。
+                        if ($MaxRes -eq 'uhd' -and $cur -ge '20190101') {
+                            $wC = Get-ImagePixelWidth -Path $destFile
+                            if ($wC -gt 0 -and $wC -lt 3000) {
+                                $lastMsg = "UHD 只给了 $wC 宽"
+                                $cdnLow = $true
+                                break
+                            }
+                        }
                         $saved = $true
                         $resLog[$cur] = ('cdn' + $suf)
                         break
                     } catch { $lastMsg = ($_.Exception.Message) -replace '"', "'" }
                 }
+                if ($cdnLow) { continue }
             } elseif ($src -eq 'cn4k') {
                 if (-not $newRec -or -not ([string]$newRec.i)) { $lastMsg = '没有 imageId'; continue }
                 $u = "https://cn.bing.com/th?id=$($newRec.i)_UHD.jpg&w=3840&h=2160&rs=1&c=4"

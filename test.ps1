@@ -1782,6 +1782,15 @@ Check '日常候选链含跨域名 4K 备份' {
     return $true
 }
 
+Check 'cdn 源取到 1080p 会继续试 4K' {
+    $t = Get-Content (Join-Path $Root 'bing-wallpaper.ps1') -Raw
+    $m = [regex]::Match($t, '(?s)if \(\$src -eq ''cdn''\).*?elseif \(\$src -eq ''cn4k''\)')
+    if (-not $m.Success) { return '找不到 cdn 分支' }
+    if ($m.Value -notmatch '\$cdnLow = \$true') { return 'cdn 拿到低画质仍会收工，cn4k 轮不到' }
+    if ($m.Value -notmatch 'if \(\$cdnLow\) \{ continue \}') { return '没有 continue 到下一个源' }
+    return $true
+}
+
 # ---------------------------------------------------------------- 汇总
 Write-Host ''
 Write-Host ('-' * 50) -ForegroundColor DarkGray
