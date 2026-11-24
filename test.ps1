@@ -1766,6 +1766,22 @@ Check '下载器也有 cn.bing.com 4K' {
     return $true
 }
 
+Check 'bingWh 候选不再是死链' {
+    $t = Get-Content (Join-Path $Root 'bing-wallpaper.ps1') -Raw
+    $m = [regex]::Match($t, '\$bingWh\s*=\s*"([^"]*)"')
+    if (-not $m.Success) { return '找不到 $bingWh' }
+    if ($m.Groups[1].Value -notmatch '_UHD\.jpg') { return '$bingWh 缺 _UHD.jpg 后缀（实测每次 404）' }
+    if ($m.Groups[1].Value -notmatch 'w=3840') { return '$bingWh 缺 w/h 参数' }
+    return $true
+}
+
+Check '日常候选链含跨域名 4K 备份' {
+    $t = Get-Content (Join-Path $Root 'bing-wallpaper.ps1') -Raw
+    if ($t -notmatch '\$bingCn4k') { return '没有 cn.bing.com 的 4K 备份候选' }
+    if ($t -notmatch '\$candidates = @\(\$bingUhd, \$bingWh, \$bingCn4k') { return '默认候选链没插入 cn 备份' }
+    return $true
+}
+
 # ---------------------------------------------------------------- 汇总
 Write-Host ''
 Write-Host ('-' * 50) -ForegroundColor DarkGray

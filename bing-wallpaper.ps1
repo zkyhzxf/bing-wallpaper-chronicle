@@ -4689,18 +4689,22 @@ if ($FillLibrary) {
 
     # 候选地址
     $bingUhd  = "https://www.bing.com/th?id=${fullId}_UHD.jpg"
-    $bingWh   = "https://www.bing.com/th?id=${fullId}&w=3840&h=2160"
+    # 这条原来少了 _UHD.jpg 后缀，实测每次都 404 —— 从上线起就是死候选。
+    # 带上后缀和 w/h 参数后，Bing 会按需给出 3840x2160（实测 2020-2024 的日期全部可用）。
+    $bingWh   = "https://www.bing.com/th?id=${fullId}_UHD.jpg&w=3840&h=2160&rs=1&c=4"
+    # 与上面内容一致、域名不同，做互备（实测两个域名返回同样字节）
+    $bingCn4k = "https://cn.bing.com/th?id=${fullId}_UHD.jpg&w=3840&h=2160&rs=1&c=4"
     $bing1080 = "https://www.bing.com/th?id=${fullId}_1920x1080.jpg"
     $msUrl2   = [string]$img.url2
     $msUrl    = [string]$img.url
 
     $res = [string]$config['resolution']
     if ([string]$config['source'] -eq 'microsoft') {
-        $candidates = @($msUrl2, $msUrl, $bingUhd, $bing1080)
+        $candidates = @($msUrl2, $msUrl, $bingUhd, $bingWh, $bing1080)
     } elseif ($res -eq '1920x1080') {
         $candidates = @($bing1080, $bingWh, $bingUhd, $msUrl2, $msUrl)
     } else {
-        $candidates = @($bingUhd, $bingWh, $msUrl2, $msUrl, $bing1080)
+        $candidates = @($bingUhd, $bingWh, $bingCn4k, $msUrl2, $msUrl, $bing1080)
     }
     $candidates = @($candidates) + @(Get-WiliiCandidates -Date $dateStr)
     $candidates = $candidates | Where-Object { $_ } | Select-Object -Unique
