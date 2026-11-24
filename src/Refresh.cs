@@ -748,6 +748,155 @@ namespace BingWallpaperLite
         }
 
         /// <summary>把所有 archive\*.json 的标题合并成 {date: {title}}，供壁纸库显示。</summary>
+        // ---------------------------------------------------------------- 已发布日期索引
+        //
+        // all-index.json 覆盖 2016-03-05 起，old-index.json 覆盖 2009-07-13 ~ 2016-03-04。
+        // 两个都是顶层数组，ReadJson 只认字典，所以单独写一个数组解析。
+        // 用途：判断「官方这天到底有没有图」，别拿网络去试（实测试一轮要 20 秒）。
+
+        private static HashSet<string> publishedSet;
+        private static string[] publishedSorted;
+        private static string publishedStamp;
+
+        private static List<Dictionary<string, object>> ReadJsonArrayFile(string path)
+        {
+            List<Dictionary<string, object>> list = new List<Dictionary<string, object>>();
+            try
+            {
+                if (!File.Exists(path)) { return list; }
+                string txt = File.ReadAllText(path, Encoding.UTF8);
+                JavaScriptSerializer js = new JavaScriptSerializer();
+                js.MaxJsonLength = int.MaxValue;
+                object[] arr = js.DeserializeObject(txt) as object[];
+                if (arr == null) { return list; }
+                foreach (object o in arr)
+                {
+                    Dictionary<string, object> d = o as Dictionary<string, object>;
+                    if (d != null) { list.Add(d); }
+                }
+            }
+            catch { }
+            return list;
+        }
+
+        private static string PublishedStamp()
+        {
+            StringBuilder sb = new StringBuilder();
+            string[] files = new string[] {
+                Path.Combine(archiveDir, "all-index.json"),
+                Path.Combine(archiveDir, "old-index.json") };
+            foreach (string f in files)
+            {
+                try
+                {
+                    FileInfo fi = new FileInfo(f);
+                    sb.Append(fi.Exists ? (fi.Length.ToString() + ":" + fi.LastWriteTimeUtc.Ticks.ToString()) : "-");
+                }
+                catch { sb.Append("-"); }
+                sb.Append('|');
+            }
+            return sb.ToString();
+        }
+
+        private static void EnsurePublishedIndex()
+        {
+            string stamp = PublishedStamp();
+            if (publishedSet != null && stamp == publishedStamp) { return; }
+
+            HashSet<string> set = new HashSet<string>(StringComparer.Ordinal);
+            string[] files = new string[] {
+                Path.Combine(archiveDir, "all-index.json"),
+                Path.Combine(archiveDir, "old-index.json") };
+            foreach (string f in files)
+            {
+                foreach (Dictionary<string, object> d in ReadJsonArrayFile(f))
+                {
+                    string k = GetStr(d, "d").Replace("-", "").Trim();
+                    if (k.Length == 8) { set.Add(k); }
+                }
+            }
+            string[] sorted = new string[set.Count];
+            set.CopyTo(sorted);
+            Array.Sort(sorted, StringComparer.Ordinal);
+
+            publishedSet = set;
+            publishedSorted = sorted;
+            publishedStamp = stamp;
+        }
+
+        /// <summary>官方索引里有没有这一天。索引读不到时返回 true（不拦截用户）。</summary>
+        internal static bool IsDatePublished(string d8)
+        {
+            try
+            {
+                EnsurePublishedIndex();
+                if (publishedSet == null || publishedSet.Count == 0) { return true; }
+                string k = (d8 ?? "").Replace("-", "").Trim();
+                if (k.Length != 8) { return true; }
+                return publishedSet.Contains(k);
+            }
+            catch { return true; }
+        }
+
+        internal static string PublishedMinDate
+        {
+            get
+            {
+                try
+                {
+                    EnsurePublishedIndex();
+                    if (publishedSorted != null && publishedSorted.Length > 0) { return publishedSorted[0]; }
+                }
+                catch { }
+                return "";
+            }
+        }
+
+        internal static string PublishedMaxDate
+        {
+            get
+            {
+                try
+                {
+                    EnsurePublishedIndex();
+                    if (publishedSorted != null && publishedSorted.Length > 0)
+                    {
+                        return publishedSorted[publishedSorted.Length - 1];
+                    }
+                }
+                catch { }
+                return "";
+            }
+        }
+
+        /// <summary>
+        /// 索引里紧邻的一天：step&gt;0 取更早的里最新的，step&lt;0 取更新的里最旧的。
+        /// 缺失日期不在集合里，所以天然被跳过（2010-04-15 → 更新 → 2010-04-18）。
+        /// </summary>
+        internal static string NeighborDate(string from8, int step)
+        {
+            try
+            {
+                EnsurePublishedIndex();
+                if (publishedSorted == null || publishedSorted.Length == 0) { return ""; }
+                string k = (from8 ?? "").Replace("-", "").Trim();
+                if (k.Length != 8) { return ""; }
+
+                int hit = Array.BinarySearch(publishedSorted, k, StringComparer.Ordinal);
+                int lo = (hit >= 0) ? hit : ~hit;      // 第一个 >= k 的下标
+                if (step > 0)
+                {
+                    int p = lo - 1;                    // 最后一个 < k
+                    if (p >= 0) { return publishedSorted[p]; }
+                    return "";
+                }
+                int q = (hit >= 0) ? hit + 1 : lo;     // 第一个 > k
+                if (q >= 0 && q < publishedSorted.Length) { return publishedSorted[q]; }
+                return "";
+            }
+            catch { return ""; }
+        }
+
         /// <summary>四个索引文件的 大小+修改时间 指纹，任一变化就让缓存失效。</summary>
         private static string ArchiveIdxStamp()
         {

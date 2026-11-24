@@ -623,6 +623,7 @@ namespace BingWallpaperLite
         public static string SrchSwitchFail { get { return T("换图失败，可以再点一次", "Switch failed; try again"); } }
         public static string SrchNoSource   { get { return T("这一天的原图取不到（源不可达），稍后再试试", "Couldn't reach a source for that day — try again later"); } }
         public static string SrchNoImage    { get { return T("这一天必应没有发布壁纸", "Bing published no wallpaper that day"); } }
+        public static string DeadDateSuffix { get { return T("（原图已失效）", "(source image gone)"); } }
         public static string BtnClose       { get { return T("关闭", "Close"); } }
 
         public static string SrchSwitched(string date)

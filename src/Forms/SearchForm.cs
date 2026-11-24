@@ -182,10 +182,21 @@ namespace BingWallpaperLite
                 if (cut > 0) { shortCpr = shortCpr.Substring(0, cut).Trim(); }
                 if (shortCpr.Length > 36) { shortCpr = shortCpr.Substring(0, 36) + "…"; }
 
+                // dead = 索引里有、原图已 404。列出来但标清楚，别让人点了才发现取不到
+                bool dead = DictBool(d, "dead");
                 string label = date + "  " + (title.Length > 0 ? title : "(无标题)") + "    " + shortCpr;
+                if (dead) { label = label + "  " + S.DeadDateSuffix; }
                 lst.Items.Add(label);
-                results.Add(new string[] { date, title });
+                results.Add(new string[] { date, title, dead ? "1" : "" });
             }
+        }
+
+        private static bool DictBool(Dictionary<string, object> d, string k)
+        {
+            if (d == null || !d.ContainsKey(k) || d[k] == null) { return false; }
+            object v = d[k];
+            if (v is bool) { return (bool)v; }
+            return string.Equals(v.ToString(), "true", StringComparison.OrdinalIgnoreCase) || v.ToString() == "1";
         }
 
         private static string DictStr(Dictionary<string, object> d, string k)
@@ -199,6 +210,11 @@ namespace BingWallpaperLite
         {
             if (busy || lst.SelectedIndex < 0 || lst.SelectedIndex >= results.Count) { return; }
             string date = results[lst.SelectedIndex][0];
+            if (results[lst.SelectedIndex].Length > 2 && results[lst.SelectedIndex][2] == "1")
+            {
+                lblStatus.Text = S.SrchNoImage;
+                return;
+            }
             PickedDate = date;
 
             busy = true;

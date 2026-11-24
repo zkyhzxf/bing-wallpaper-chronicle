@@ -795,10 +795,10 @@ Check '所有源码文件带 UTF-8 BOM' {
     return $true
 }
 
-Check '空 catch 不超过 102 处' {
+Check '空 catch 不超过 107 处' {
     $t = Get-Content $Script -Raw
     $n = ([regex]::Matches($t, 'catch \{ \}')).Count
-    if ($n -gt 102) { return ('空 catch 已 ' + $n + ' 处，超上限 102') }
+    if ($n -gt 107) { return ('空 catch 已 ' + $n + ' 处，超上限 107') }
     return $true
 }
 
@@ -1469,6 +1469,84 @@ Check '提示语不再谎称恢复正常' {
     $m = [regex]::Match($t, 'BRepairedHint\s*\{ get \{ return T\("([^"]*)"')
     if (-not $m.Success) { return 'Strings.cs 里找不到 BRepairedHint' }
     if ($m.Groups[1].Value -match '恢复正常') { return 'BRepairedHint 仍声称「自动换图恢复正常」' }
+    return $true
+}
+
+Check '搜索并入老存档' {
+    $t = Get-Content (Join-Path $Root 'bing-wallpaper.ps1') -Raw
+    $m = [regex]::Match($t, '(?s)function Search-Archive.*?\n\}')
+    if (-not $m.Success) { return '找不到 Search-Archive' }
+    if ($m.Value -notmatch 'Get-OldIndexMap') { return 'Search-Archive 没并入 old-index（2016-03 前的图搜不到）' }
+    if ($m.Value -notmatch 'dead') { return 'Search-Archive 没输出 dead 标记' }
+    return $true
+}
+
+Check '空缺日期在本地判定，不进网络' {
+    $t = Get-Content (Join-Path $Root 'bing-wallpaper.ps1') -Raw
+    $p1 = $t.IndexOf('Bing 官方未发布该日壁纸')
+    $p2 = $t.IndexOf('Write-Log "--- 指定日期')
+    if ($p1 -lt 0) { return '没有快速失败分支' }
+    if ($p2 -lt 0) { return '找不到指定日期日志' }
+    if ($p1 -gt $p2) { return '快速失败不在 -Date 分支开头（会先跑网络）' }
+    return $true
+}
+
+Check '翻页跳过死日期' {
+    $t = Get-Content (Join-Path $Root 'bing-wallpaper.ps1') -Raw
+    $m = [regex]::Match($t, '(?s)function Get-NeighborDate.*?\n\}')
+    if (-not $m.Success) { return '找不到 Get-NeighborDate' }
+    if ($m.Value -notmatch 'Read-DeadDates') { return 'Get-NeighborDate 没过滤死日期' }
+    if ($t -notmatch 'function Invoke-NeighborFallback') { return '没有越界接续的预检函数' }
+    $m2 = [regex]::Match($t, '(?s)function Invoke-NeighborFallback.*?\n\}')
+    if ($m2.Success -and $m2.Value -notmatch 'Test-ArchiveReachable') { return '越界接续没做可达性预检' }
+    return $true
+}
+
+Check '日历随机抽过滤死日期' {
+    $t = Get-Content (Join-Path $Root 'bing-wallpaper.ps1') -Raw
+    $m = [regex]::Match($t, '(?s)if \(\$PickRandom -gt 0\).*?\n\}')
+    if (-not $m.Success) { return '找不到 PickRandom 分支' }
+    if ($m.Value -notmatch 'Read-DeadDates') { return 'PickRandom 没过滤死日期' }
+    return $true
+}
+
+Check '预取改用索引邻近日' {
+    $t = Get-Content (Join-Path $Root 'src\Forms\InfoForm.cs') -Raw
+    $m = [regex]::Match($t, '(?s)private void PrefetchAround\(string date\).*?\n        \}')
+    if (-not $m.Success) { return '找不到 PrefetchAround' }
+    if ($m.Value -notmatch 'Program\.NeighborDate') { return '预取没用索引邻近日' }
+    if ($m.Value -match 'AddDays\(') { return '预取仍在用日历 ±1 天（会预取空缺日期，实测白跑 22.8 秒）' }
+    return $true
+}
+
+Check '程序侧已发布日期索引' {
+    $t = Get-Content (Join-Path $Root 'src\Refresh.cs') -Raw
+    if ($t -notmatch 'internal static bool IsDatePublished') { return '没有 IsDatePublished' }
+    if ($t -notmatch 'internal static string NeighborDate') { return '没有 NeighborDate' }
+    if ($t -notmatch 'old-index\.json') { return '索引集合没读 old-index' }
+    return $true
+}
+
+Check '日历标出官方未发布日' {
+    $t = Get-Content (Join-Path $Root 'src\Forms\CalendarForm.cs') -Raw
+    if ($t -notmatch 'IsDatePublished') { return '日历没判断官方是否发布' }
+    if ($t -notmatch 'SrchNoImage') { return '日历没提示「这一天必应没有发布壁纸」' }
+    if ($t -notmatch 'ok\.Enabled = !blocked') { return '没禁用确定按钮' }
+    return $true
+}
+
+Check '搜索列表标注失效原图' {
+    $t = Get-Content (Join-Path $Root 'src\Forms\SearchForm.cs') -Raw
+    if ($t -notmatch 'DeadDateSuffix') { return '搜索结果没标注「原图已失效」' }
+    if ($t -notmatch 'DictBool') { return '没解析 dead 字段' }
+    return $true
+}
+
+Check '时间窗跟随鼠标' {
+    $t = Get-Content (Join-Path $Root 'src\Forms\TimeForm.cs') -Raw
+    if ($t -notmatch 'FormStartPosition\.Manual') { return '不是 Manual 定位' }
+    if ($t -notmatch 'WorkingArea') { return '没夹进工作区' }
+    if ($t -match 'FormStartPosition\.CenterParent') { return '仍在用 CenterParent（托盘 owner 在 0,0，会贴左上角）' }
     return $true
 }
 

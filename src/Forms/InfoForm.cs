@@ -249,9 +249,12 @@ namespace BingWallpaperLite
                 DateTime dt;
                 if (!DateTime.TryParseExact(d, "yyyyMMdd", null,
                         System.Globalization.DateTimeStyles.None, out dt)) { return; }
+                // 用索引邻近日，不用日历 ±1 天。碰到官方空缺的日期（2010-04-16 / 2010-04-17 /
+                // 2012-08-14）时，日历 ±1 会预取一个根本不存在的日期：实测跑满 22.8 秒、
+                // 期间占着运行锁，翻页就得干等；而且真正该预取的邻近日反而没预取。
                 string[] targets = new string[] {
-                    dt.AddDays(-1).ToString("yyyyMMdd"),
-                    dt.AddDays(1).ToString("yyyyMMdd")
+                    Program.NeighborDate(d, 1),      // 更早的里最新的
+                    Program.NeighborDate(d, -1)      // 更新的里最旧的
                 };
                 DateTime today = DateTime.Today;
                 foreach (string t in targets)

@@ -258,13 +258,29 @@ namespace BingWallpaperLite
                 long bytes = 0;
                 string where = Program.FindImageLocation(d, out bytes);
 
+                // 官方索引里没有这一天（且落在索引覆盖范围内）→ 当场说清楚并禁用确定。
+                // 否则用户点下去要等一整轮网络尝试（实测约 20 秒）才知道 Bing 那天没发图。
+                bool published = Program.IsDatePublished(d);
+                bool inRange = false;
+                try
+                {
+                    string mn = Program.PublishedMinDate;
+                    string mx = Program.PublishedMaxDate;
+                    inRange = mn.Length == 8 && mx.Length == 8 &&
+                              string.CompareOrdinal(d, mn) >= 0 && string.CompareOrdinal(d, mx) <= 0;
+                }
+                catch { }
+                bool blocked = (!published && inRange);
+
                 lblDate.Text = cal.SelectionStart.ToString("yyyy-MM-dd");
                 lblTitle.Text = title;
-                lblWhere.Text = where;
-                lblSize.Text = bytes > 0 ? (bytes / 1048576.0).ToString("0.0") + " MB" : "";
+                lblWhere.Text = blocked ? S.SrchNoImage : where;
+                lblSize.Text = blocked ? "" : (bytes > 0 ? (bytes / 1048576.0).ToString("0.0") + " MB" : "");
                 lblCopy.Text = copy;
+                if (ok != null) { ok.Enabled = !blocked && !busy; }
 
-                ShowPreview(d);
+                if (blocked) { pic.Visible = false; }
+                else { ShowPreview(d); }
             }
             catch { }
         }

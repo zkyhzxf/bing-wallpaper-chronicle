@@ -25,7 +25,7 @@ namespace BingWallpaperLite
             MaximizeBox = false;
             MinimizeBox = false;
             ShowInTaskbar = false;
-            StartPosition = FormStartPosition.CenterParent;
+            StartPosition = FormStartPosition.Manual;
             ClientSize = new Size(268, 118);
             Font = new Font("Microsoft YaHei UI", 9F);
 
@@ -67,6 +67,29 @@ namespace BingWallpaperLite
 
             AcceptButton = ok;
             CancelButton = cancel;
+        }
+
+        /// <summary>
+        /// 跟着鼠标出现，并夹进所在屏幕的工作区。
+        /// 不能用 CenterParent —— owner 是隐藏的托盘窗体，位置在 0,0 甚至负坐标，
+        /// 居中算出来就贴在屏幕左上角。
+        /// </summary>
+        protected override void OnLoad(EventArgs e)
+        {
+            base.OnLoad(e);
+            try
+            {
+                Point p = Cursor.Position;
+                Rectangle wa = Screen.FromPoint(p).WorkingArea;
+                int x = p.X - Width / 2;
+                int y = p.Y - Height / 2;
+                if (x < wa.Left) { x = wa.Left; }
+                if (y < wa.Top) { y = wa.Top; }
+                if (x + Width > wa.Right) { x = wa.Right - Width; }
+                if (y + Height > wa.Bottom) { y = wa.Bottom - Height; }
+                Location = new Point(x, y);
+            }
+            catch { }
         }
     }
 }

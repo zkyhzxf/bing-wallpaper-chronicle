@@ -910,6 +910,14 @@ function Get-OldIndexMap {
     return $script:OldMap
 }
 
+function Get-ImageIdFromFileName {
+    param([string]$Name)
+    if (-not $Name) { return '' }
+    $n = [System.IO.Path]::GetFileNameWithoutExtension($Name)
+    $n = $n -replace '_(UHD|\d{3,4}x\d{3,4})$', ''
+    return $n
+}
+
 function Get-OldIndexRecord {
     param([string]$Date)
     $Date = ([string]$Date) -replace '[^0-9]', ''
@@ -1469,6 +1477,37 @@ function Search-Archive {
         Write-Log ("实时补齐失败，仅用本地索引：" + $_.Exception.Message) 'WARN'
     }
 
+    # 老存档（2009-07-13 ~ 2016-03-04，实测 2424 条）：主索引够不到这一段。
+    # 不并进来的话这 6 年半的图关键词搜索一张都搜不到（实测搜「袋貂」返回空）。
+    try {
+        $seenOld = @{}
+        foreach ($it in $idx) { $seenOld[[string]$it.d] = $true }
+        $oldMap2 = Get-OldIndexMap
+        if ($oldMap2 -and $oldMap2.Count -gt 0) {
+            $mergedOld = @($idx)
+            $addedOld = 0
+            foreach ($ok2 in @($oldMap2.Keys)) {
+                $kd = [string]$ok2
+                if ($kd.Length -ne 8) { continue }
+                if ($seenOld.ContainsKey($kd)) { continue }
+                $ov = $oldMap2[$ok2]
+                $mergedOld += [ordered]@{
+                    d = $kd
+                    t = [string]$ov.t
+                    c = [string]$ov.c
+                    l = ''
+                    i = Get-ImageIdFromFileName ([string]$ov.n)
+                }
+                $addedOld++
+            }
+            $idx = $mergedOld
+            Write-Log ('搜索索引：并入老存档 ' + $addedOld + ' 天，合计 ' + $idx.Count + ' 条')
+        }
+    } catch {
+        Write-Log ('老存档并入失败：' + $_.Exception.Message) 'WARN'
+    }
+
+    $deadMap = Read-DeadDates
     $hits = @()
     foreach ($item in $idx) {
         $text = [string]$item.t + ' ' + [string]$item.c
@@ -1484,6 +1523,7 @@ function Search-Archive {
                 imageId   = [string]$item.i
                 matched   = $matched
                 score     = $matched.Count
+                dead      = $deadMap.ContainsKey([string]$item.d)
             }
         }
     }
@@ -1511,6 +1551,16 @@ function Get-NeighborDate {
     } catch { }
     if ($dates.Count -eq 0) { return '' }
 
+    # 死日期（索引里有、原图已 404）跳过；全被过滤掉就退回旧行为 ——
+    # 宁可让用户点一次失败，也不能让翻页整体失效
+    try {
+        $deadN = Read-DeadDates
+        if ($deadN -and $deadN.Count -gt 0) {
+            $alive = @($dates | Where-Object { -not $deadN.ContainsKey([string]$_) })
+            if ($alive.Count -gt 0) { $dates = $alive }
+        }
+    } catch { }
+
     $best = ''
     foreach ($d in $dates) {
         if ($d.Length -ne 8) { continue }
@@ -1523,6 +1573,60 @@ function Get-NeighborDate {
         }
     }
     return $best
+}
+
+# 翻页越界接续：先预检再交棒，死日期自动往同方向再退一天（最多 3 次）。
+# 不预检的话，撞上「索引里有、原图 404」的日期会直接给用户一个失败弹窗。
+function Invoke-NeighborFallback {
+    param([string]$From, [int]$Step, [switch]$Gallery, [int]$BudgetSec)
+
+    $cur = $From
+    $tried = @()
+    for ($k = 0; $k -lt 3; $k++) {
+        $nd = Get-NeighborDate -From $cur -Step $Step
+        if (-not $nd) { break }
+        if ($tried -contains $nd) { break }
+        $tried += $nd
+
+        # 本地已有这张就别发 HEAD 请求
+        $haveLocal = $false
+        foreach ($dirL in @($FavDir, $CacheDir, $ArchiveImgDir)) {
+            if (-not $dirL -or -not (Test-Path $dirL)) { continue }
+            $fL = Get-ChildItem $dirL -Filter "${nd}_*.jpg" -File -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($fL) { $haveLocal = $true; break }
+        }
+
+        if (-not $haveLocal) {
+            $iid = ''
+            try {
+                $recO = Get-OldIndexRecord -Date $nd
+                if ($recO) { $iid = Get-ImageIdFromFileName ([string]$recO.n) }
+                if (-not $iid) {
+                    $hitI = @(@(Get-FullIndex) | Where-Object { [string]$_.d -eq $nd }) | Select-Object -First 1
+                    if ($hitI) { $iid = [string]$hitI.i }
+                }
+            } catch { }
+
+            $rv = Test-ArchiveReachable -Date8 $nd -ImageId $iid
+            if ($rv -eq 'missing') {
+                Note-DeadDate -Date8 $nd -Reason 'step-missing'
+                Write-Log ('跳过 ' + $nd + '（原图已不存在），往同方向再找一天') 'WARN'
+                $cur = $nd
+                continue
+            }
+            if ($rv -eq 'netfail') {
+                Write-Log ('预检 ' + $nd + ' 时网络不通，停止继续找') 'ERROR'
+                Exit-Run 4
+            }
+        }
+
+        Write-Log ('相对移动（跨窗口）: ' + $From + ' Step=' + $Step + ' -> ' + $nd)
+        & $PSCommandPath -Date $nd -Gallery:$Gallery -BudgetSec $BudgetSec
+        exit $LASTEXITCODE
+    }
+
+    Write-Log ('翻页接续失败：试过 ' + ($tried -join ' / ')) 'ERROR'
+    Exit-Run 5
 }
 
 # ---------------------------------------------------------------- 主动保留名单
@@ -2811,6 +2915,15 @@ if ($PickRandom -gt 0) {
         Write-Output '[]'
         Exit-Run 5
     }
+    # 死日期（索引有、原图 404）不抽给用户
+    try {
+        $deadP = Read-DeadDates
+        if ($deadP -and $deadP.Count -gt 0) {
+            $aliveP = @($idx | Where-Object { -not $deadP.ContainsKey([string]$_.d) })
+            if ($aliveP.Count -gt 0) { $idx = $aliveP }
+        }
+    } catch { }
+
     $n = [Math]::Min($PickRandom, $idx.Count)
     $picked = @($idx | Get-Random -Count $n)
 
@@ -3843,7 +3956,41 @@ if ($FillLibrary) {
         if (-not $dt) { Write-Log "日期格式错误（要 YYYYMMDD）：$Date" 'ERROR'; exit 1 }
         if ($dt.Date -gt (Get-Date).Date) { Write-Log '不能选择未来日期（要 YYYYMMDD 且不晚于今天）' 'ERROR'; exit 12 }
 
-        Write-Log "--- 指定日期：$Date ---"
+        # 官方索引里没有这一天，就不要去试网络了 —— 实测试一轮要 20 秒才失败。
+        # 只在索引覆盖得到的时间段里判定；索引还没更新到今天时一律走原流程。
+        try {
+            $pubSet = @{}
+            $idxMin = ''
+            $idxMax = ''
+            foreach ($it in @(Get-FullIndex)) {
+                $kd = [string]$it.d
+                if ($kd.Length -ne 8) { continue }
+                $pubSet[$kd] = $true
+                if (-not $idxMin -or $kd -lt $idxMin) { $idxMin = $kd }
+                if (-not $idxMax -or $kd -gt $idxMax) { $idxMax = $kd }
+            }
+            foreach ($ok3 in @((Get-OldIndexMap).Keys)) {
+                $kd = [string]$ok3
+                if ($kd.Length -ne 8) { continue }
+                $pubSet[$kd] = $true
+                if (-not $idxMin -or $kd -lt $idxMin) { $idxMin = $kd }
+                if (-not $idxMax -or $kd -gt $idxMax) { $idxMax = $kd }
+            }
+            if ($idxMin -and $idxMax -and $Date -ge $idxMin -and $Date -le $idxMax -and -not $pubSet.ContainsKey($Date)) {
+                $prevD = ''
+                $nextD = ''
+                foreach ($kd in @($pubSet.Keys)) {
+                    if ($kd -lt $Date -and ($prevD -eq '' -or $kd -gt $prevD)) { $prevD = $kd }
+                    if ($kd -gt $Date -and ($nextD -eq '' -or $kd -lt $nextD)) { $nextD = $kd }
+                }
+                $hintD = @(@($prevD, $nextD) | Where-Object { $_ })
+                Write-Log ("Bing 官方未发布该日壁纸：" + $Date + "（最近可用：" + ($hintD -join ' / ') + "）") 'ERROR'
+                if ($DryRun) { Write-Log '[DryRun] 索引里没有这一天（Bing 官方未发布），实际会失败' }
+                Exit-Run 5
+            }
+        } catch { }
+
+        Write-Log "--- 指定日期：$Date ---\"
 
         # 1) 本地已有（收藏优先）
         $hit = Get-ChildItem $FavDir -Filter "${Date}_*.jpg" -File -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -4268,7 +4415,7 @@ if ($FillLibrary) {
             $outOfWindow = Get-NeighborDate -From $curDate -Step $Step
             if ($outOfWindow) {
                 Write-Log ("当前日期不在窗口内（" + $curDate + "），从归档接续：" + $outOfWindow)
-                & $PSCommandPath -Date $outOfWindow -Gallery:$Gallery -BudgetSec $BudgetSec
+                Invoke-NeighborFallback -From $curDate -Step $Step -Gallery:$Gallery -BudgetSec $BudgetSec
                 exit $LASTEXITCODE
             }
             if ($wallpapers.Count -eq 0) {
@@ -4300,9 +4447,8 @@ if ($FillLibrary) {
             }
         }
         if ($beyondDate) {
-            Write-Log ("相对移动（跨窗口）: " + $curDate + " Step=" + $Step + " -> " + $beyondDate)
-            # 越界了：交给 -Date 分支处理（会走归档下载）
-            & $PSCommandPath -Date $beyondDate -Gallery:$Gallery -BudgetSec $BudgetSec
+            # 越界了：交给 -Date 分支处理（会走归档下载）；死日期由 helper 自动跳过
+            Invoke-NeighborFallback -From $curDate -Step $Step -Gallery:$Gallery -BudgetSec $BudgetSec
             exit $LASTEXITCODE
         } else {
             Write-Log "相对移动: 当前第 $pos 位($curDate) Step=$Step -> 第 $target 位"
