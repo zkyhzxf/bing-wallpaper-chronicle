@@ -1179,6 +1179,9 @@ namespace BingWallpaperLite
         }
         public static string DlUhdNote { get { return T("UHD 仅 2019 年起提供；2019 年前最高 1920×1080（部分镜像仅 958px）。每张都会校验真实宽度。", "UHD exists only from 2019 on; earlier days cap at 1920×1080 (some mirrors 958px). Every file is verified."); } }
         public static string DlOnlyLowRes { get { return T("只补非 UHD（本地已有的低画质才重下，其余跳过）", "Only fill missing UHD (re-download low-res files only)"); } }
+        public static string WallCardGap { get { return T("Bing 官方未发布", "Not published"); } }
+        public static string WallOfficialGap { get { return T("这一天 Bing 官方没有发布壁纸，没有图可拉。", "Bing published no wallpaper that day; there is nothing to fetch."); } }
+        public static string WallGapHint(int n) { return _en ? ("· " + n + " day(s) never published") : ("· 其中 " + n + " 天 Bing 官方没发图"); }
         public static string WarnDateOrder     { get { return T("起始日期不能晚于结束日期。", "Start date is after end date."); } }
         public static string WarnInsideApp     { get { return T("不能选程序自己的目录或它的子目录——那里会被自动清理误伤，程序文件也可能被覆盖。请换一个位置。", "Cannot use the program's own folder or its subfolders — auto-cleanup would delete them and program files could be overwritten. Please pick another location."); } }
         public static string WarnNoPath   { get { return T("请填写安装路径。", "Please enter an install path."); } }

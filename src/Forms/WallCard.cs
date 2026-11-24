@@ -78,6 +78,8 @@ namespace BingWallpaperLite
         public string TitleText = "";
         public bool HasImage = false;
         public bool Loading = false;
+        /// <summary>Bing 官方那天没发图（不是本地缺图）。画成死格，别提示「拉图」。</summary>
+        public bool OfficialGap = false;
         public bool Selected = false;
         public Image Thumb = null;
 
@@ -170,6 +172,22 @@ namespace BingWallpaperLite
                             sp.StartCap = LineCap.Round;
                             sp.EndCap = LineCap.Round;
                             g.DrawArc(sp, img.X + img.Width / 2 - 16, img.Y + img.Height / 2 - 16, 32, 32, spin, 260);
+                        }
+                    }
+                    else if (OfficialGap)
+                    {
+                        // 官方没发布：只有一个说明，不给「拉图」的暗示
+                        using (SolidBrush gb2 = new SolidBrush(WallTheme.Dark
+                            ? Color.FromArgb(32, 32, 32) : Color.FromArgb(236, 236, 236)))
+                        {
+                            g.FillPath(gb2, ip);
+                        }
+                        using (SolidBrush tb2 = new SolidBrush(WallTheme.TextDim))
+                        using (StringFormat sf2 = new StringFormat())
+                        {
+                            sf2.Alignment = StringAlignment.Center;
+                            sf2.LineAlignment = StringAlignment.Center;
+                            g.DrawString(S.WallCardGap, FontDate, tb2, img, sf2);
                         }
                     }
                     else

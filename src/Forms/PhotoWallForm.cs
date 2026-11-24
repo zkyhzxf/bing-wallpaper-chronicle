@@ -1,4 +1,4 @@
-﻿﻿using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Imaging;
@@ -45,6 +45,8 @@ namespace BingWallpaperLite
         private volatile bool abortFetch = false;
         private bool closing = false;
         private int localCount = 0;
+        /// <summary>官方索引里没有的日期数：不参与「拉图」，只在状态栏提一句。</summary>
+        private int gapCount = 0;
 
         public PhotoWallForm() : this(null, null) { }
 
@@ -264,6 +266,7 @@ namespace BingWallpaperLite
             missing.Clear();
             usedThumbs.Clear();
             localCount = 0;
+            gapCount = 0;
             selected = "";
 
             Dictionary<string, object> idx = null;
@@ -272,11 +275,27 @@ namespace BingWallpaperLite
             List<string> order = new List<string>(dates);
             if (cmbSort.SelectedIndex == 1) { order.Reverse(); }
 
+            // 官方索引里没有这一天（2010-04-16 这类）：不是"本地缺图"，是 Bing 那天没发。
+            // 单独标记、不进 missing —— 否则状态栏永远显示缺 N 张，每次「拉图」都白跑一趟。
+            string pubMin = "";
+            string pubMax = "";
+            try { pubMin = Program.PublishedMinDate; pubMax = Program.PublishedMaxDate; } catch { }
+
             foreach (string d8 in order)
             {
                 string src = FindLocal(d8);
+                bool officialGap = false;
+                if (src == null && pubMin.Length == 8 && pubMax.Length == 8 &&
+                    string.CompareOrdinal(d8, pubMin) >= 0 && string.CompareOrdinal(d8, pubMax) <= 0)
+                {
+                    try { officialGap = !Program.IsDatePublished(d8); } catch { }
+                }
                 if (chkLocal.Checked && src == null) { continue; }
-                if (src == null) { missing.Add(d8); }
+                if (src == null)
+                {
+                    if (officialGap) { gapCount++; }
+                    else { missing.Add(d8); }
+                }
                 else
                 {
                     localCount++;
@@ -297,6 +316,7 @@ namespace BingWallpaperLite
                 card.Date8 = d8;
                 card.TitleText = title;
                 card.HasImage = (src != null);
+                card.OfficialGap = officialGap;
                 card.SuspendLayout();
                 card.Tag = src;
                 card.Click += delegate { OnCardClick(card); };
@@ -515,6 +535,7 @@ namespace BingWallpaperLite
                 {
                     txt = txt + "  " + S.WallPreviewHint;
                 }
+                if (gapCount > 0) { txt = txt + "  " + S.WallGapHint(gapCount); }
                 lblStatus.Text = txt;
                 btnFetch.Enabled = (missing.Count > 0) && !working;
                 bool hasSel = false;
@@ -692,6 +713,7 @@ namespace BingWallpaperLite
         private void FetchOne(WallCard card)
         {
             if (working || card == null) { return; }
+            if (card.OfficialGap) { lblStatus.Text = S.WallOfficialGap; return; }
             string d8 = card.Date8;
             working = true;
             card.Loading = true;

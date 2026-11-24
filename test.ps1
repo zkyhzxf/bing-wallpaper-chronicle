@@ -1596,6 +1596,38 @@ Check '下载窗有只补低画质' {
     return $true
 }
 
+Check '照片墙区分官方未发布' {
+    $t = Get-Content (Join-Path $Root 'src\Forms\PhotoWallForm.cs') -Raw
+    if ($t -notmatch 'IsDatePublished') { return '照片墙没判断官方是否发布' }
+    if ($t -notmatch 'card\.OfficialGap') { return '卡片没标记 OfficialGap' }
+    if ($t -notmatch 'gapCount\+\+') { return '空缺日没单独计数（会混进 missing）' }
+    return $true
+}
+
+Check '空缺日不进拉图队列' {
+    $t = Get-Content (Join-Path $Root 'src\Forms\PhotoWallForm.cs') -Raw
+    $m = [regex]::Match($t, '(?s)private void FetchOne\(WallCard card\).*?\n        \}')
+    if (-not $m.Success) { return '找不到 FetchOne' }
+    if ($m.Value -notmatch 'OfficialGap') { return '单张拉取没拦截官方未发布日' }
+    if ($t -notmatch 'if \(officialGap\) \{ gapCount\+\+; \}') { return '空缺日仍会被塞进 missing' }
+    return $true
+}
+
+Check '接管目录被当作图库来源' {
+    $t = Get-Content (Join-Path $Root 'src\Program.cs') -Raw
+    $m = [regex]::Match($t, '(?s)private static bool SourceExists\(string d8\).*?\n        \}')
+    if (-not $m.Success) { return '找不到 SourceExists' }
+    if ($m.Value -notmatch 'CurrentTakeoverRoot') { return 'SourceExists 不认接管目录，缩略图会被当孤儿删' }
+    return $true
+}
+
+Check '缩略图配额放大' {
+    $t = Get-Content (Join-Path $Root 'src\Program.cs') -Raw
+    if ($t -notmatch '"thumbsMaxCount", 2000') { return 'thumbsMaxCount 默认值仍是 800' }
+    if ($t -notmatch '"thumbsMaxMB", 200') { return 'thumbsMaxMB 默认值仍是 100' }
+    return $true
+}
+
 # ---------------------------------------------------------------- 汇总
 Write-Host ''
 Write-Host ('-' * 50) -ForegroundColor DarkGray

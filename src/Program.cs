@@ -19,9 +19,9 @@ using Microsoft.Win32;
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyConfiguration("Release")]
 [assembly: AssemblyCulture("")]
-[assembly: AssemblyVersion("3.6.65.0")]
-[assembly: AssemblyFileVersion("3.6.65.0")]
-[assembly: AssemblyInformationalVersion("3.6.65")]
+[assembly: AssemblyVersion("3.6.66.0")]
+[assembly: AssemblyFileVersion("3.6.66.0")]
+[assembly: AssemblyInformationalVersion("3.6.66")]
 [assembly: ComVisible(false)]
 
 namespace BingWallpaperLite
@@ -31,7 +31,7 @@ namespace BingWallpaperLite
         // ---------------------------------------------------------------- 常量
 
         internal const string AppName     = "必应壁纸编年史";
-        internal const string AppVersion  = "3.6.65";
+        internal const string AppVersion  = "3.6.66";
         private const string TaskName    = "BingWallpaperChronicle";
         private const string RunValue    = "BingWallpaperChronicle";
 
@@ -275,8 +275,8 @@ namespace BingWallpaperLite
                 }
 
                 files = new DirectoryInfo(dir).GetFiles("*.jpg");
-                int maxCount = GetCfgInt(ReadConfig(), "thumbsMaxCount", 800);
-                int maxMB = GetCfgInt(ReadConfig(), "thumbsMaxMB", 100);
+                int maxCount = GetCfgInt(ReadConfig(), "thumbsMaxCount", 2000);
+                int maxMB = GetCfgInt(ReadConfig(), "thumbsMaxMB", 200);
                 long total = 0;
                 foreach (FileInfo f in files) { total += f.Length; }
                 long cap = maxMB * 1024L * 1024L;
@@ -303,6 +303,13 @@ namespace BingWallpaperLite
             try
             {
                 string[] dirs = new string[] { ActiveFavDirPath, ActiveCacheDir, ArchiveImgPath, WallDirPath };
+                // 接管目录也要认：用户把整库放在别处时，缩略图不能因为「找不到源图」被反复删掉重建
+                try
+                {
+                    string tkRoot = CurrentTakeoverRoot();
+                    if (!string.IsNullOrEmpty(tkRoot)) { dirs = new string[] { ActiveFavDirPath, ActiveCacheDir, ArchiveImgPath, WallDirPath, tkRoot }; }
+                }
+                catch { }
                 foreach (string dir in dirs)
                 {
                     if (!Directory.Exists(dir)) { continue; }
