@@ -47,13 +47,13 @@ namespace BingWallpaperLite
         {
             "taskstate", "gallerytoggle", "wherethis",
             "favtoggle", "favmgr", "pinmgr",
-            "lock", "notify", "startup", "updatetime", "theme", "sys", "exit"
+            "lock", "notify", "startup", "theme", "sys", "exit"
         };
 
         /// <summary>纯展示的信息行：永远禁用，点了也不做事。灰着才是正确表达。</summary>
         private static readonly string[] MenuInfoOnly = new string[]
         {
-            "header", "modestate"
+            "header", "modestate", "taskinfo", "taskauto"
         };
 
         /// <summary>busy 期间禁用的项：点一下就会再起一个 powershell 去跑脚本。</summary>

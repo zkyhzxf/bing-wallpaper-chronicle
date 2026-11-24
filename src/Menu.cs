@@ -27,13 +27,64 @@ namespace BingWallpaperLite
             header.Name = "header";
             header.Enabled = false;
             m.Items.Add(header);
+            // 计划任务：容器，不是动作。状态行一点就删任务重注册、还强制开自启，
+            // 这是误触陷阱；「修复」与「改更新时间」都做成明确的子项。
             ToolStripMenuItem taskState = new ToolStripMenuItem(S.TaskChecking);
             taskState.Name = "taskstate";
-            taskState.Click += delegate
+
+            ToolStripMenuItem taskInfo = new ToolStripMenuItem(S.TaskNormal);
+            taskInfo.Name = "taskinfo";
+            taskInfo.Enabled = false;
+            taskState.DropDownItems.Add(taskInfo);
+
+            ToolStripMenuItem taskAuto = new ToolStripMenuItem(S.TaskAutoOn);
+            taskAuto.Name = "taskauto";
+            taskAuto.Enabled = false;
+            taskState.DropDownItems.Add(taskAuto);
+
+            taskState.DropDownItems.Add(new ToolStripSeparator());
+
+            int timeIdx = 0;
+            foreach (string preset in new string[] { "00:10", "06:00", "08:00", "12:00", "18:00" })
+            {
+                ToolStripMenuItem it = new ToolStripMenuItem("　" + S.TaskDaily(preset));
+                it.Name = "tt" + timeIdx;
+                it.Tag = preset;
+                it.Click += delegate
+                {
+                    keepMenuOpenAfterClick = true;
+                    ApplyUpdateTime(preset);
+                };
+                taskState.DropDownItems.Add(it);
+                timeIdx++;
+            }
+
+            ToolStripMenuItem customTime = new ToolStripMenuItem(S.TaskTimeCustom);
+            customTime.Name = "ttcustom";
+            customTime.Click += delegate
+            {
+                keepMenuOpenAfterClick = true;
+                string hm;
+                using (TimeForm f = new TimeForm(GetUpdateMinutes()))
+                {
+                    if (f.ShowDialog(anchor) != DialogResult.OK) { return; }
+                    hm = f.SelectedHm;
+                }
+                if (!string.IsNullOrEmpty(hm)) { ApplyUpdateTime(hm); }
+            };
+            taskState.DropDownItems.Add(customTime);
+
+            taskState.DropDownItems.Add(new ToolStripSeparator());
+
+            ToolStripMenuItem reregTask = new ToolStripMenuItem(S.TaskRereg);
+            reregTask.Name = "taskrereg";
+            reregTask.Click += delegate
             {
                 keepMenuOpenAfterClick = true;
                 anchor.BeginInvoke((MethodInvoker)delegate { DoRepairTask(); });
             };
+            taskState.DropDownItems.Add(reregTask);
+
             m.Items.Add(taskState);
 
             // 模式标牌：只有接管时出现，直接告诉用户图片是从哪个目录读的
@@ -231,27 +282,7 @@ namespace BingWallpaperLite
             };
             m.Items.Add(startup);
 
-            ToolStripMenuItem timeMenu = new ToolStripMenuItem(S.UpdateTimeMenu);
-            timeMenu.Name = "updatetime";
-            foreach (string preset in new string[] { "00:10", "06:00", "08:00", "12:00", "18:00" })
-            {
-                ToolStripMenuItem it = new ToolStripMenuItem(preset);
-                it.Tag = preset;
-                it.Click += delegate
-                {
-                    keepMenuOpenAfterClick = true;
-                    Dictionary<string, object> c = ReadConfig();
-                    SetCfg(c, "updateTime", preset);
-                    WriteConfig(c);
-                    EnsureRegistered(false);
-                    Balloon(S.BRepaired, S.IsEn
-                        ? ("Daily update is now " + preset)
-                        : ("每日换图时间已改为 " + preset));
-                };
-                timeMenu.DropDownItems.Add(it);
-            }
-            m.Items.Add(timeMenu);
-
+            // 更新时间已并入上面的「计划任务」子菜单：什么时候跑、跑不跑，同一个入口说完
             m.Items.Add(new ToolStripSeparator());
 
             ToolStripMenuItem cleanMenu = new ToolStripMenuItem(S.CleanMenu);

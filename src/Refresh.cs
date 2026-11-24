@@ -234,6 +234,7 @@ namespace BingWallpaperLite
             RefreshLibraryMenu(state, showDate);
             RefreshFavoriteCheck();
             RefreshTaskState();
+            RefreshTaskTimeChecks();
             RefreshYearsMenu();
             RefreshRandomCheck(g);
             RefreshArchiveCheck();
@@ -991,33 +992,97 @@ namespace BingWallpaperLite
             catch { return ""; }
         }
 
-        /// <summary>点计划任务那一行时调用：重新写自启 + 重新注册任务，幂等。</summary>
+        /// <summary>
+        /// 重注册计划任务。改时间必须重建 —— EnsureRegistered 只在「指向不对」时才动，
+        /// 光改 config 它不会刷新触发时刻（旧版点「更新时间」看着成功、实际没生效就栽在这）。
+        /// </summary>
+        private static bool ReregisterTask()
+        {
+            try { RunSchtasks("/delete /tn \"" + TaskName + "\" /f"); } catch { }
+            try { RegisterTask(); } catch { return false; }
+            try { return IsTaskPointingHere(); } catch { return false; }
+        }
+
+        /// <summary>读 schtasks 的「下次运行时间」；读不到返回空串。</summary>
+        private static string NextRunTimeText()
+        {
+            try
+            {
+                int rc = 0;
+                string info = RunSchtasksOutput("/query /tn \"" + TaskName + "\" /fo LIST /v", out rc);
+                foreach (string line in info.Split('\n'))
+                {
+                    if (line.IndexOf("下次运行时间", StringComparison.Ordinal) >= 0 ||
+                        line.IndexOf("Next Run Time", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        int colon = line.IndexOf(':');
+                        if (colon > 0)
+                        {
+                            string v = line.Substring(colon + 1).Trim();
+                            if (v.Length > 0 && v != "N/A") { return v; }
+                        }
+                    }
+                }
+            }
+            catch { }
+            return "";
+        }
+
+        private static int HmToMinutes(string hm)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(hm)) { return -1; }
+                string[] p = hm.Trim().Split(':');
+                if (p.Length < 2) { return -1; }
+                int hh = Convert.ToInt32(p[0]);
+                int mm = Convert.ToInt32(p[1]);
+                if (hh < 0 || hh > 23 || mm < 0 || mm > 59) { return -1; }
+                return hh * 60 + mm;
+            }
+            catch { return -1; }
+        }
+
+        /// <summary>改每日换图时间：落盘 → 强制重注册 → 报下次时刻。</summary>
+        internal static void ApplyUpdateTime(string hm)
+        {
+            if (HmToMinutes(hm) < 0) { return; }
+            try
+            {
+                Dictionary<string, object> c = ReadConfig();
+                SetCfg(c, "updateTime", hm);
+                WriteConfig(c);
+            }
+            catch { }
+
+            bool ok = ReregisterTask();
+            try { RefreshAll(); } catch { }
+
+            if (!ok)
+            {
+                Balloon(S.BRepairKO, S.BRepairKOHint);
+                return;
+            }
+            string next = NextRunTimeText();
+            Balloon(S.TaskTimeChanged(hm), next.Length > 0 ? S.TaskNextShort(next) : S.TaskDoneShort);
+        }
+
+        /// <summary>点「立即重新注册任务」：只重注册，绝不替用户解除暂停、也不擅改开机自启。</summary>
         private static void DoRepairTask()
         {
             SetBusy(true);
             try
             {
-                try { SetStartup(true); } catch { }
-                try { RunSchtasks("/delete /tn \"" + TaskName + "\" /f"); } catch { }
-                try { RegisterTask(); } catch { }
+                bool ok = ReregisterTask();
+                bool locked = false;
+                try { locked = GetCfgBool(ReadConfig(), "locked", false); } catch { }
 
                 anchor.BeginInvoke((MethodInvoker)delegate
                 {
-                    SetBusy(false);
-                // [排查] 子调用整块注释
-                {
-                    RefreshYearsMenu();
-                }
-                    ToolStripMenuItem it = menu.Items["taskstate"] as ToolStripMenuItem;
-                    string now = it == null ? "" : it.Text;
-                    if (now.IndexOf("⚠", StringComparison.Ordinal) >= 0)
-                    {
-                        Balloon(S.BRepairKO, S.BRepairKOHint);
-                    }
-                    else
-                    {
-                        Balloon(S.BRepaired, S.BRepairedHint);
-                    }
+                    try { SetBusy(false); } catch { }
+                    try { RefreshAll(); } catch { }
+                    if (!ok) { Balloon(S.BRepairKO, S.BRepairKOHint); return; }
+                    Balloon(S.TaskDoneShort, locked ? S.TaskDoneLocked : S.BRepairedHint);
                 });
             }
             catch
@@ -1028,41 +1093,53 @@ namespace BingWallpaperLite
 
         private static void RefreshTaskState()
         {
-            ToolStripMenuItem it = menu.Items["taskstate"] as ToolStripMenuItem;
-            if (it == null) { return; }
+            ToolStripMenuItem top = menu.Items["taskstate"] as ToolStripMenuItem;
+            if (top == null) { return; }
+
+            ToolStripMenuItem info = top.DropDownItems["taskinfo"] as ToolStripMenuItem;
+            ToolStripMenuItem auto = top.DropDownItems["taskauto"] as ToolStripMenuItem;
+
+            bool locked = false;
+            try { locked = GetCfgBool(ReadConfig(), "locked", false); } catch { }
+
             try
             {
                 int rc = 0;
                 string xml = RunSchtasksOutput("/query /tn \"" + TaskName + "\" /xml ONE", out rc);
                 if (rc != 0 || string.IsNullOrEmpty(xml) || xml.IndexOf("<Task", StringComparison.Ordinal) < 0)
                 {
-                    it.Text = S.TaskMissing;
-                    return;
+                    top.Text = S.TaskMissing;
+                    if (info != null) { info.Text = S.TaskMissing; }
                 }
-                string next = "";
-                int rc2 = 0;
-                string info = RunSchtasksOutput("/query /tn \"" + TaskName + "\" /fo LIST /v", out rc2);
-                foreach (string line in info.Split('\n'))
+                else
                 {
-                    if (line.IndexOf("下次运行时间", StringComparison.Ordinal) >= 0 ||
-                        line.IndexOf("Next Run Time", StringComparison.OrdinalIgnoreCase) >= 0)
-                    {
-                        int colon = line.IndexOf(':');
-                        if (colon > 0)
-                        {
-                            string v = line.Substring(colon + 1).Trim();
-                            if (v.Length > 0 && v != "N/A") { next = v; }
-                        }
-                    }
+                    string next = NextRunTimeText();
+                    string head = next.Length > 0 ? S.TaskNextAt(next) : S.TaskNormal;
+                    if (info != null) { info.Text = head; }
+                    top.Text = locked ? (head + S.TaskPausedSuffix) : head;
                 }
-                it.Text = next.Length > 0
-                    ? (S.TaskNextAt(next))
-                    : S.TaskNormal;
-                it.Enabled = false;
             }
             catch
             {
-                it.Text = S.TaskUnknown;
+                top.Text = S.TaskUnknown;
+                if (info != null) { info.Text = S.TaskUnknown; }
+            }
+
+            if (auto != null) { auto.Text = locked ? S.TaskAutoOff : S.TaskAutoOn; }
+        }
+
+        /// <summary>勾出当前生效的每日时间（文本前缀风格，与「外观」一致）。</summary>
+        private static void RefreshTaskTimeChecks()
+        {
+            ToolStripMenuItem top = menu.Items["taskstate"] as ToolStripMenuItem;
+            if (top == null) { return; }
+            int cur = GetUpdateMinutes();
+            foreach (ToolStripItem raw in top.DropDownItems)
+            {
+                ToolStripMenuItem it = raw as ToolStripMenuItem;
+                if (it == null || it.Tag == null) { continue; }
+                string tag = it.Tag.ToString();
+                it.Text = (HmToMinutes(tag) == cur ? "● " : "　 ") + S.TaskDaily(tag);
             }
         }
 
@@ -1490,22 +1567,6 @@ namespace BingWallpaperLite
                     }
                     catch { }
                     x.Text = S.ArchRowIndex(idxMonths, Math.Round(idxBytes / 1024.0, 0), totalIdx);
-                }
-                else if (x.Name == "updatetime")
-                {
-                    int mins = GetUpdateMinutes();
-                    string cur = (mins / 60).ToString("00") + ":" + (mins % 60).ToString("00");
-                    x.Text = S.UpdateTimeMenu + "  " + cur;
-                    ToolStripMenuItem tm = x as ToolStripMenuItem;
-                    if (tm != null && tm.DropDownItems.Count > 0)
-                    {
-                        foreach (ToolStripItem sub in tm.DropDownItems)
-                        {
-                            ToolStripMenuItem mi = sub as ToolStripMenuItem;
-                            if (mi == null || mi.Tag == null) { continue; }
-                            mi.Checked = ((string)mi.Tag == cur);
-                        }
-                    }
                 }
                 else if (x.Name == "archsrc1" || x.Name == "archsrc2" || x.Name == "archsrc3")
                 {

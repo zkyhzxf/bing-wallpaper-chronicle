@@ -1385,7 +1385,7 @@ Check '出口项永不禁用' {
     $t = Get-Content (Join-Path $Root 'src\MenuState.cs') -Raw
     $m = [regex]::Match($t, '(?s)MenuAlwaysOn = new string\[\]\s*\{(.*?)\};')
     if (-not $m.Success) { return 'MenuState.cs 里找不到 MenuAlwaysOn' }
-    foreach ($must in @('"gallerytoggle"', '"exit"', '"lock"', '"startup"', '"sys"', '"updatetime"')) {
+    foreach ($must in @('"gallerytoggle"', '"exit"', '"lock"', '"startup"', '"sys"', '"taskstate"')) {
         if ($m.Groups[1].Value -notmatch [regex]::Escape($must)) { return ('MenuAlwaysOn 缺 ' + $must) }
     }
     return $true
@@ -1418,6 +1418,57 @@ Check '菜单判定表自测' {
     if (-not (Test-Path $out)) { return '--menuselftest 没写结果文件' }
     $line = (Get-Content $out -Raw).Trim()
     if ($line -notmatch '^MENUGATE OK') { return ('自测未通过：' + $line) }
+    return $true
+}
+
+Check '计划任务是容器不是动作' {
+    $t = Get-Content (Join-Path $Root 'src\Menu.cs') -Raw
+    if ($t -notmatch 'taskState\.DropDownItems\.Add') { return '计划任务没做成子菜单' }
+    if ($t -match 'taskState\.Click \+= ') { return '计划任务仍绑定了点击动作（一点就改系统）' }
+    return $true
+}
+
+Check '重注册不再擅改开机自启' {
+    $t = Get-Content (Join-Path $Root 'src\Refresh.cs') -Raw
+    $m = [regex]::Match($t, '(?s)private static void DoRepairTask\(\).*?\n        \}')
+    if (-not $m.Success) { return 'Refresh.cs 里找不到 DoRepairTask' }
+    if ($m.Value -match 'SetStartup\(true\)') { return 'DoRepairTask 仍在强制打开自启' }
+    if ($m.Value -notmatch 'TaskDoneLocked') { return 'DoRepairTask 没有区分暂停状态' }
+    return $true
+}
+
+Check '改时间会强制重注册' {
+    $t = Get-Content (Join-Path $Root 'src\Refresh.cs') -Raw
+    $m = [regex]::Match($t, '(?s)internal static void ApplyUpdateTime\(string hm\).*?\n        \}')
+    if (-not $m.Success) { return 'Refresh.cs 里找不到 ApplyUpdateTime' }
+    if ($m.Value -notmatch 'ReregisterTask\(\)') { return '改时间没重建任务（旧 bug：EnsureRegistered 不会刷新触发时刻）' }
+    return $true
+}
+
+Check '自定义时间窗体' {
+    $p = Join-Path $Root 'src\Forms\TimeForm.cs'
+    if (-not (Test-Path $p)) { return 'TimeForm.cs 不存在' }
+    $t = Get-Content $p -Raw
+    if ($t -notmatch 'ShowUpDown = true') { return '时间选择器不是上下微调模式' }
+    if ($t -notmatch 'HH:mm') { return '时间格式不是 HH:mm' }
+    return $true
+}
+
+Check '计划任务信息行恒灰' {
+    $t = Get-Content (Join-Path $Root 'src\MenuState.cs') -Raw
+    $m = [regex]::Match($t, '(?s)MenuInfoOnly = new string\[\]\s*\{(.*?)\};')
+    if (-not $m.Success) { return 'MenuState.cs 里找不到 MenuInfoOnly' }
+    foreach ($must in @('"taskinfo"', '"taskauto"', '"header"')) {
+        if ($m.Groups[1].Value -notmatch [regex]::Escape($must)) { return ('MenuInfoOnly 缺 ' + $must) }
+    }
+    return $true
+}
+
+Check '提示语不再谎称恢复正常' {
+    $t = Get-Content (Join-Path $Root 'src\Strings.cs') -Raw
+    $m = [regex]::Match($t, 'BRepairedHint\s*\{ get \{ return T\("([^"]*)"')
+    if (-not $m.Success) { return 'Strings.cs 里找不到 BRepairedHint' }
+    if ($m.Groups[1].Value -match '恢复正常') { return 'BRepairedHint 仍声称「自动换图恢复正常」' }
     return $true
 }
 

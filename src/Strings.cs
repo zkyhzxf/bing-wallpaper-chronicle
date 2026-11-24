@@ -364,7 +364,18 @@ namespace BingWallpaperLite
         public static string ConfirmArchTtl    { get { return T(" · 清理历史归档", " · Clear history archive"); } }
         public static string ConfirmArchBody   { get { return T(" 张图移入回收站？\r\n\r\n当前正在显示的壁纸不动。之后可从回收站找回，\r\n也可以通过「选日期」重新下载。", " images will be moved to the Recycle Bin.\r\n\r\nThe current wallpaper is left untouched. You can restore from the Recycle Bin\r\nor re-download later via Pick a date."); } }
         public static string BRepairKOHint     { get { return T("计划任务仍不可用，请用管理员身份运行一次或查看日志", "Task still unavailable; run as administrator once, or check the log"); } }
-        public static string BRepairedHint     { get { return T("计划任务已重新注册，自动换图恢复正常", "Task re-registered; daily changes resumed"); } }
+        public static string BRepairedHint     { get { return T("计划任务已按当前设置重新注册", "Task re-registered with the current settings"); } }
+        public static string TaskAutoOn        { get { return T("自动换图：运行中", "Auto-change: running"); } }
+        public static string TaskAutoOff       { get { return T("自动换图：已暂停", "Auto-change: paused"); } }
+        public static string TaskPausedSuffix  { get { return T(" · 已暂停", " · paused"); } }
+        public static string TaskDaily(string hm)   { return T("每天 ", "Daily ") + hm; }
+        public static string TaskTimeCustom    { get { return T("自定义时间…", "Custom time…"); } }
+        public static string TaskTimePickHint  { get { return T("每天几点自动换图？", "What time should the wallpaper change?"); } }
+        public static string TaskRereg         { get { return T("立即重新注册任务", "Re-register task now"); } }
+        public static string TaskDoneShort     { get { return T("计划任务已重新注册", "Task re-registered"); } }
+        public static string TaskDoneLocked    { get { return T("计划任务已重新注册 · 自动换图仍处暂停状态", "Task re-registered; auto-change is still paused"); } }
+        public static string TaskTimeChanged(string hm) { return T("已改为 ", "Now at ") + hm; }
+        public static string TaskNextShort(string next) { return T("下次 ", "next ") + next; }
         public static string BReadyHint        { get { return T("壁纸每天 0:10 自动更新，8:10 与 12:10 会补查一次。右键托盘图标可换图、收藏、暂停。", "Wallpaper updates daily at 00:10, with retries at 08:10 and 12:10. Right-click the tray icon to change, favorite, or pause."); } }
         public static string NoImageHint       { get { return T("换一天试试", "Try another date"); } }
         public static string NeedArchHint      { get { return T("2025-03 之前的日期要开启「增强数据源 ▸ 启用第三方归档」才能取到", "Dates before Mar 2025 need Data sources → Enable third-party archive"); } }
