@@ -271,9 +271,16 @@ namespace BingWallDownloader
         {
             List<string> cands = BuildCandidates(e);
             string lastErr = "";
+            DateTime started = DateTime.UtcNow;
             foreach (string u in cands)
             {
                 if (stopFlag) { return false; }
+                // 单日总预算：候选再多也不能让一个日期拖住整批
+                if ((DateTime.UtcNow - started).TotalSeconds > 150)
+                {
+                    lastErr = "单日超时（150s）";
+                    break;
+                }
                 for (int attempt = 1; attempt <= maxAttempts; attempt++)
                 {
                     if (stopFlag) { return false; }
@@ -359,6 +366,7 @@ namespace BingWallDownloader
         {
             err = "";
             string tmp = destFile + ".part";
+            Timer dog = null;
             try
             {
                 HttpWebRequest req = (HttpWebRequest)WebRequest.Create(url);
@@ -366,6 +374,9 @@ namespace BingWallDownloader
                 req.Timeout = 30000;
                 req.ReadWriteTimeout = 60000;
                 req.AllowAutoRedirect = true;
+                // 看门狗：HttpWebRequest.Timeout 对「连上了但服务器不回话」有时根本不生效
+                // （半开连接 / 代理中断），只能自己 Abort，否则线程会一直挂着
+                dog = new Timer(delegate { try { req.Abort(); } catch { } }, null, 25000, Timeout.Infinite);
                 using (HttpWebResponse resp = (HttpWebResponse)req.GetResponse())
                 {
                     if (resp.StatusCode != HttpStatusCode.OK)
@@ -410,6 +421,7 @@ namespace BingWallDownloader
             catch (Exception ex) { err = ex.Message; return DlResult.Transient; }
             finally
             {
+                if (dog != null) { try { dog.Dispose(); } catch { } }
                 // 成功时 tmp 已被 Move 走；其余情况一律不留半成品
                 try { if (File.Exists(tmp)) { File.Delete(tmp); } } catch { }
             }

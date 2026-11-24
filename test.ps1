@@ -1671,6 +1671,14 @@ Check '下载器可调并发' {
     return $true
 }
 
+Check '下载器有看门狗' {
+    $t = Get-Content (Join-Path $Root 'tools\Downloader\Downloader.cs') -Raw
+    if ($t -notmatch 'req\.Abort\(\)') { return '没有 Abort 兜底（半开连接会让线程一直挂着）' }
+    if ($t -notmatch 'Timer dog') { return '没有看门狗定时器' }
+    if ($t -notmatch '单日超时') { return '没有单日总预算' }
+    return $true
+}
+
 # ---------------------------------------------------------------- 汇总
 Write-Host ''
 Write-Host ('-' * 50) -ForegroundColor DarkGray
