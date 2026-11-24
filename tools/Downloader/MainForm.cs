@@ -12,6 +12,7 @@ namespace BingWallDownloader
         private DateTimePicker dtFrom;
         private DateTimePicker dtTo;
         private ComboBox cmbQuality;
+        private ComboBox cmbThreads;
         private TextBox txtDest;
         private TextBox txtIndex;
         private Button btnBrowseDest;
@@ -29,7 +30,7 @@ namespace BingWallDownloader
 
         public MainForm()
         {
-            Text = "必应壁纸 · 全量下载器";
+            Text = "必应壁纸 · 全量下载器 v1.1";
             StartPosition = FormStartPosition.CenterScreen;
             FormBorderStyle = FormBorderStyle.Sizable;
             MaximizeBox = true;
@@ -83,6 +84,21 @@ namespace BingWallDownloader
             cmbQuality.Items.Add("只用镜像（体积最小）");
             cmbQuality.SelectedIndex = 0;
             Controls.Add(cmbQuality);
+
+            Label l2b = new Label();
+            l2b.Text = "并发";
+            l2b.SetBounds(600, y + 3, 32, 20);
+            Controls.Add(l2b);
+
+            // 8 并发对源站并不更快，反而更容易撞 429；4 是实测的平衡点
+            cmbThreads = new ComboBox();
+            cmbThreads.DropDownStyle = ComboBoxStyle.DropDownList;
+            cmbThreads.SetBounds(632, y, 80, 24);
+            cmbThreads.Items.Add("2");
+            cmbThreads.Items.Add("4");
+            cmbThreads.Items.Add("6");
+            cmbThreads.SelectedIndex = 1;
+            Controls.Add(cmbThreads);
 
             y += 36;
             Label l3 = new Label();
@@ -241,7 +257,9 @@ namespace BingWallDownloader
             worker = new Downloader(realIdx, dest, q, Log, OnProgress);
             workerThread = new Thread(delegate()
             {
-                try { worker.Run(from, to, 4); }
+                int th = 4;
+                try { th = int.Parse(cmbThreads.Text); } catch { }
+                try { worker.Run(from, to, th); }
                 catch (Exception ex) { Log("出错：" + ex.Message); }
                 finally
                 {
@@ -281,8 +299,8 @@ namespace BingWallDownloader
                         if (v > 100) { v = 100; }
                         bar.Value = v;
                     }
-                    lblStat.Text = string.Format("{0}/{1}  成功 {2}  跳过 {3}  失败 {4}",
-                        p.Done, p.Total, p.Ok, p.Skip, p.Fail);
+                    lblStat.Text = string.Format("{0}/{1}  成功 {2}  跳过 {3}  失败 {4}  无 UHD {5}",
+                        p.Done, p.Total, p.Ok, p.Skip, p.Fail, p.Low);
                 });
             }
             catch { }

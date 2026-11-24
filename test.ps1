@@ -1628,6 +1628,49 @@ Check '缩略图配额放大' {
     return $true
 }
 
+Check '下载器同源重试' {
+    $p = Join-Path $Root 'tools\Downloader\Downloader.cs'
+    if (-not (Test-Path $p)) { return '找不到 Downloader.cs' }
+    $t = Get-Content $p -Raw
+    $m = [regex]::Match($t, '(?s)private bool FetchOne\(DayEntry e, string destFile\).*?\n        \}')
+    if (-not $m.Success) { return '找不到 FetchOne' }
+    if ($m.Value -notmatch 'for \(int attempt = 1; attempt <= maxAttempts') { return 'FetchOne 没有重试循环' }
+    if ($m.Value -notmatch 'DlResult\.NotFound\) \{ break; \}') { return '404 没有短路（会白重试）' }
+    return $true
+}
+
+Check '下载器清半成品' {
+    $t = Get-Content (Join-Path $Root 'tools\Downloader\Downloader.cs') -Raw
+    $m = [regex]::Match($t, '(?s)private static DlResult DownloadTo.*?\n        \}')
+    if (-not $m.Success) { return '找不到 DownloadTo' }
+    if ($m.Value -notmatch 'finally') { return 'DownloadTo 没有 finally' }
+    if ($m.Value -notmatch 'File\.Exists\(tmp\)') { return '异常路径没清 .part' }
+    if ($t -notmatch 'CleanStaleParts') { return '没有启动时清理过期 .part' }
+    return $true
+}
+
+Check '下载器失败实时落盘' {
+    $t = Get-Content (Join-Path $Root 'tools\Downloader\Downloader.cs') -Raw
+    if ($t -notmatch 'PersistFail') { return '没有实时写失败清单' }
+    if ($t -notmatch 'File\.AppendAllText') { return '失败清单不是追加写' }
+    return $true
+}
+
+Check '下载器校验画质' {
+    $t = Get-Content (Join-Path $Root 'tools\Downloader\Downloader.cs') -Raw
+    if ($t -notmatch 'CheckQuality') { return '没有画质校验' }
+    if ($t -notmatch 'w >= 3000') { return '宽度阈值不是 3000' }
+    if ($t -notmatch '_lowres\.txt') { return '没有输出无 UHD 清单' }
+    return $true
+}
+
+Check '下载器可调并发' {
+    $t = Get-Content (Join-Path $Root 'tools\Downloader\MainForm.cs') -Raw
+    if ($t -notmatch 'cmbThreads') { return '界面没有并发送择' }
+    if ($t -notmatch 'int\.Parse\(cmbThreads\.Text\)') { return '并发值没传到 Run' }
+    return $true
+}
+
 # ---------------------------------------------------------------- 汇总
 Write-Host ''
 Write-Host ('-' * 50) -ForegroundColor DarkGray

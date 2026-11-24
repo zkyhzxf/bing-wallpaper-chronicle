@@ -11,6 +11,16 @@ if (-not (Test-Path $csc)) { $csc = 'C:\Windows\Microsoft.NET\Framework\v4.0.303
 if (-not (Test-Path $csc)) { throw '找不到 csc.exe（需要 .NET Framework 4.x）' }
 
 $out = Join-Path $dist 'BingWallDownloader.exe'
+# 旧版还开着的时候覆盖不了它 —— 改输出到 -new.exe，别打断正在跑的下载任务
+try {
+    if (Test-Path $out) {
+        $probe = [System.IO.File]::Open($out, 'Open', 'ReadWrite', 'None')
+        $probe.Close()
+    }
+} catch {
+    $out = Join-Path $dist 'BingWallDownloader-new.exe'
+    Write-Host '旧版正在运行，本次输出到 BingWallDownloader-new.exe（停掉旧版后可改名替换）' -ForegroundColor Yellow
+}
 $src = @(
     (Join-Path $here 'Downloader.cs'),
     (Join-Path $here 'MainForm.cs')

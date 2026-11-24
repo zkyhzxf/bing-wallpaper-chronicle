@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Text;
+using System.Drawing;
 using System.Text.RegularExpressions;
 using System.Threading;
 
@@ -33,6 +34,7 @@ namespace BingWallDownloader
         public int Ok;
         public int Skip;
         public int Fail;
+        public int Low;
         public string CurrentFile;
     }
 
@@ -63,6 +65,12 @@ namespace BingWallDownloader
         private int doneCnt, okCnt, skipCnt, failCnt;
         private readonly object lockObj = new object();
         private readonly List<string> failLines = new List<string>();
+        private readonly List<string> lowLines = new List<string>();
+        private string failPathCache;
+        private int maxAttempts = 3;
+
+        private static DateTime coolUntil = DateTime.MinValue;
+        private static readonly object coolLock = new object();
 
         public Downloader(string indexDir, string destDir, Quality quality, LogHandler log, ProgressHandler progress)
         {
@@ -254,7 +262,11 @@ namespace BingWallDownloader
             return list;
         }
 
-        /// <summary>下载单张：依次试候选，全部失败就记一笔。</summary>
+        /// <summary>
+        /// 下载单张：每个候选最多试 maxAttempts 次。
+        /// 404/410 直接换候选（明确没有，重试无意义）；429/403 让所有线程一起冷却；
+        /// 超时与连接重置按 1s/2s/3s 退避重试。
+        /// </summary>
         private bool FetchOne(DayEntry e, string destFile)
         {
             List<string> cands = BuildCandidates(e);
@@ -262,48 +274,144 @@ namespace BingWallDownloader
             foreach (string u in cands)
             {
                 if (stopFlag) { return false; }
-                try
+                for (int attempt = 1; attempt <= maxAttempts; attempt++)
                 {
-                    if (DownloadTo(u, destFile)) { return true; }
+                    if (stopFlag) { return false; }
+                    string err;
+                    DlResult r = DownloadTo(u, destFile, out err);
+                    if (r == DlResult.Ok)
+                    {
+                        CheckQuality(e, destFile);
+                        return true;
+                    }
+                    lastErr = err;
+                    if (r == DlResult.NotFound) { break; }
+                    if (r == DlResult.Throttled) { CoolDown(2000); }
+                    Backoff(attempt);
                 }
-                catch (Exception ex) { lastErr = ex.Message; }
             }
             lock (lockObj)
             {
                 failLines.Add(e.Date + "\t" + (string.IsNullOrEmpty(lastErr) ? "全部候选失败" : lastErr));
             }
+            PersistFail(e.Date, lastErr);
             return false;
         }
 
-        private static bool DownloadTo(string url, string destFile)
+        /// <summary>Best 档 + 2019 起：落盘后量真实宽度，确认不是「名字叫 UHD、内容是 1080p」。</summary>
+        private void CheckQuality(DayEntry e, string file)
         {
-            HttpWebRequest req = (HttpWebRequest)WebRequest.Create(url);
-            req.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) BingWallDownloader/1.0";
-            req.Timeout = 30000;
-            req.ReadWriteTimeout = 60000;
-            req.AllowAutoRedirect = true;
-            using (HttpWebResponse resp = (HttpWebResponse)req.GetResponse())
+            if (quality != Quality.Best) { return; }
+            if (string.CompareOrdinal(e.Date, "20190101") < 0) { return; }
+            int w = PixelWidth(file);
+            if (w <= 0 || w >= 3000) { return; }
+            lock (lockObj) { lowLines.Add(e.Date + "\t" + w + "px"); }
+            log("⚠ " + e.Date + " 只有 " + w + "px，这天没有真 UHD");
+        }
+
+        private static int PixelWidth(string p)
+        {
+            try
             {
-                if (resp.StatusCode != HttpStatusCode.OK) { return false; }
-                long len = resp.ContentLength;
-                if (len > 0 && len < 30000) { return false; }   // 太小，多半是错误页
-                string tmp = destFile + ".part";
-                using (Stream s = resp.GetResponseStream())
-                using (FileStream fs = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None))
+                using (Image img = Image.FromFile(p)) { return img.Width; }
+            }
+            catch { return 0; }
+        }
+
+        /// <summary>失败实时追加，中途也能看，不必等整个任务结束。</summary>
+        private void PersistFail(string date, string err)
+        {
+            try
+            {
+                lock (lockObj)
                 {
-                    byte[] buf = new byte[64 * 1024];
-                    int n;
-                    while ((n = s.Read(buf, 0, buf.Length)) > 0)
+                    if (string.IsNullOrEmpty(failPathCache))
                     {
-                        fs.Write(buf, 0, n);
-                        if (fs.Length > 200L * 1024 * 1024) { fs.Close(); TryDelete(tmp); return false; }
+                        failPathCache = Path.Combine(destDir, "_download-fail.txt");
                     }
+                    File.AppendAllText(failPathCache, date + "\t" + (err ?? "") + "\r\n", new UTF8Encoding(false));
                 }
-                FileInfo fi = new FileInfo(tmp);
-                if (fi.Length < 30000) { TryDelete(tmp); return false; }
-                if (File.Exists(destFile)) { TryDelete(destFile); }
-                File.Move(tmp, destFile);
-                return true;
+            }
+            catch { }
+        }
+
+        private static void CoolDown(int ms)
+        {
+            lock (coolLock)
+            {
+                DateTime t = DateTime.UtcNow.AddMilliseconds(ms);
+                if (t > coolUntil) { coolUntil = t; }
+            }
+        }
+
+        private static void Backoff(int attempt)
+        {
+            DateTime until;
+            lock (coolLock) { until = coolUntil; }
+            double left = (until - DateTime.UtcNow).TotalMilliseconds;
+            if (left > 0) { try { Thread.Sleep((int)Math.Min(left, 3000)); } catch { } }
+            try { Thread.Sleep(1000 * attempt); } catch { }
+        }
+
+        private enum DlResult { Ok, NotFound, Throttled, Transient }
+
+        private static DlResult DownloadTo(string url, string destFile, out string err)
+        {
+            err = "";
+            string tmp = destFile + ".part";
+            try
+            {
+                HttpWebRequest req = (HttpWebRequest)WebRequest.Create(url);
+                req.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) BingWallDownloader/1.1";
+                req.Timeout = 30000;
+                req.ReadWriteTimeout = 60000;
+                req.AllowAutoRedirect = true;
+                using (HttpWebResponse resp = (HttpWebResponse)req.GetResponse())
+                {
+                    if (resp.StatusCode != HttpStatusCode.OK)
+                    {
+                        err = "HTTP " + (int)resp.StatusCode;
+                        return DlResult.NotFound;
+                    }
+                    long len = resp.ContentLength;
+                    if (len > 0 && len < 30000) { err = "内容过小"; return DlResult.NotFound; }
+                    using (Stream s = resp.GetResponseStream())
+                    using (FileStream fs = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None))
+                    {
+                        byte[] buf = new byte[64 * 1024];
+                        int n;
+                        while ((n = s.Read(buf, 0, buf.Length)) > 0)
+                        {
+                            fs.Write(buf, 0, n);
+                            if (fs.Length > 200L * 1024 * 1024) { err = "超过 200 MB"; return DlResult.NotFound; }
+                        }
+                    }
+                    FileInfo fi = new FileInfo(tmp);
+                    if (fi.Length < 30000) { err = "内容过小"; return DlResult.NotFound; }
+                    if (File.Exists(destFile)) { TryDelete(destFile); }
+                    File.Move(tmp, destFile);
+                    return DlResult.Ok;
+                }
+            }
+            catch (WebException we)
+            {
+                HttpWebResponse hr = we.Response as HttpWebResponse;
+                if (hr != null)
+                {
+                    int code = (int)hr.StatusCode;
+                    err = "HTTP " + code;
+                    if (code == 404 || code == 410) { return DlResult.NotFound; }
+                    if (code == 429 || code == 403) { return DlResult.Throttled; }
+                    return DlResult.Transient;
+                }
+                err = we.Status.ToString();
+                return DlResult.Transient;
+            }
+            catch (Exception ex) { err = ex.Message; return DlResult.Transient; }
+            finally
+            {
+                // 成功时 tmp 已被 Move 走；其余情况一律不留半成品
+                try { if (File.Exists(tmp)) { File.Delete(tmp); } } catch { }
             }
         }
 
@@ -323,6 +431,15 @@ namespace BingWallDownloader
             }
             try { if (!Directory.Exists(destDir)) { Directory.CreateDirectory(destDir); } }
             catch (Exception ex) { log("目标目录建不了：" + ex.Message); return; }
+
+            // 上次中断留下的半成品（超过 10 分钟没动）先清掉，避免 0 字节文件堆着
+            CleanStaleParts();
+            try
+            {
+                failPathCache = Path.Combine(destDir, "_download-fail.txt");
+                if (File.Exists(failPathCache)) { File.Delete(failPathCache); }
+            }
+            catch { }
 
             // 先过滤掉已有的（断点续跑）
             List<DayEntry> todo = new List<DayEntry>();
@@ -371,19 +488,62 @@ namespace BingWallDownloader
             }
             foreach (Thread th in pool) { th.Join(); }
 
-            // 失败清单
+            // 失败清单：实时追加过，结束再按日期去重排序重写一遍
             List<string> fails = FailLines;
+            List<string> failsUniq = new List<string>();
+            foreach (string line in fails) { if (!failsUniq.Contains(line)) { failsUniq.Add(line); } }
             string failPath = Path.Combine(destDir, "_download-fail.txt");
             try
             {
-                if (fails.Count > 0) { File.WriteAllLines(failPath, fails.ToArray(), new UTF8Encoding(false)); }
+                if (failsUniq.Count > 0)
+                {
+                    failsUniq.Sort();
+                    File.WriteAllLines(failPath, failsUniq.ToArray(), new UTF8Encoding(false));
+                }
                 else if (File.Exists(failPath)) { File.Delete(failPath); }
             }
             catch { }
 
+            // 无 UHD 清单
+            List<string> lows;
+            lock (lockObj) { lows = new List<string>(lowLines); }
+            string lowPath = Path.Combine(destDir, "_lowres.txt");
+            try
+            {
+                if (lows.Count > 0) { lows.Sort(); File.WriteAllLines(lowPath, lows.ToArray(), new UTF8Encoding(false)); }
+                else if (File.Exists(lowPath)) { File.Delete(lowPath); }
+            }
+            catch { }
+
             Report(total, null);
-            log(string.Format("完成：成功 {0}，跳过 {1}，失败 {2}", okCnt, skipCnt, failCnt));
-            if (fails.Count > 0) { log("失败清单：" + failPath); }
+            log(string.Format("完成：成功 {0}，跳过 {1}，失败 {2}，无 UHD {3}", okCnt, skipCnt, failCnt, lows.Count));
+            if (failsUniq.Count > 0)
+            {
+                log("失败清单：" + failPath);
+                log("再点一次「开始下载」即可补：已有文件会跳过，失败的会重新尝试（每个地址 3 次 + 退避）");
+            }
+            if (lows.Count > 0)
+            {
+                log("无 UHD 清单：" + lowPath + "（这些天 Bing 的 UHD 地址返回的就是 1080p）");
+            }
+        }
+
+        /// <summary>清掉上次中断留下的 .part（10 分钟没更新就算过期）。</summary>
+        private void CleanStaleParts()
+        {
+            try
+            {
+                foreach (string f in Directory.GetFiles(destDir, "*.part"))
+                {
+                    try
+                    {
+                        FileInfo fi = new FileInfo(f);
+                        if ((DateTime.UtcNow - fi.LastWriteTimeUtc).TotalMinutes > 10) { fi.Delete(); }
+                    }
+                    catch { }
+                }
+            }
+            catch { }
         }
 
         /// <summary>某天是否已经有图（靠文件名前缀判断，和主程序一致）。</summary>
@@ -405,6 +565,7 @@ namespace BingWallDownloader
             p.Ok = okCnt;
             p.Skip = skipCnt;
             p.Fail = failCnt;
+            lock (lockObj) { p.Low = lowLines.Count; }
             p.CurrentFile = cur;
             if (progress != null) { progress(p); }
         }
