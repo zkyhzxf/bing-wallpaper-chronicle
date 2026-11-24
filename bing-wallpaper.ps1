@@ -3249,10 +3249,13 @@ if ($ExportRange) {
         $order = @()
         # bimg = cdn.bimg.cc 直链：2016-03 ~ 2019-12 这段 Bing 自己的 th?id 两档全 404，
         # 它实测能取到 1080p，是那个区间唯一的出路。放在 cdn 之后、anerg 之前。
+        # cn4k = cn.bing.com 的实时缩放接口（&w=3840&h=2160）：
+        # 2019 起 Bing 把部分日期的 _UHD 退回 1080p，但 cn.bing.com 带 w/h 参数仍能给 3840x2160。
+        # 放在 cdn 之后、bimg 之前 —— 它是真 4K，bimg 只有 1080p。
         if ($MaxRes -eq 'hd') { $order = @('anerg', 'cdn') }
-        elseif ($Source -eq 'cdn') { $order = @('cdn', 'bimg', 'anerg') }
-        elseif ($Source -eq 'anerg') { $order = @('anerg', 'bimg', 'cdn') }
-        else { if ($cur -ge '20180901') { $order = @('cdn', 'bimg', 'anerg') } else { $order = @('anerg', 'bimg', 'cdn') } }
+        elseif ($Source -eq 'cdn') { $order = @('cdn', 'cn4k', 'bimg', 'anerg') }
+        elseif ($Source -eq 'anerg') { $order = @('anerg', 'bimg', 'cn4k', 'cdn') }
+        else { if ($cur -ge '20190101') { $order = @('cdn', 'cn4k', 'bimg', 'anerg') } else { $order = @('anerg', 'bimg', 'cdn') } }
 
         $destFile = Join-Path $DestDir "${cur}_$short.jpg"
         if ($upRange -and $had) { $destFile = $had.FullName }
@@ -3275,6 +3278,14 @@ if ($ExportRange) {
                         break
                     } catch { $lastMsg = ($_.Exception.Message) -replace '"', "'" }
                 }
+            } elseif ($src -eq 'cn4k') {
+                if (-not $newRec -or -not ([string]$newRec.i)) { $lastMsg = '没有 imageId'; continue }
+                $u = "https://cn.bing.com/th?id=$($newRec.i)_UHD.jpg&w=3840&h=2160&rs=1&c=4"
+                try {
+                    [void](Save-BingImage -Url $u -Dest $destFile -MinKB 60 -Retry 1)
+                    $saved = $true
+                    $resLog[$cur] = 'cn4k_3840'
+                } catch { $lastMsg = ($_.Exception.Message) -replace '"', "'" }
             } elseif ($src -eq 'bimg') {
                 if (-not $newRec -or -not ([string]$newRec.i)) { $lastMsg = '没有 imageId'; continue }
                 $yb = $cur.Substring(0, 4)
@@ -3322,7 +3333,11 @@ if ($ExportRange) {
             $failN++
             [void]$failList.Add("$cur`t$lastMsg")
             if (-not $firstErr) { $firstErr = "$cur $lastMsg" }
-            if (Test-Path $destFile) { try { Remove-Item -LiteralPath $destFile -Force -ErrorAction SilentlyContinue } catch { } }
+            # 只清本次新建的半成品。升级模式（$upRange）下 $destFile 指向的是原有文件，
+            # 绝不能因为升级失败把它删掉 —— 实测 138 张升级里 113 张栽在预算上，原文件被这条删光。
+            if (-not $upRange -and (Test-Path $destFile)) {
+                try { Remove-Item -LiteralPath $destFile -Force -ErrorAction SilentlyContinue } catch { }
+            }
         }
         Start-Sleep -Milliseconds 250
     }
@@ -4315,6 +4330,10 @@ if ($FillLibrary) {
                         $cand += @{ url = "https://www.bing.com/th?id=${archId}_UHD.jpg"; tag = '归档原图 UHD'; minKb = 300 }
                         # 2016-2018 的图 Bing 只留了 1080p，UHD 会 404
                         $cand += @{ url = "https://www.bing.com/th?id=${archId}_1920x1080.jpg"; tag = '归档原图 1080p'; minKb = 60 }
+                    }
+                    # 2019 起 Bing 把部分日期的 _UHD 退回 1080p；cn.bing.com 带 w/h 参数仍给 3840x2160
+                    if ($archId) {
+                        $cand += @{ url = "https://cn.bing.com/th?id=${archId}_UHD.jpg&w=3840&h=2160&rs=1&c=4"; tag = 'cn4k 3840'; minKb = 200 }
                     }
                     # 2016-03 ~ 2019-12：Bing 的 th?id 两档实测全 404，cdn.bimg.cc 是唯一稳定来源。
                     # 这里不补的话，「按日期搜索」「往年的今天」「照片墙拉图」点这几年都会失败。

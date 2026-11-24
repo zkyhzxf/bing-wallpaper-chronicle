@@ -231,6 +231,12 @@ namespace BingWallDownloader
                     list.Add("https://www.bing.com/th?id=" + e.ImageId + "_1920x1080.jpg");
                 }
             }
+            if (quality == Quality.Best && !string.IsNullOrEmpty(e.ImageId))
+            {
+                // 2019 起 Bing 把部分日期的 _UHD 退回 1080p，但 cn.bing.com 带 w/h 参数
+                // 仍能拿到 3840x2160（实测 2020-01-28 / 2021-03-25 / 2023-03-02 / 2024-02-09 全通过）
+                list.Add("https://cn.bing.com/th?id=" + e.ImageId + "_UHD.jpg&w=3840&h=2160&rs=1&c=4");
+            }
             if (quality != Quality.Hd && !string.IsNullOrEmpty(e.ImageId))
             {
                 // 2016-03 ~ 2019-12：Bing 自己的 th?id 两个档位全是 404（实测 2016-03-05、

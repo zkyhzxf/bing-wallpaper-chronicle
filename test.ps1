@@ -1745,6 +1745,27 @@ Check '批量任务不吃交互预算' {
     return $true
 }
 
+Check '升级失败不删原文件' {
+    $t = Get-Content (Join-Path $Root 'bing-wallpaper.ps1') -Raw
+    if ($t -notmatch 'if \(-not \$upRange -and \(Test-Path \$destFile\)\)') {
+        return '升级失败仍会删掉原有文件（实测丢过 113 张）'
+    }
+    return $true
+}
+
+Check '补画质有 cn.bing.com 4K 源' {
+    $t = Get-Content (Join-Path $Root 'bing-wallpaper.ps1') -Raw
+    if ($t -notmatch "cn\.bing\.com/th\?id=") { return '没有 cn.bing.com 的 4K 候选' }
+    if ($t -notmatch 'w=3840&h=2160') { return '缺少 w/h 缩放参数' }
+    return $true
+}
+
+Check '下载器也有 cn.bing.com 4K' {
+    $t = Get-Content (Join-Path $Root 'tools\Downloader\Downloader.cs') -Raw
+    if ($t -notmatch 'cn\.bing\.com') { return '下载器没有 cn.bing.com 候选' }
+    return $true
+}
+
 # ---------------------------------------------------------------- 汇总
 Write-Host ''
 Write-Host ('-' * 50) -ForegroundColor DarkGray
