@@ -231,6 +231,14 @@ namespace BingWallDownloader
                     list.Add("https://www.bing.com/th?id=" + e.ImageId + "_1920x1080.jpg");
                 }
             }
+            if (quality != Quality.Hd && !string.IsNullOrEmpty(e.ImageId))
+            {
+                // 2016-03 ~ 2019-12：Bing 自己的 th?id 两个档位全是 404（实测 2016-03-05、
+                // 2017-01-15 均如此），唯一还能取的是 cdn.bimg.cc 的直链。
+                // URL 规律固定，不需要月度索引：/bing/{yyyy}/{imageId}_1920x1080.jpg
+                string y4 = e.Date.Substring(0, 4);
+                list.Add("https://cdn.bimg.cc/bing/" + y4 + "/" + e.ImageId + "_1920x1080.jpg");
+            }
             if (quality != Quality.Hd && !string.IsNullOrEmpty(e.OldName))
             {
                 // 2016 起 wilii 带分辨率后缀

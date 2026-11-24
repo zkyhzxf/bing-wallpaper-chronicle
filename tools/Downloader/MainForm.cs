@@ -30,7 +30,7 @@ namespace BingWallDownloader
 
         public MainForm()
         {
-            Text = "必应壁纸 · 全量下载器 v1.1";
+            Text = "必应壁纸 · 全量下载器 v1.2";
             StartPosition = FormStartPosition.CenterScreen;
             FormBorderStyle = FormBorderStyle.Sizable;
             MaximizeBox = true;

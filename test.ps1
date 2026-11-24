@@ -1679,6 +1679,16 @@ Check '下载器有看门狗' {
     return $true
 }
 
+Check '下载器有 cdn.bimg.cc 候选' {
+    $t = Get-Content (Join-Path $Root 'tools\Downloader\Downloader.cs') -Raw
+    if ($t -notmatch 'cdn\.bimg\.cc') { return '没有 cdn.bimg.cc 候选（2016-2019 会全失败）' }
+    $p1 = $t.IndexOf('cdn.bimg.cc')
+    $p2 = $t.IndexOf('img.wilii.cn')
+    if ($p1 -lt 0) { return '找不到 cdn.bimg.cc' }
+    if ($p2 -gt 0 -and $p1 -gt $p2) { return 'cdn.bimg.cc 排在 wilii 之后，应放在 bing 之后、wilii 之前' }
+    return $true
+}
+
 # ---------------------------------------------------------------- 汇总
 Write-Host ''
 Write-Host ('-' * 50) -ForegroundColor DarkGray
