@@ -898,6 +898,8 @@ namespace BingWallpaperLite
         public static string HealHint        { get { return T("原来的文件可能被清理掉了，这里直接换回今天的图", "The previous file was cleaned up; switched to today's image"); } }
         public static string GalleryTakeoverBlocked { get { return T("接管模式下不能用画廊模式。\r\n画廊是「临时试看、退出即清」，而接管是换一个长期图库，两者语义冲突。\r\n\r\n要试看临时图片，先退出接管。", "Gallery mode is unavailable while a takeover folder is active.\r\nGallery is a throwaway preview area, takeover is a long-term library.\r\n\r\nLeave takeover first if you want to browse temporary images."); } }
         public static string CrashHint       { get { return T("已经记下现场，程序继续运行。日志：%TEMP%\\BingWallpaperLite.log", "Details were logged and the app keeps running. Log: %TEMP%\\BingWallpaperLite.log"); } }
+        public static string BusyTitle       { get { return T("正在处理", "Working"); } }
+        public static string BusyHint        { get { return T("上一次换图或清理还没跑完，等它结束后再点；菜单会自己恢复。", "The previous run is still going. Try again when it finishes; the menu recovers on its own."); } }
         /// <summary>数量 + 单位。中文用「12 张」，英文用「12 images」，别在窗体里直接拼中文单位。</summary>
         public static string UnitImg(int n)  { return _en ? (n + " images") : (n + " 张"); }
         public static string UnitFile(int n) { return _en ? (n + " files")  : (n + " 个"); }

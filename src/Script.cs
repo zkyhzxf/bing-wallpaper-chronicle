@@ -237,7 +237,7 @@ namespace BingWallpaperLite
 
         private static void RunScriptEx(string arguments, string opMode)
         {
-            if (busy) { return; }
+            if (busy) { NotifyBusy(); return; }
             arguments = WithGallery(arguments);
             if (!File.Exists(scriptPath))
             {

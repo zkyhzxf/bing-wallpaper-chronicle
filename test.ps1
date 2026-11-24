@@ -1,4 +1,4 @@
-﻿﻿# 必应壁纸编年史 · 回归测试
+﻿# 必应壁纸编年史 · 回归测试
 # 用法：pwsh -File test.ps1
 # 设计原则：幂等、不碰桌面壁纸、不依赖网络（用本地索引与缓存）
 
@@ -1356,6 +1356,68 @@ Check '勾选条目立刻刷新按钮状态（不用先点行）' {
         if ($m.Value -notmatch 'btnRemove\.Enabled') { return ($f + ' 勾选后没更新移出按钮') }
         if ($m.Value -notmatch 'CheckedCount\(\) > 0') { return ($f + ' 按钮状态判断不对') }
     }
+    return $true
+}
+
+# ---------------------------------------------------------------- 13. 菜单可用性
+Write-Host '[13] 菜单可用性' -ForegroundColor Yellow
+
+Check 'SetBusy 不再逐项禁用菜单' {
+    $t = Get-Content (Join-Path $Root 'src\Refresh.cs') -Raw
+    $m = [regex]::Match($t, '(?s)private static void SetBusy\(bool on\).*?\r?\n        \}')
+    if (-not $m.Success) { return 'Refresh.cs 里找不到 SetBusy' }
+    if ($m.Value -match 'foreach \(ToolStripItem') { return 'SetBusy 仍在遍历 menu.Items' }
+    if ($m.Value -match '\.Enabled = menu\.Visible') { return 'SetBusy 仍在按 menu.Visible 逐项判定' }
+    if ($m.Value -notmatch 'ApplyMenuState\(\)') { return 'SetBusy 没走唯一的 ApplyMenuState 出口' }
+    return $true
+}
+
+Check '菜单打开时重算可用性' {
+    $t = Get-Content (Join-Path $Root 'src\Menu.cs') -Raw
+    $m = [regex]::Match($t, '(?s)m\.Opening \+= delegate\s*\{.*?\};')
+    if (-not $m.Success) { return 'Menu.cs 里找不到 Opening 绑定' }
+    if ($m.Value -notmatch 'HealBusyIfStale\(\)') { return 'Opening 没有 busy 自愈' }
+    if ($m.Value -notmatch 'ApplyMenuState\(\)') { return 'Opening 没有重算 Enabled' }
+    return $true
+}
+
+Check '出口项永不禁用' {
+    $t = Get-Content (Join-Path $Root 'src\MenuState.cs') -Raw
+    $m = [regex]::Match($t, '(?s)MenuAlwaysOn = new string\[\]\s*\{(.*?)\};')
+    if (-not $m.Success) { return 'MenuState.cs 里找不到 MenuAlwaysOn' }
+    foreach ($must in @('"gallerytoggle"', '"exit"', '"lock"', '"startup"', '"sys"', '"updatetime"')) {
+        if ($m.Groups[1].Value -notmatch [regex]::Escape($must)) { return ('MenuAlwaysOn 缺 ' + $must) }
+    }
+    return $true
+}
+
+Check '所有顶级菜单项都有 Name' {
+    $t = Get-Content (Join-Path $Root 'src\Menu.cs') -Raw
+    if ($t -match 'm\.Items\.Add\(Make(Item|KeepOpenItem)\(') {
+        return '仍有匿名顶级项，ApplyMenuState 无法按名判定'
+    }
+    return $true
+}
+
+Check 'MenuGate 初始一律可用' {
+    $t = Get-Content (Join-Path $Root 'src\MenuState.cs') -Raw
+    $m = [regex]::Match($t, '(?s)internal static MenuGate Ready.*?return g;')
+    if (-not $m.Success) { return 'MenuState.cs 里找不到 MenuGate.Ready' }
+    if ($m.Value -notmatch 'g\.LocalN = 1') { return 'Ready 的 LocalN 不是 1（初始就把随机换一张灰掉）' }
+    if ($m.Value -match 'g\.Busy = true') { return 'Ready 里 Busy 竟然是 true' }
+    return $true
+}
+
+Check '菜单判定表自测' {
+    $exe = Join-Path $Root 'dist\BingWallpaperLite.exe'
+    if (-not (Test-Path $exe)) { return 'dist\BingWallpaperLite.exe 不存在，先编译' }
+    $out = Join-Path $env:TEMP 'BingWallpaperLite.menugate.txt'
+    if (Test-Path $out) { Remove-Item $out -Force -ErrorAction SilentlyContinue }
+    $p = Start-Process -FilePath $exe -ArgumentList '--menuselftest' -PassThru -Wait
+    if ($p.ExitCode -ne 0) { return ('--menuselftest 退出码 ' + $p.ExitCode) }
+    if (-not (Test-Path $out)) { return '--menuselftest 没写结果文件' }
+    $line = (Get-Content $out -Raw).Trim()
+    if ($line -notmatch '^MENUGATE OK') { return ('自测未通过：' + $line) }
     return $true
 }
 

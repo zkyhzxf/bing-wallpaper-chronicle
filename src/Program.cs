@@ -19,9 +19,9 @@ using Microsoft.Win32;
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyConfiguration("Release")]
 [assembly: AssemblyCulture("")]
-[assembly: AssemblyVersion("3.6.61.0")]
-[assembly: AssemblyFileVersion("3.6.61.0")]
-[assembly: AssemblyInformationalVersion("3.6.61")]
+[assembly: AssemblyVersion("3.6.62.0")]
+[assembly: AssemblyFileVersion("3.6.62.0")]
+[assembly: AssemblyInformationalVersion("3.6.62")]
 [assembly: ComVisible(false)]
 
 namespace BingWallpaperLite
@@ -31,7 +31,7 @@ namespace BingWallpaperLite
         // ---------------------------------------------------------------- 常量
 
         internal const string AppName     = "必应壁纸编年史";
-        internal const string AppVersion  = "3.6.61";
+        internal const string AppVersion  = "3.6.62";
         private const string TaskName    = "BingWallpaperChronicle";
         private const string RunValue    = "BingWallpaperChronicle";
 
@@ -983,6 +983,12 @@ namespace BingWallpaperLite
 
             string arg0 = args.Length > 0 ? args[0].ToLowerInvariant() : "";
 
+            // 菜单可用性自测：纯判定表，不建托盘、不碰网络。结果写 %TEMP% 并用退出码表达成败
+            if (arg0 == "--menuselftest" || arg0 == "/menuselftest")
+            {
+                Environment.Exit(RunMenuSelfTest());
+            }
+
             // 先确保配套文件就位（分发包只有一个 exe 时靠这里自举）
             if (arg0 == "--extract" || arg0 == "/extract")
             {
@@ -1125,17 +1131,26 @@ namespace BingWallpaperLite
                         {
                             bool running = File.Exists(lockPath);
 
-                            // 兜底：busy 卡超过 6 分钟强制复位
-                            // （正常脚本最长 4 分钟会被 RunScriptEx 的 WaitForExit 杀掉）
-                            if (busy && busySince != DateTime.MinValue &&
-                                (DateTime.Now - busySince).TotalMinutes > 6)
+                            // 复位分两档：
+                            //   锁已经没了还挂着 5 秒以上 → 脚本被强杀/被安全软件打断，立刻复位；
+                            //   锁还在但超过 6 分钟 → 真卡死（正常脚本最长 4 分钟会被 WaitForExit 杀掉）。
+                            bool stuck = false;
+                            string why = "";
+                            if (busy && busySince != DateTime.MinValue)
+                            {
+                                double sec = (DateTime.Now - busySince).TotalSeconds;
+                                if (!running && sec > 5) { stuck = true; why = "锁已消失但 busy 仍挂着"; }
+                                else if (sec > 360) { stuck = true; why = "busy 卡住超过 6 分钟"; }
+                            }
+
+                            if (stuck)
                             {
                                 try
                                 {
                                     System.IO.File.AppendAllText(
                                         Path.Combine(Path.GetTempPath(), "BingWallpaperLite.log"),
                                         DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") +
-                                        "  [WARN]  busy 卡住超过 6 分钟，强制复位" + Environment.NewLine);
+                                        "  [WARN]  " + why + "，强制复位" + Environment.NewLine);
                                 }
                                 catch { }
                                 SetBusy(false);

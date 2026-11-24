@@ -221,11 +221,21 @@ namespace BingWallpaperLite
         /// <summary>更新所有子菜单的勾选状态与文字。每个 RefreshXxx 只碰自己的那一项。</summary>
         private static void RefreshMenuItems(Dictionary<string, object> state, string showDate)
         {
+            // 先算可用性 gate（一次目录扫描），再刷新各自文字；
+            // 所有顶级项的 Enabled 统一由 ApplyMenuState 落，各 RefreshXxx 不再各写各的
+            MenuGate g = MenuGate.Ready;
+            g.Busy = busy;
+            g.Takeover = TakeoverActive();
+            g.LocalN = LocalPoolCount();
+            g.FavN = FavDateCount();
+            SetGate(g);
+            try { ApplyMenuState(); } catch { }
+
             RefreshLibraryMenu(state, showDate);
             RefreshFavoriteCheck();
             RefreshTaskState();
             RefreshYearsMenu();
-            RefreshRandomCheck();
+            RefreshRandomCheck(g);
             RefreshArchiveCheck();
             RefreshEntryCheck();
             RefreshStartupCheck();
@@ -408,7 +418,7 @@ namespace BingWallpaperLite
                 ToolStripMenuItem cm = menu.Items["clean"] as ToolStripMenuItem;
                 if (cm != null)
                 {
-                    cm.Enabled = !tk;
+                    // Enabled 交给 ApplyMenuState（按 gate.Takeover 推导），这里只管说明文字
                     cm.ToolTipText = tk ? S.TkReadOnlyHint : "";
                 }
                 ToolStripMenuItem ms = menu.Items["modestate"] as ToolStripMenuItem;
@@ -1164,26 +1174,25 @@ namespace BingWallpaperLite
             catch { }
             string extra = "-Random -RandomScope " + scope;
             RunScriptEx(extra, "random");
-            try { RefreshRandomCheck(); } catch { }
+            try { RefreshRandomCheck(GateNow); } catch { }
         }
 
-        private static void RefreshRandomCheck()
+        private static void RefreshRandomCheck(MenuGate g)
         {
             ToolStripMenuItem it = menu.Items["randompick"] as ToolStripMenuItem;
             if (it == null) { return; }
 
-            int favN = FavDateCount();
-            int localN = LocalPoolCount();
+            int favN = g.FavN;
+            int localN = g.LocalN;
             string scope = RandomScopeValue();
 
+            // Enabled 由 ApplyMenuState 按 gate.LocalN 推导，这里只写文字
             if (localN <= 0)
             {
                 it.Text = S.RandomTitle("", 0);
-                it.Enabled = false;
             }
             else
             {
-                it.Enabled = true;
                 if (scope == "any") { it.Text = S.RandomTitleAny; }
                 else if (scope == "fav") { it.Text = S.RandomTitle(S.RandomScopeFavLabel, favN); }
                 else { it.Text = S.RandomTitle(S.RandomScopeLocalLabel, localN); }
@@ -1611,6 +1620,12 @@ namespace BingWallpaperLite
             bool changed = (busy != on);
             busy = on;
             busySince = on ? DateTime.Now : DateTime.MinValue;
+
+            // 唯一的可用性出口：不再逐项遍历 menu.Items。
+            // 老写法按「菜单是否可见」逐项判定 Enabled，菜单关闭时会把整张菜单设成禁用，
+            // 而 Opening 只刷文字不重算 → 一次竞态就永久灰（关不掉画廊）。
+            try { ApplyMenuState(); } catch { }
+
             if (tray == null) { return; }
 
             if (changed)
@@ -1620,15 +1635,6 @@ namespace BingWallpaperLite
                     tray.Icon = on ? iconBusy : iconNormal;
                 }
                 catch { }
-            }
-
-            foreach (ToolStripItem raw in menu.Items)
-            {
-                ToolStripMenuItem item = raw as ToolStripMenuItem;
-                if (item == null) { continue; }
-                if (item.Name == "header" || item.Name == "startup") { continue; }
-                // 菜单正开着时不禁用，允许连续切换；锁由脚本侧保证
-                item.Enabled = menu.Visible ? true : !on;
             }
 
             if (on) { tray.Text = Clip(AppName + S.WorkingDots, 60); }

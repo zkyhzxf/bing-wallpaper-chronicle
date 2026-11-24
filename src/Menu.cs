@@ -82,10 +82,16 @@ namespace BingWallpaperLite
             };
             m.Items.Add(galleryToggle);
 
-            m.Items.Add(MakeItem(S.WhereIsThis, delegate { ShowInfo(); }));
+            ToolStripMenuItem whereItem = MakeItem(S.WhereIsThis, delegate { ShowInfo(); });
+            whereItem.Name = "wherethis";
+            m.Items.Add(whereItem);
 
-            m.Items.Add(MakeKeepOpenItem(S.PrevOlder, "-Step 1", "prev"));
-            m.Items.Add(MakeKeepOpenItem(S.NextNewer, "-Step -1", "next"));
+            ToolStripMenuItem prevItem = MakeKeepOpenItem(S.PrevOlder, "-Step 1", "prev");
+            prevItem.Name = "prev";
+            m.Items.Add(prevItem);
+            ToolStripMenuItem nextItem = MakeKeepOpenItem(S.NextNewer, "-Step -1", "next");
+            nextItem.Name = "next";
+            m.Items.Add(nextItem);
 
             ToolStripMenuItem favToggle = new ToolStripMenuItem(S.FavOff);
             favToggle.Name = "favtoggle";
@@ -116,7 +122,9 @@ namespace BingWallpaperLite
 
             m.Items.Add(new ToolStripSeparator());
 
-            m.Items.Add(MakeKeepOpenItem(S.ChangeToday, "-Index 0"));
+            ToolStripMenuItem todayItem = MakeKeepOpenItem(S.ChangeToday, "-Index 0");
+            todayItem.Name = "today";
+            m.Items.Add(todayItem);
             ToolStripMenuItem yearsMenu = new ToolStripMenuItem(S.YearsAgo);
             yearsMenu.Name = "years";
             m.Items.Add(yearsMenu);
@@ -151,7 +159,9 @@ namespace BingWallpaperLite
             m.Items.Add(randItem);
 
             m.Items.Add(new ToolStripSeparator());
-            m.Items.Add(MakeItem(S.PickDate, delegate { DoPickDate(); }));
+            ToolStripMenuItem pickDateItem = MakeItem(S.PickDate, delegate { DoPickDate(); });
+            pickDateItem.Name = "pickdate";
+            m.Items.Add(pickDateItem);
             // 按节日筛选：日期由脚本用农历算法算出来，这里只负责传节名
             ToolStripMenuItem festMenu = new ToolStripMenuItem(S.FestivalMenu);
             festMenu.Name = "festival";
@@ -163,8 +173,12 @@ namespace BingWallpaperLite
                 festMenu.DropDownItems.Add(fi);
             }
             m.Items.Add(festMenu);
-            m.Items.Add(MakeItem(S.SearchMenu, delegate { DoSearch(); }));
-            m.Items.Add(MakeItem(S.AiMenu, delegate { DoAi(); }));
+            ToolStripMenuItem searchItem = MakeItem(S.SearchMenu, delegate { DoSearch(); });
+            searchItem.Name = "search";
+            m.Items.Add(searchItem);
+            ToolStripMenuItem aiItem = MakeItem(S.AiMenu, delegate { DoAi(); });
+            aiItem.Name = "ai";
+            m.Items.Add(aiItem);
 
 
 
@@ -336,6 +350,7 @@ namespace BingWallpaperLite
             m.Items.Add(themeMenu);
 
             ToolStripMenuItem sysMenu = new ToolStripMenuItem(S.SysMenu);
+            sysMenu.Name = "sys";
 
             sysMenu.DropDownItems.Add(MakeItem(S.HelpItem, delegate { ShowHelp(); }));
             sysMenu.DropDownItems.Add(new ToolStripSeparator());
@@ -346,14 +361,24 @@ namespace BingWallpaperLite
             m.Items.Add(sysMenu);
 
             m.Items.Add(new ToolStripSeparator());
-            m.Items.Add(MakeItem(S.ExitItem, delegate
+            ToolStripMenuItem exitItem = MakeItem(S.ExitItem, delegate
             {
                 if (tray != null) { tray.Visible = false; }
                 Application.Exit();
-            }));
+            });
+            exitItem.Name = "exit";
+            m.Items.Add(exitItem);
 
-            // 每次打开菜单都刷新：外部（脚本/AI）改过壁纸后能立刻看到最新状态
-            m.Opening += delegate { try { RefreshHeaderOnly(); } catch { } };
+            // 每次打开菜单都刷新：外部（脚本/AI）改过壁纸后能立刻看到最新状态。
+            // 顺序有讲究：先自愈（busy 与锁不一致就地复位），再刷文字，最后按 gate 重算
+            // 每个项的 Enabled —— 这是"任何脏状态下次打开即恢复"的唯一保证。
+            m.Opening += delegate
+            {
+                keepMenuOpenAfterClick = false;
+                try { HealBusyIfStale(); } catch { }
+                try { RefreshHeaderOnly(); } catch { }
+                try { ApplyMenuState(); } catch { }
+            };
 
             // 点击换图类菜单项后保持菜单打开，方便连续切换；点外面由系统关闭
             m.Closing += delegate(object s, ToolStripDropDownClosingEventArgs e)

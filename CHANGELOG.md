@@ -6,6 +6,42 @@
 
 ---
 
+## [3.6.62] - 2026-11-24
+
+### 修复（菜单大面积置灰 · 严重）
+
+**问题**：托盘菜单会一次性灰掉几乎全部选项，**包括「画廊模式」自己** —— 进了画廊就关不掉，收藏、查来源、收藏管理全灰，会话内彻底不可用。可稳定复现。
+
+**根因**：`SetBusy` 逐项设置 `item.Enabled = menu.Visible ? true : !on`。菜单关闭时脚本一启动（`cache\.running` 出现），整张菜单被设成禁用；而菜单每次打开只刷新文字（`RefreshHeaderOnly`）、从不重算 Enabled，于是状态被冻住，关掉再开也不恢复。
+
+**实测证据**（截图逐行灰度采样）：22 个顶级项里 18 项为 `SystemColors.GrayText(109)`，只有「随机换一张 / 开机启动 / 清理 / 退出」4 项是 `0`（启用色）—— 恰好是事后被单独设回 true 的三项，加 SetBusy 白名单豁免的那一项。
+
+**改法**：Enabled 变成派生态，不再保存历史。
+
+- 新增 `src/MenuState.cs`：`MenuGate`（busy / 接管 / 候选数）+ 纯函数 `ShouldEnable` + 唯一的 `ApplyMenuState()` + `HealBusyIfStale()`
+- `SetBusy` 不再碰 `menu.Items`，只改 busy 字段、托盘图标、提示文字，最后调 `ApplyMenuState()`
+- 菜单 `Opening` 三步走：自愈 → 刷文字 → 重算 Enabled；任何脏状态下次打开即恢复
+- 出口项永不禁用：画廊开关、暂停自动换图、开机启动、更新时间、外观、关于与卸载、退出
+- busy 期间只禁会再起一个 powershell 的 12 项；「这张图是哪儿」这类查看操作照常可用
+- 忙时点击入口不再静默：`RunScriptEx` 与 4 处清理入口改弹「正在处理」气泡
+- `MenuGate.Ready` 初值一律可用 —— 初始化顺序再乱也不许把菜单预先灰掉
+
+### 修复（busy 与锁不一致）
+
+- `lockWatch` 复位分两档：锁已消失但 busy 仍挂着超过 5 秒 → 立即复位（脚本被强杀或被安全软件打断）；锁还在但超 6 分钟 → 仍按原逻辑强制复位
+- 每次打开菜单也会就地校正一次（`HealBusyIfStale`），不依赖定时器
+
+### 修复（菜单状态残留）
+
+- `keepMenuOpenAfterClick` 在点菜单外部关闭时会残留，导致下一次菜单点一项不关闭；改为每次 `Opening` 复位
+
+### 新增（可验证）
+
+- `BingWallpaperLite.exe --menuselftest`：跑 31 条判定表，结果写 `%TEMP%\BingWallpaperLite.menugate.txt`，退出码表达成败
+- `test.ps1` 增加第 13 节「菜单可用性」6 项断言，总数 115 → 121
+
+---
+
 ## [3.6.61] - 2026-11-23
 
 ### 新增（壁纸失效自愈）

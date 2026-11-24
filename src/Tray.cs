@@ -122,7 +122,7 @@ namespace BingWallpaperLite
 
         private static void ConfirmCleanAll()
         {
-            if (busy) { return; }
+            if (busy) { NotifyBusy(); return; }
             using (CleanForm f = new CleanForm(CleanForm.Target.Cache))
             {
                 if (f.ShowDialog(anchor) != DialogResult.OK) { return; }
@@ -133,7 +133,7 @@ namespace BingWallpaperLite
 
         private static void ConfirmCleanArchive()
         {
-            if (busy) { return; }
+            if (busy) { NotifyBusy(); return; }
             using (CleanForm f = new CleanForm(CleanForm.Target.Archive))
             {
                 if (f.ShowDialog(anchor) != DialogResult.OK) { return; }
@@ -147,7 +147,7 @@ namespace BingWallpaperLite
 
         private static void ConfirmCleanArchiveIndex()
         {
-            if (busy) { return; }
+            if (busy) { NotifyBusy(); return; }
             using (CleanForm f = new CleanForm(CleanForm.Target.ArchiveIndex))
             {
                 if (f.ShowDialog(anchor) != DialogResult.OK) { return; }
@@ -157,7 +157,7 @@ namespace BingWallpaperLite
 
         private static void ConfirmCleanFavorites()
         {
-            if (busy) { return; }
+            if (busy) { NotifyBusy(); return; }
             using (CleanForm f = new CleanForm(CleanForm.Target.Favorites))
             {
                 if (f.ShowDialog(anchor) != DialogResult.OK) { return; }
