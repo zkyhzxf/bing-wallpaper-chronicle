@@ -1689,6 +1689,28 @@ Check '下载器有 cdn.bimg.cc 候选' {
     return $true
 }
 
+Check '补画质也走 cdn.bimg.cc' {
+    $t = Get-Content (Join-Path $Root 'bing-wallpaper.ps1') -Raw
+    $m = [regex]::Match($t, '(?s)if \(\$ExportRange\).*?\n    exit 0\r?\n\}')
+    if (-not $m.Success) { return '找不到 ExportRange 分支' }
+    if ($m.Value -notmatch 'cdn\.bimg\.cc') { return 'ExportRange 没接 cdn.bimg.cc（2016-2019 补不动）' }
+    if ($m.Value -notmatch "'bimg'") { return '没有 bimg 源分支' }
+    return $true
+}
+
+Check '体检单列损坏文件' {
+    $t = Get-Content (Join-Path $Root 'bing-wallpaper.ps1') -Raw
+    if ($t -notmatch '"badlist"') { return '体检 JSON 没有 badlist' }
+    if ($t -notmatch '\[void\]\$badListA\.Add') { return '读不出宽度的没收集进 badlist' }
+    return $true
+}
+
+Check '只补低画质覆盖坏文件' {
+    $t = Get-Content (Join-Path $Root 'bing-wallpaper.ps1') -Raw
+    if ($t -notmatch '\$wChk -le 0') { return '读不出宽度的文件仍会被放过' }
+    return $true
+}
+
 # ---------------------------------------------------------------- 汇总
 Write-Host ''
 Write-Host ('-' * 50) -ForegroundColor DarkGray

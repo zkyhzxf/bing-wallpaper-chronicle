@@ -3072,6 +3072,7 @@ if ($AuditQuality) {
     $lowA = 0
     $badA = 0
     $lowListA = New-Object System.Collections.ArrayList
+    $badListA = New-Object System.Collections.ArrayList
     $csvA = New-Object System.Collections.ArrayList
     [void]$csvA.Add('date,width,height,mb,verdict')
     foreach ($fA in $filesA) {
@@ -3086,7 +3087,7 @@ if ($AuditQuality) {
             $imgA.Dispose()
         } catch { }
         $verdict = 'uhd'
-        if ($wA -le 0) { $verdict = 'unreadable'; $badA++ }
+        if ($wA -le 0) { $verdict = 'unreadable'; $badA++; [void]$badListA.Add($kA) }
         elseif ($wA -lt 3000) { $verdict = 'low'; $lowA++; [void]$lowListA.Add($kA) }
         else { $uhdA++ }
         [void]$csvA.Add(('{0},{1},{2},{3},{4}' -f $kA, $wA, $hA, [math]::Round($fA.Length / 1MB, 2), $verdict))
@@ -3100,7 +3101,13 @@ if ($AuditQuality) {
         $lowJson = '[' + ($partsA -join ',') + ']'
     }
     Write-Log ('画质体检：共 ' + $filesA.Count + ' 张，UHD ' + $uhdA + '，非 UHD ' + $lowA + '，读不出 ' + $badA)
-    Write-Output ('{"total":' + $filesA.Count + ',"uhd":' + $uhdA + ',"low":' + $lowA + ',"lowlist":' + $lowJson + ',"error":""}')
+    $badJson = '[]'
+    if ($badListA.Count -gt 0) {
+        $partsB = @()
+        foreach ($x in $badListA) { $partsB += ('"' + $x + '"') }
+        $badJson = '[' + ($partsB -join ',') + ']'
+    }
+    Write-Output ('{"total":' + $filesA.Count + ',"uhd":' + $uhdA + ',"low":' + $lowA + ',"bad":' + $badA + ',"lowlist":' + $lowJson + ',"badlist":' + $badJson + ',"error":""}')
     exit 0
 }
 
@@ -3188,7 +3195,9 @@ if ($ExportRange) {
             #   - no-uhd 名单内的日期不再白试：源头就没有 UHD，重下多少次都一样
             if ($OnlyLowRes -or (-not $KeepExisting)) {
                 if ($MaxRes -eq 'uhd' -and $cur -ge '20190101' -and -not (Test-NoUhd -Date8 $cur)) {
-                    if (Test-LowResImage -Path $had.FullName) { $upRange = $true }
+                    # 读不出宽度（0）说明文件坏了/不是 JPEG，也要重下 —— 别当成"正常"放过
+                    $wChk = Get-ImagePixelWidth -Path $had.FullName
+                    if ($wChk -le 0 -or $wChk -lt 3000) { $upRange = $true }
                 }
             }
             if (-not $upRange) { $skipN++; continue }
@@ -3217,10 +3226,12 @@ if ($ExportRange) {
 
         # 选源：auto 时 2018-09 之后走 Bing，之前走 anerg，失败就换另一个
         $order = @()
+        # bimg = cdn.bimg.cc 直链：2016-03 ~ 2019-12 这段 Bing 自己的 th?id 两档全 404，
+        # 它实测能取到 1080p，是那个区间唯一的出路。放在 cdn 之后、anerg 之前。
         if ($MaxRes -eq 'hd') { $order = @('anerg', 'cdn') }
-        elseif ($Source -eq 'cdn') { $order = @('cdn', 'anerg') }
-        elseif ($Source -eq 'anerg') { $order = @('anerg', 'cdn') }
-        else { if ($cur -ge '20180901') { $order = @('cdn', 'anerg') } else { $order = @('anerg', 'cdn') } }
+        elseif ($Source -eq 'cdn') { $order = @('cdn', 'bimg', 'anerg') }
+        elseif ($Source -eq 'anerg') { $order = @('anerg', 'bimg', 'cdn') }
+        else { if ($cur -ge '20180901') { $order = @('cdn', 'bimg', 'anerg') } else { $order = @('anerg', 'bimg', 'cdn') } }
 
         $destFile = Join-Path $DestDir "${cur}_$short.jpg"
         if ($upRange -and $had) { $destFile = $had.FullName }
@@ -3243,6 +3254,15 @@ if ($ExportRange) {
                         break
                     } catch { $lastMsg = ($_.Exception.Message) -replace '"', "'" }
                 }
+            } elseif ($src -eq 'bimg') {
+                if (-not $newRec -or -not ([string]$newRec.i)) { $lastMsg = '没有 imageId'; continue }
+                $yb = $cur.Substring(0, 4)
+                $u = "https://cdn.bimg.cc/bing/$yb/$($newRec.i)_1920x1080.jpg"
+                try {
+                    [void](Save-BingImage -Url $u -Dest $destFile -MinKB 60 -Retry 1)
+                    $saved = $true
+                    $resLog[$cur] = 'bimg_1080p'
+                } catch { $lastMsg = ($_.Exception.Message) -replace '"', "'" }
             } else {
                 $base = $cur.Substring(0, 6)
                 $cands = @()
