@@ -1791,6 +1791,43 @@ Check 'cdn 源取到 1080p 会继续试 4K' {
     return $true
 }
 
+Check '有统一的画质验收函数' {
+    $t = Get-Content (Join-Path $Root 'bing-wallpaper.ps1') -Raw
+    if ($t -notmatch 'function Save-BingImageAtLeast') { return '没有 Save-BingImageAtLeast' }
+    $m = [regex]::Match($t, '(?s)function Save-BingImageAtLeast.*?\n\}')
+    if ($m.Value -notmatch 'MinWidth') { return '验收函数没有 MinWidth 参数' }
+    if ($m.Value -notmatch 'Get-ImagePixelWidth') { return '验收函数没量宽度' }
+    return $true
+}
+
+Check '日常取图拿到低画质会继续找' {
+    $t = Get-Content (Join-Path $Root 'bing-wallpaper.ps1') -Raw
+    $m = [regex]::Match($t, '(?s)if \(\$needDownload\).*?所有候选地址都下载失败')
+    if (-not $m.Success) { return '找不到日常下载段' }
+    if ($m.Value -notmatch 'Save-BingImageAtLeast') { return '日常取图没用验收函数' }
+    if ($m.Value -notmatch '\$lowKept') { return '没有低画质回退标记' }
+    return $true
+}
+
+Check '归档候选 cn4k 排在 1080p 之前' {
+    $t = Get-Content (Join-Path $Root 'bing-wallpaper.ps1') -Raw
+    $i1 = $t.IndexOf("tag = 'cn4k 3840'")
+    $i2 = $t.IndexOf("tag = '归档原图 1080p'")
+    if ($i1 -lt 0) { return '没有 cn4k 候选' }
+    if ($i2 -lt 0) { return '没有归档原图 1080p 候选' }
+    if ($i1 -gt $i2) { return 'cn4k 排在 1080p 之后，4K 永远轮不到' }
+    return $true
+}
+
+Check '图库补齐也验画质且带 4K 候选' {
+    $t = Get-Content (Join-Path $Root 'bing-wallpaper.ps1') -Raw
+    $m = [regex]::Match($t, '(?s)\$candsF = @\(.*?\$doneF = \$true')
+    if (-not $m.Success) { return '找不到补齐候选段' }
+    if ($m.Value -notmatch 'cn\.bing\.com') { return '补齐没有 cn 的 4K 候选' }
+    if ($m.Value -notmatch 'Save-BingImageAtLeast') { return '补齐没用验收函数' }
+    return $true
+}
+
 # ---------------------------------------------------------------- 汇总
 Write-Host ''
 Write-Host ('-' * 50) -ForegroundColor DarkGray

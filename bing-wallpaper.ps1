@@ -1272,6 +1272,22 @@ function Save-BingImage {
 
 # 已知取不到的日期账本。只记「确实是这天没有」，网络问题绝不记账 ——
 # 否则断网时连点几次，好几天就被永久拉黑了。
+# 下载并验收最小宽度：不达标当失败抛出（文件留在盘上，供调用方回退采用）。
+# 为什么需要它：Save-BingImage 只看体积（>=MinKB），而 Bing 对 2019+ 的部分日期
+# 会把 _UHD 退回 1080p（实测 2020-2024 普遍如此），2 MB 的 1080p 一样算"成功"，
+# 于是排在后面的 4K 候选永远轮不到 —— 3.6.71 / 3.6.72 连着栽的就是这个坑。
+function Save-BingImageAtLeast {
+    param([string]$Url, [string]$Dest, [int]$MinKB = 60, [int]$MinWidth = 0, [int]$Retry = 1)
+    $sz = Save-BingImage -Url $Url -Dest $Dest -MinKB $MinKB -Retry $Retry
+    if ($MinWidth -gt 0) {
+        $wCk = Get-ImagePixelWidth -Path $Dest
+        if ($wCk -gt 0 -and $wCk -lt $MinWidth) {
+            throw ('画质不足：' + $wCk + ' 宽 < ' + $MinWidth)
+        }
+    }
+    return $sz
+}
+
 function Read-DeadDates {
     $m = @{}
     if (-not (Test-Path $DeadDatesPath)) { return $m }
@@ -3839,13 +3855,26 @@ if ($FillLibrary) {
         if (Test-Path -LiteralPath $destF) { $skipF++; continue }
         $szF = 0
         $doneF = $false
-        foreach ($sfx in @(($imgId + '_UHD.jpg'), ($imgId + '_1920x1080.jpg'))) {
+        $lowKeptF = $false
+        $minWF = if ($MaxRes -ne 'hd') { 3000 } else { 0 }
+        $candsF = @(
+            ('https://www.bing.com/th?id=' + $imgId + '_UHD.jpg'),
+            ('https://cn.bing.com/th?id=' + $imgId + '_UHD.jpg&w=3840&h=2160&rs=1&c=4'),
+            ('https://www.bing.com/th?id=' + $imgId + '_1920x1080.jpg')
+        )
+        foreach ($uF in $candsF) {
             try {
-                $szF = Save-BingImage -Url ('https://www.bing.com/th?id=' + $sfx) -Dest $destF -MinKB 60 -Retry 1
+                $szF = Save-BingImageAtLeast -Url $uF -Dest $destF -MinKB 60 -MinWidth $minWF -Retry 1
                 $doneF = $true
                 break
-            } catch { }
+            } catch {
+                if (Test-Path $destF) {
+                    $wF = Get-ImagePixelWidth -Path $destF
+                    if ($wF -gt 0 -and $wF -lt 3000) { $lowKeptF = $true }
+                }
+            }
         }
+        if (-not $doneF -and $lowKeptF) { $doneF = $true }
         if ($doneF) {
             $okF++
             $libIdxF[$dd] = @{ file = $nameF; b = $szF; at = (Get-Date).ToString('s') }
@@ -4336,17 +4365,18 @@ if ($FillLibrary) {
                     # 候选顺序：照片墙默认先拿 1080p —— 预览只有 320 宽，没必要为它下 5 MB 原图；
                     # 其余场景（常规换图 / 预取 / 照片墙暂存）仍然 UHD 优先。
                     $cand = @()
+                    $previewOnly = ($script:WallMode -and -not $WallFull)
                     if ($script:WallMode -and -not $WallFull) {
+                        # 照片墙预览只有 320 宽，先拿 1080p 就够，不必为它下几 MB 原图
                         $cand += @{ url = "https://www.bing.com/th?id=${archId}_1920x1080.jpg"; tag = '照片墙预览 1080p'; minKb = 60 }
                         $cand += @{ url = "https://www.bing.com/th?id=${archId}_UHD.jpg"; tag = '归档原图 UHD'; minKb = 300 }
                     } else {
                         $cand += @{ url = "https://www.bing.com/th?id=${archId}_UHD.jpg"; tag = '归档原图 UHD'; minKb = 300 }
+                        # 2019 起 Bing 把部分日期的 _UHD 退回 1080p；cn 带 w/h 仍给 3840x2160。
+                        # 必须排在 1080p 之前 —— 否则一律落到 1080p，4K 永远轮不到。
+                        $cand += @{ url = "https://cn.bing.com/th?id=${archId}_UHD.jpg&w=3840&h=2160&rs=1&c=4"; tag = 'cn4k 3840'; minKb = 200 }
                         # 2016-2018 的图 Bing 只留了 1080p，UHD 会 404
                         $cand += @{ url = "https://www.bing.com/th?id=${archId}_1920x1080.jpg"; tag = '归档原图 1080p'; minKb = 60 }
-                    }
-                    # 2019 起 Bing 把部分日期的 _UHD 退回 1080p；cn.bing.com 带 w/h 参数仍给 3840x2160
-                    if ($archId) {
-                        $cand += @{ url = "https://cn.bing.com/th?id=${archId}_UHD.jpg&w=3840&h=2160&rs=1&c=4"; tag = 'cn4k 3840'; minKb = 200 }
                     }
                     # 2016-03 ~ 2019-12：Bing 的 th?id 两档实测全 404，cdn.bimg.cc 是唯一稳定来源。
                     # 这里不补的话，「按日期搜索」「往年的今天」「照片墙拉图」点这几年都会失败。
@@ -4369,15 +4399,26 @@ if ($FillLibrary) {
                     if (-not $locked) { exit 2 }
 
                     $got = $null
+                    $lowKept = $false
+                    $wantUhd = (-not $previewOnly) -and ([string]$config['resolution'] -ne '1920x1080')
+                    $minW = if ($wantUhd) { 3000 } else { 0 }
                     foreach ($c in $cand) {
                         try {
-                            $sz = Save-BingImage -Url $c.url -Dest $dest -MinKB $c.minKb
+                            $sz = Save-BingImageAtLeast -Url $c.url -Dest $dest -MinKB $c.minKb -MinWidth $minW
                             $got = $c.tag
                             Write-Log ("下载完成 " + [math]::Round($sz / 1MB, 2) + ' MB（' + $c.tag + '）')
                             break
                         } catch {
                             Write-Log "候选失败（$($c.tag)）：$($_.Exception.Message)" 'WARN'
+                            if (Test-Path $dest) {
+                                $wNow = Get-ImagePixelWidth -Path $dest
+                                if ($wNow -gt 0 -and $wNow -lt 3000) { $lowKept = $true }
+                            }
                         }
+                    }
+                    if (-not $got -and $lowKept) {
+                        $got = '低画质回退'
+                        Write-Log '所有候选都只有低画质，采用当前这份' 'WARN'
                     }
 
                     if ($got) {
@@ -4753,16 +4794,26 @@ if ($FillLibrary) {
 
     if ($needDownload) {
         $ok = $false
+        $lowKept = $false
+        $minW = if ($res -ne '1920x1080') { 3000 } else { 0 }
         foreach ($u in $candidates) {
             try {
                 Write-Log "下载 $u"
-                $size = Save-BingImage -Url $u -Dest $dest
+                $size = Save-BingImageAtLeast -Url $u -Dest $dest -MinWidth $minW
                 Write-Log ("下载完成 " + [math]::Round($size / 1MB, 2) + ' MB')
                 $ok = $true
                 break
             } catch {
                 Write-Log "失败($u): $($_.Exception.Message)" 'WARN'
+                if (Test-Path $dest) {
+                    $wNow2 = Get-ImagePixelWidth -Path $dest
+                    if ($wNow2 -gt 0 -and $wNow2 -lt 3000) { $lowKept = $true }
+                }
             }
+        }
+        if (-not $ok -and $lowKept) {
+            $ok = $true
+            Write-Log '所有候选都只有低画质，采用当前这份' 'WARN'
         }
         if (-not $ok) { Write-Log '所有候选地址都下载失败' 'ERROR'; Exit-Run 7 }
     } else {
