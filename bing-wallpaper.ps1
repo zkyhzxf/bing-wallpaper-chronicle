@@ -107,7 +107,9 @@ param(
     [string]$Festival = '',
     [switch]$MigrateOld,
     [switch]$FillLibrary,
-    [switch]$UpdateStoryMap
+    [switch]$UpdateStoryMap,
+    [switch]$OnlyLowRes,
+    [switch]$AuditQuality
 )
 
 # ---------------------------------------------------------------- 退出码约定
@@ -3057,6 +3059,51 @@ if ($ExportLinks) {
     exit 0
 }
 
+if ($AuditQuality) {
+    # 画质体检：只读不写，输出 JSON + _quality-audit.csv
+    $dirA = [string]$DestDir
+    if (-not $dirA -or -not (Test-Path $dirA)) {
+        Write-Output '{"total":0,"uhd":0,"low":0,"lowlist":[],"error":"目录不存在"}'
+        Exit-Run 1
+    }
+    if (-not ('System.Drawing.Image' -as [type])) { try { Add-Type -AssemblyName System.Drawing } catch { } }
+    $filesA = @(Get-ChildItem $dirA -Filter *.jpg -File -ErrorAction SilentlyContinue | Sort-Object Name)
+    $uhdA = 0
+    $lowA = 0
+    $badA = 0
+    $lowListA = New-Object System.Collections.ArrayList
+    $csvA = New-Object System.Collections.ArrayList
+    [void]$csvA.Add('date,width,height,mb,verdict')
+    foreach ($fA in $filesA) {
+        $kA = $fA.BaseName
+        if ($kA.Length -ge 8) { $kA = $kA.Substring(0, 8) }
+        $wA = 0
+        $hA = 0
+        try {
+            $imgA = [System.Drawing.Image]::FromFile($fA.FullName)
+            $wA = $imgA.Width
+            $hA = $imgA.Height
+            $imgA.Dispose()
+        } catch { }
+        $verdict = 'uhd'
+        if ($wA -le 0) { $verdict = 'unreadable'; $badA++ }
+        elseif ($wA -lt 3000) { $verdict = 'low'; $lowA++; [void]$lowListA.Add($kA) }
+        else { $uhdA++ }
+        [void]$csvA.Add(('{0},{1},{2},{3},{4}' -f $kA, $wA, $hA, [math]::Round($fA.Length / 1MB, 2), $verdict))
+    }
+    try { $csvA | Set-Content (Join-Path $dirA '_quality-audit.csv') -Encoding UTF8 }
+    catch { Write-Log ('体检 CSV 写入失败：' + $_.Exception.Message) 'WARN' }
+    $lowJson = '[]'
+    if ($lowListA.Count -gt 0) {
+        $partsA = @()
+        foreach ($x in $lowListA) { $partsA += ('"' + $x + '"') }
+        $lowJson = '[' + ($partsA -join ',') + ']'
+    }
+    Write-Log ('画质体检：共 ' + $filesA.Count + ' 张，UHD ' + $uhdA + '，非 UHD ' + $lowA + '，读不出 ' + $badA)
+    Write-Output ('{"total":' + $filesA.Count + ',"uhd":' + $uhdA + ',"low":' + $lowA + ',"lowlist":' + $lowJson + ',"error":""}')
+    exit 0
+}
+
 if ($ExportRange) {
     # 按日期范围批量下载：目标已有同名则跳过（可断点续跑）
     # 源：cdn = Bing 官方（只有 2018-09 之后还有效）；anerg = bingwallpaper.anerg.com 的图库（2009-2018 都能用）
@@ -3121,6 +3168,9 @@ if ($ExportRange) {
     $firstErr = ''
     $failList = New-Object System.Collections.ArrayList
     $resLog = @{}
+    $uhdN = 0
+    $lowN = 0
+    $lowList = New-Object System.Collections.ArrayList
 
     $day = [datetime]::ParseExact($d1, 'yyyyMMdd', $null)
     $end = [datetime]::ParseExact($d2, 'yyyyMMdd', $null)
@@ -3131,13 +3181,22 @@ if ($ExportRange) {
         $had = @(Get-ChildItem $DestDir -Filter "${cur}_*.jpg" -File -ErrorAction SilentlyContinue) | Select-Object -First 1
         $upRange = $false
         if ($had) {
-            # 已有同名文件。默认还要看画质：只有 2019 年起的日子才可能有 UHD，体积偏小的才去读宽度，
-            # 确认不是 UHD 就重下覆盖这一份。-KeepExisting 恢复旧的「有就跳过」行为。
-            if (-not $KeepExisting -and $MaxRes -eq 'uhd' -and $cur -ge '20190101' -and $had.Length -lt 3MB) {
-                if (Test-LowResImage -Path $had.FullName) { $upRange = $true }
+            # 已有同名文件。默认还要看画质：直接读宽度（2-5 ms，比体积可靠），
+            # 确认不是 UHD 就重下覆盖这一份。
+            #   - OnlyLowRes：专门补画质，等价于「只处理低画质」
+            #   - KeepExisting：旧的「有就跳过」（-OnlyLowRes 优先）
+            #   - no-uhd 名单内的日期不再白试：源头就没有 UHD，重下多少次都一样
+            if ($OnlyLowRes -or (-not $KeepExisting)) {
+                if ($MaxRes -eq 'uhd' -and $cur -ge '20190101' -and -not (Test-NoUhd -Date8 $cur)) {
+                    if (Test-LowResImage -Path $had.FullName) { $upRange = $true }
+                }
             }
             if (-not $upRange) { $skipN++; continue }
             $upN++
+        } elseif ($OnlyLowRes) {
+            # 只补低画质：本地没有的日子一律跳过，不新下
+            $skipN++
+            continue
         }
 
         $oldRec = $oldMap[$cur]
@@ -3205,7 +3264,19 @@ if ($ExportRange) {
             }
         }
 
-        if ($saved) { $okN++ }
+        if ($saved) {
+            $okN++
+            # 画质校验：_UHD 地址有可能返回 1080p 内容（实测 2023-02-04 就是），
+            # 所以拿到文件之后必须量一下，不能拿「地址叫 UHD」当证据。
+            if ($MaxRes -eq 'uhd' -and $cur -ge '20190101') {
+                $wReal = Get-ImagePixelWidth -Path $destFile
+                if ($wReal -gt 0 -and $wReal -lt 3000) {
+                    $lowN++
+                    Note-NoUhd -Date8 $cur
+                    [void]$lowList.Add($cur)
+                } else { $uhdN++ }
+            }
+        }
         else {
             $failN++
             [void]$failList.Add("$cur`t$lastMsg")
@@ -3215,6 +3286,33 @@ if ($ExportRange) {
         Start-Sleep -Milliseconds 250
     }
 
+    # 每天用了哪个源、哪个档位、实际拿到多大 —— 落盘，事后能核对
+    try {
+        $resLines = @()
+        foreach ($kR in ($resLog.Keys | Sort-Object)) {
+            $fR = @(Get-ChildItem $DestDir -Filter "${kR}_*.jpg" -File -ErrorAction SilentlyContinue) | Select-Object -First 1
+            $wR = 0
+            $mR = 0
+            if ($fR) {
+                $wR = Get-ImagePixelWidth -Path $fR.FullName
+                $mR = [math]::Round($fR.Length / 1MB, 2)
+            }
+            $resLines += ("{0}`t{1}`t{2}px`t{3}MB" -f $kR, $resLog[$kR], $wR, $mR)
+        }
+        $resPath = Join-Path $DestDir '_export-res.txt'
+        if ($resLines.Count -gt 0) { $resLines | Set-Content $resPath -Encoding UTF8 }
+        elseif (Test-Path $resPath) { Remove-Item -LiteralPath $resPath -Force -ErrorAction SilentlyContinue }
+    } catch { }
+
+    try {
+        if ($lowList.Count -gt 0) {
+            $lowList | Sort-Object | Set-Content (Join-Path $DestDir '_export-lowres.txt') -Encoding UTF8
+        } else {
+            $pLow = Join-Path $DestDir '_export-lowres.txt'
+            if (Test-Path $pLow) { Remove-Item -LiteralPath $pLow -Force -ErrorAction SilentlyContinue }
+        }
+    } catch { Write-Log ('低画质清单写入失败：' + $_.Exception.Message) 'WARN' }
+
     $failPath = Join-Path $DestDir '_export-fail.txt'
     if ($failList.Count -gt 0) {
         try { $failList | Set-Content $failPath -Encoding UTF8 } catch { }
@@ -3222,8 +3320,8 @@ if ($ExportRange) {
         try { Remove-Item -LiteralPath $failPath -Force -ErrorAction SilentlyContinue } catch { }
     }
 
-    Write-Log ("批量下载完成：成功 $okN（其中画质升级 $upN），跳过 $skipN，失败 $failN（源：$Source）")
-    Write-Output ('{"ok":' + $okN + ',"skip":' + $skipN + ',"fail":' + $failN + ',"error":"' + $firstErr + '"}')
+    Write-Log ("批量下载完成：成功 $okN（真 UHD $uhdN / 无 UHD $lowN / 升级 $upN），跳过 $skipN，失败 $failN（源：$Source）")
+    Write-Output ('{"ok":' + $okN + ',"skip":' + $skipN + ',"fail":' + $failN + ',"lowres":' + $lowN + ',"error":"' + $firstErr + '"}')
     exit 0
 }
 

@@ -14,7 +14,10 @@ namespace BingWallpaperLite
         private readonly ComboBox cmbQuality;
         private readonly Label lblEst;
         private readonly Button btnOk;
+        private CheckBox chkOnlyLow;
         private bool touchedDest;
+
+        public bool OnlyLowRes { get { return chkOnlyLow != null && chkOnlyLow.Checked; } }
 
         public string FromDate { get { return dtFrom.Value.ToString("yyyyMMdd"); } }
         public string ToDate { get { return dtTo.Value.ToString("yyyyMMdd"); } }
@@ -38,7 +41,7 @@ namespace BingWallpaperLite
             MaximizeBox = false;
             MinimizeBox = false;
             ShowInTaskbar = true;
-            ClientSize = new Size(540, 264);
+            ClientSize = new Size(540, 314);
             try { Font = new Font("Microsoft YaHei UI", 9F); } catch { }
 
             Label lblRange = new Label();
@@ -137,9 +140,22 @@ namespace BingWallpaperLite
             cmbQuality.SelectedIndexChanged += delegate { OnRangeChanged(); };
             Controls.Add(cmbQuality);
 
+            // 说清物理事实：UHD 只有 2019 年起才有，别让人以为「选了最高」就一定能拿到 4K
+            Label lblUhd = new Label();
+            lblUhd.AutoSize = false;
+            lblUhd.ForeColor = SystemColors.GrayText;
+            lblUhd.Text = S.DlUhdNote;
+            lblUhd.SetBounds(16, 204, 508, 18);
+            Controls.Add(lblUhd);
+
+            chkOnlyLow = new CheckBox();
+            chkOnlyLow.Text = S.DlOnlyLowRes;
+            chkOnlyLow.SetBounds(16, 226, 400, 22);
+            Controls.Add(chkOnlyLow);
+
             Button btnLinks = new Button();
             btnLinks.Text = S.BtnExportLinks;
-            btnLinks.SetBounds(200, 220, 110, 30);
+            btnLinks.SetBounds(200, 270, 110, 30);
             btnLinks.Click += delegate
             {
                 try
@@ -154,13 +170,13 @@ namespace BingWallpaperLite
 
             btnOk = new Button();
             btnOk.Text = S.DlBtn;
-            btnOk.SetBounds(320, 220, 90, 30);
+            btnOk.SetBounds(320, 270, 90, 30);
             btnOk.Click += delegate { Accept(); };
             Controls.Add(btnOk);
 
             Button btnCancel = new Button();
             btnCancel.Text = S.BtnCancel;
-            btnCancel.SetBounds(420, 220, 90, 30);
+            btnCancel.SetBounds(420, 270, 90, 30);
             btnCancel.DialogResult = DialogResult.Cancel;
             Controls.Add(btnCancel);
 

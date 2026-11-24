@@ -1167,6 +1167,18 @@ namespace BingWallpaperLite
         public static string DlEst(int n, double mb) { return _en ? (n + " days, about " + mb.ToString("0") + " MB") : ("共 " + n + " 天，约 " + mb.ToString("0") + " MB"); }
         public static string DlEstWarn(int n, double mb, int mins) { return _en ? (n + " days, about " + mb.ToString("0") + " MB · large batch, roughly " + mins + " min") : ("共 " + n + " 天，约 " + mb.ToString("0") + " MB · 数量较大，预计 " + mins + " 分钟"); }
         public static string DlRangeDone(int ok, int skip, int fail) { return _en ? ("Done — " + ok + " downloaded, " + skip + " skipped, " + fail + " failed") : ("完成：下载 " + ok + " 张，跳过 " + skip + " 张，失败 " + fail + " 张"); }
+        public static string DlRangeDone2(int ok, int skip, int fail, int low)
+        {
+            if (_en)
+            {
+                return "Done — " + ok + " downloaded (" + low + " without UHD), " + skip + " skipped, " + fail + " failed"
+                     + (low > 0 ? "\r\n\r\nSome days have no UHD on Bing's side (_UHD returns 1080p). They are recorded in no-uhd.json and will not be retried." : "");
+            }
+            return "完成：下载 " + ok + " 张（其中无 UHD " + low + " 张），跳过 " + skip + " 张，失败 " + fail + " 张"
+                 + (low > 0 ? "\r\n\r\n有几天 Bing 本身就只给 1080p（_UHD 地址返回的是 1080p 内容）。已记入 no-uhd.json，之后不再重复尝试。" : "");
+        }
+        public static string DlUhdNote { get { return T("UHD 仅 2019 年起提供；2019 年前最高 1920×1080（部分镜像仅 958px）。每张都会校验真实宽度。", "UHD exists only from 2019 on; earlier days cap at 1920×1080 (some mirrors 958px). Every file is verified."); } }
+        public static string DlOnlyLowRes { get { return T("只补非 UHD（本地已有的低画质才重下，其余跳过）", "Only fill missing UHD (re-download low-res files only)"); } }
         public static string WarnDateOrder     { get { return T("起始日期不能晚于结束日期。", "Start date is after end date."); } }
         public static string WarnInsideApp     { get { return T("不能选程序自己的目录或它的子目录——那里会被自动清理误伤，程序文件也可能被覆盖。请换一个位置。", "Cannot use the program's own folder or its subfolders — auto-cleanup would delete them and program files could be overwritten. Please pick another location."); } }
         public static string WarnNoPath   { get { return T("请填写安装路径。", "Please enter an install path."); } }

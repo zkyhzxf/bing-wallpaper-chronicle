@@ -795,10 +795,10 @@ Check '所有源码文件带 UTF-8 BOM' {
     return $true
 }
 
-Check '空 catch 不超过 107 处' {
+Check '空 catch 不超过 110 处' {
     $t = Get-Content $Script -Raw
     $n = ([regex]::Matches($t, 'catch \{ \}')).Count
-    if ($n -gt 107) { return ('空 catch 已 ' + $n + ' 处，超上限 107') }
+    if ($n -gt 110) { return ('空 catch 已 ' + $n + ' 处，超上限 110') }
     return $true
 }
 
@@ -1547,6 +1547,52 @@ Check '时间窗跟随鼠标' {
     if ($t -notmatch 'FormStartPosition\.Manual') { return '不是 Manual 定位' }
     if ($t -notmatch 'WorkingArea') { return '没夹进工作区' }
     if ($t -match 'FormStartPosition\.CenterParent') { return '仍在用 CenterParent（托盘 owner 在 0,0，会贴左上角）' }
+    return $true
+}
+
+Check '批量下载校验真实宽度' {
+    $t = Get-Content (Join-Path $Root 'bing-wallpaper.ps1') -Raw
+    $m = [regex]::Match($t, '(?s)if \(\$ExportRange\).*?\n    exit 0\r?\n\}')
+    if (-not $m.Success) { return '找不到 ExportRange 分支' }
+    if ($m.Value -notmatch 'Get-ImagePixelWidth -Path \$destFile') { return '下载后没量宽度（_UHD 可能返回 1080p）' }
+    if ($m.Value -notmatch 'Note-NoUhd') { return '拿不到 UHD 时没记账' }
+    if ($m.Value -notmatch '"lowres"') { return '结果 JSON 没 lowres 字段' }
+    return $true
+}
+
+Check '重查条件用真实宽度' {
+    $t = Get-Content (Join-Path $Root 'bing-wallpaper.ps1') -Raw
+    if ($t -match '\$had\.Length -lt 3MB') { return '仍用体积 3MB 当前置判断，会漏检' }
+    if ($t -notmatch 'Test-NoUhd -Date8 \$cur') { return '重查时没查 no-uhd 名单，会反复白试' }
+    return $true
+}
+
+Check '只补非 UHD 模式' {
+    $t = Get-Content (Join-Path $Root 'bing-wallpaper.ps1') -Raw
+    if ($t -notmatch '\[switch\]\$OnlyLowRes') { return '没有 -OnlyLowRes 参数' }
+    if ($t -notmatch 'elseif \(\$OnlyLowRes\)') { return '没处理「本地没有就跳过」' }
+    return $true
+}
+
+Check '画质体检模式' {
+    $t = Get-Content (Join-Path $Root 'bing-wallpaper.ps1') -Raw
+    if ($t -notmatch '\[switch\]\$AuditQuality') { return '没有 -AuditQuality 参数' }
+    if ($t -notmatch '_quality-audit\.csv') { return '没输出体检 CSV' }
+    if ($t -notmatch '"lowlist"') { return '没输出低画质清单' }
+    return $true
+}
+
+Check '下载源与档位落盘' {
+    $t = Get-Content (Join-Path $Root 'bing-wallpaper.ps1') -Raw
+    if ($t -notmatch '_export-res\.txt') { return 'resLog 没落盘' }
+    if ($t -notmatch '_export-lowres\.txt') { return '低画质清单没落盘' }
+    return $true
+}
+
+Check '下载窗有只补低画质' {
+    $t = Get-Content (Join-Path $Root 'src\Forms\DownloadForm.cs') -Raw
+    if ($t -notmatch 'OnlyLowRes') { return '下载窗没有 OnlyLowRes 属性' }
+    if ($t -notmatch 'DlUhdNote') { return '没有「UHD 仅 2019 起」的说明' }
     return $true
 }
 

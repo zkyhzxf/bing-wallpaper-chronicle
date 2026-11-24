@@ -316,6 +316,7 @@ namespace BingWallpaperLite
                 string to = f.ToDate;
                 string dest = f.DestPath;
                 string res = f.MaxRes;
+                bool onlyLow = f.OnlyLowRes;
                 if (string.IsNullOrEmpty(dest)) { return; }
 
                 SetBusy(true);
@@ -325,7 +326,8 @@ namespace BingWallpaperLite
                     try
                     {
                         outText = RunScriptCapture("-ExportRange -RangeFrom " + from +
-                            " -RangeTo " + to + " -DestDir \"" + dest + "\" -MaxRes " + res);
+                            " -RangeTo " + to + " -DestDir \"" + dest + "\" -MaxRes " + res +
+                            (onlyLow ? " -OnlyLowRes" : ""));
                     }
                     catch { }
                     SetBusy(false);
@@ -333,15 +335,17 @@ namespace BingWallpaperLite
                     int okCount = 0;
                     int skip = 0;
                     int fail = 0;
+                    int lowCount = 0;
                     System.Text.RegularExpressions.Match m = System.Text.RegularExpressions.Regex.Match(
-                        outText ?? "", "\"ok\"\\s*:\\s*(\\d+)[^}]*\"skip\"\\s*:\\s*(\\d+)[^}]*\"fail\"\\s*:\\s*(\\d+)");
+                        outText ?? "", "\"ok\"\\s*:\\s*(\\d+)[^}]*\"skip\"\\s*:\\s*(\\d+)[^}]*\"fail\"\\s*:\\s*(\\d+)[^}]*\"lowres\"\\s*:\\s*(\\d+)");
                     if (m.Success)
                     {
                         int.TryParse(m.Groups[1].Value, out okCount);
                         int.TryParse(m.Groups[2].Value, out skip);
                         int.TryParse(m.Groups[3].Value, out fail);
+                        int.TryParse(m.Groups[4].Value, out lowCount);
                     }
-                    MessageBox.Show(S.DlRangeDone(okCount, skip, fail), AppName,
+                    MessageBox.Show(S.DlRangeDone2(okCount, skip, fail, lowCount), AppName,
                         MessageBoxButtons.OK, MessageBoxIcon.Information);
                     try { OpenTarget(dest); } catch { }
                 });
