@@ -202,6 +202,30 @@ namespace BingWallpaperLite
             return dst;
         }
 
+        /// <summary>
+        /// 双击之后换上的那张图。读嵌入的 egg.png（来自 SakuraClock 的 app.ico），
+        /// 没有就退回矢量羽毛 —— 素材缺失时彩蛋仍然能开。
+        /// </summary>
+        private static Image LoadEggIcon(int size)
+        {
+            try
+            {
+                Assembly asm = Assembly.GetExecutingAssembly();
+                using (Stream s = asm.GetManifestResourceStream("egg.png"))
+                {
+                    if (s != null)
+                    {
+                        using (Image raw = Image.FromStream(s))
+                        {
+                            return ScaleImage(raw, size);
+                        }
+                    }
+                }
+            }
+            catch { }
+            return FeatherArt.Render(size);
+        }
+
         /// <summary>窗口标题栏那个小图标：32×32 是 ico 里能安全转位图的尺寸。</summary>
         private static Icon LoadWindowIcon()
         {
@@ -226,7 +250,7 @@ namespace BingWallpaperLite
 
             try
             {
-                if (logoFeather == null) { logoFeather = FeatherArt.Render(96); }
+                if (logoFeather == null) { logoFeather = LoadEggIcon(96); }
                 logo.Image = logoFeather;
             }
             catch { }

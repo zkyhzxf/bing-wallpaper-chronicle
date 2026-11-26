@@ -60,6 +60,8 @@ $storyMap  = Join-Path $resDir 'assets\story-map.json'
 $logoPng   = Join-Path $resDir 'assets\logo.png'
 # 彩蛋羽毛：用户指定的 PNG（已抠成透明 + 淡蓝光晕）。没有就走矢量绘制
 $featherPng = Join-Path $resDir 'assets\feather.png'
+# 彩蛋：双击图标后换上的那张（app.ico 32x32 放大到 96）
+$eggPng    = Join-Path $resDir 'assets\egg.png'
 
 if (-not (Test-Path $csFile)) { throw "找不到源文件：$csFile" }
 if (-not (Test-Path $psFile)) { throw "找不到核心脚本：$psFile" }
@@ -190,6 +192,7 @@ if (Test-Path $snapWilii) { $buildArgs += @("/resource:$snapWilii,wilii-index.js
 if (Test-Path $storyMap)  { $buildArgs += @("/resource:$storyMap,story-map.json") }
 if (Test-Path $logoPng)   { $buildArgs += @("/resource:$logoPng,logo.png") }
 if (Test-Path $featherPng) { $buildArgs += @("/resource:$featherPng,feather.png") }
+if (Test-Path $eggPng)     { $buildArgs += @("/resource:$eggPng,egg.png") }
 
 # 离线故事包：把已抓到的每日故事正文压进一个 zip 一起发出去，
 # 装完就能看 2013 至今的故事，不用等联网抓。已存在的文件不会被覆盖。

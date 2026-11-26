@@ -2460,6 +2460,11 @@ Check '彩蛋：双击图标飘羽毛' {
     if ($f.IndexOf('WS_EX_TRANSPARENT') -lt 0) { return '鼠标不穿透，会挡住桌面图标' }
     if ($f.IndexOf('WS_EX_TOOLWINDOW') -lt 0) { return '会出现在 Alt+Tab 里' }
     if ($f.IndexOf('VirtualScreen') -lt 0) { return '没覆盖多显示器' }
+    # 压到 Progman 后面：桌面之上、普通窗口之下。纯 HWND_BOTTOM 会掉到桌面底下看不见
+    if ($f.IndexOf('FindWindow("Progman"') -lt 0) { return '没按 Progman 定位 z 序，羽毛会看不见' }
+    # 边缘渐隐：不然飘到屏幕边上被硬切一刀
+    if ($f.IndexOf('FadeAt') -lt 0) { return '没有边缘渐隐，羽毛会在边界被裁断' }
+    if ($f.IndexOf('Matrix33') -lt 0) { return '渐隐没落到 alpha 矩阵上' }
     return $true
 }
 
@@ -2477,6 +2482,18 @@ Check '彩蛋羽毛用素材图' {
 
     $l = Join-Path $Root 'assets\logo.png'
     if (-not (Test-Path $l)) { return 'assets\logo.png 不存在' }
+    return $true
+}
+
+Check '双击图标换成指定素材' {
+    $png = Join-Path $Root 'assets\egg.png'
+    if (-not (Test-Path $png)) { return 'assets\egg.png 不存在' }
+    $b = Get-Content (Join-Path $Root 'build.ps1') -Raw
+    if ($b.IndexOf('/resource:$eggPng,egg.png') -lt 0) { return 'build.ps1 没嵌入 egg.png' }
+    $a = Get-Content (Join-Path $Root 'src\Forms\AboutForm.cs') -Raw
+    if ($a.IndexOf('GetManifestResourceStream("egg.png")') -lt 0) { return '关于窗口没读 egg.png' }
+    if ($a.IndexOf('LoadEggIcon') -lt 0) { return '没有换图入口' }
+    if ($a.IndexOf('FeatherArt.Render(size)') -lt 0) { return '素材缺失时没有兜底' }
     return $true
 }
 

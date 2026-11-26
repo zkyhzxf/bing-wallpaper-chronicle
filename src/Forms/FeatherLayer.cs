@@ -55,6 +55,8 @@ namespace BingWallpaperLite
 
         [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter,
             int X, int Y, int cx, int cy, uint uFlags);
+        [DllImport("user32.dll", CharSet = CharSet.Auto)]
+        private static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
         [DllImport("user32.dll")] private static extern IntPtr GetDC(IntPtr hWnd);
         [DllImport("user32.dll")] private static extern int ReleaseDC(IntPtr hWnd, IntPtr hDC);
         [DllImport("user32.dll")] private static extern bool UpdateLayeredWindow(IntPtr hwnd, IntPtr hdcDst,
@@ -81,6 +83,9 @@ namespace BingWallpaperLite
         private readonly Random rnd = new Random();
         private readonly Rectangle screen;
         private Bitmap buffer;
+        // 边缘渐隐用的遮罩，一组复用一个对象，只改矩阵
+        private readonly ImageAttributes fadeAttr = new ImageAttributes();
+        private readonly ColorMatrix fadeMatrix = new ColorMatrix();
 
         public FeatherLayer()
         {
@@ -125,9 +130,14 @@ namespace BingWallpaperLite
         protected override void OnShown(EventArgs e)
         {
             base.OnShown(e);
+            // 插到 Progman（桌面）的紧后面：桌面之上、所有普通窗口之下。
+            // 用 HWND_BOTTOM 会排到 Progman 底下，羽毛整片看不见 —— 这一点实测踩到过。
+            // Progman 找不到（少数多桌面/远程环境）就退一步用 HWND_BOTTOM，至少不挡人。
             try
             {
-                SetWindowPos(Handle, (IntPtr)HWND_BOTTOM, 0, 0, 0, 0,
+                IntPtr progman = FindWindow("Progman", null);
+                IntPtr after = progman != IntPtr.Zero ? progman : (IntPtr)HWND_BOTTOM;
+                SetWindowPos(Handle, after, 0, 0, 0, 0,
                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
             }
             catch { }
@@ -146,16 +156,19 @@ namespace BingWallpaperLite
         private void Reset(Puff p, bool scatter)
         {
             p.X = rnd.Next(screen.Left, screen.Right);
+            // 重生时放到屏幕外足够远：羽毛显示尺寸最大约 512*0.72 = 369，
+            // 半高 185，再留 120 余量 —— 进屏那一刻已经是整根，不会看着像被切过
+            float halfMax = art != null ? art.Width * 0.40f : 200f;
             p.Y = scatter
                 ? rnd.Next(screen.Top, screen.Bottom)
-                : screen.Top - rnd.Next(40, 160);
+                : screen.Top - halfMax - rnd.Next(40, 180);
             p.Vx = (float)(rnd.NextDouble() * 20 - 10);
             p.Vy = (float)(22 + rnd.NextDouble() * 26);
             p.Rot = rnd.Next(0, 360);
             p.RotSpeed = (float)(rnd.NextDouble() * 26 - 13);
             p.Phase = (float)(rnd.NextDouble() * Math.PI * 2);
             p.PhaseSpeed = (float)(0.6 + rnd.NextDouble() * 1.2);
-            p.Scale = (float)(0.34 + rnd.NextDouble() * 0.30);
+            p.Scale = (float)(0.42 + rnd.NextDouble() * 0.30);
         }
 
         private void Step()
@@ -175,6 +188,27 @@ namespace BingWallpaperLite
             }
         }
 
+        /// <summary>
+        /// 靠近屏幕任一边界时淡出。全屏动画必然在边界处被窗口裁掉，
+        /// 与其让它「啪」地少一半，不如提前 140 像素慢慢隐掉。
+        /// </summary>
+        private float FadeAt(Puff p)
+        {
+            // 渐隐范围跟着羽毛自己的半径走：固定 140 对大盘子羽毛不够 ——
+            // 中心还在屏内、羽毛已经出去一半，看上去仍然像被切了一刀。
+            float margin = 140f + art.Width * p.Scale * 0.5f;
+            float dx1 = (p.X - screen.Left) / margin;
+            float dx2 = (screen.Right - p.X) / margin;
+            float dy1 = (p.Y - screen.Top) / margin;
+            float dy2 = (screen.Bottom - p.Y) / margin;
+            float f = dx1 < dx2 ? dx1 : dx2;
+            float g2 = dy1 < dy2 ? dy1 : dy2;
+            if (g2 < f) { f = g2; }
+            if (f >= 1f) { return 1f; }
+            if (f <= 0f) { return 0f; }
+            return f;
+        }
+
         /// <summary>整帧重绘到 ARGB 缓冲，再一次性推给分层窗口。</summary>
         private void DrawFrame()
         {
@@ -183,7 +217,6 @@ namespace BingWallpaperLite
             {
                 using (Graphics g = Graphics.FromImage(buffer))
                 {
-                    g.CompositingMode = CompositingMode.SourceCopy;
                     g.SmoothingMode = SmoothingMode.AntiAlias;
                     g.InterpolationMode = InterpolationMode.HighQualityBicubic;
                     g.PixelOffsetMode = PixelOffsetMode.HighQuality;
@@ -198,7 +231,22 @@ namespace BingWallpaperLite
                             g.TranslateTransform(p.X - screen.Left, p.Y - screen.Top);
                             g.RotateTransform(p.Rot);
                             g.ScaleTransform(p.Scale, p.Scale);
-                            g.DrawImage(art, -art.Width / 2f, -art.Height / 2f, art.Width, art.Height);
+                            float fade = FadeAt(p);
+                            if (fade <= 0.02f) { continue; }
+                            if (fade >= 0.995f)
+                            {
+                                g.DrawImage(art, -art.Width / 2f, -art.Height / 2f, art.Width, art.Height);
+                            }
+                            else
+                            {
+                                fadeMatrix.Matrix33 = fade;
+                                fadeAttr.SetColorMatrix(fadeMatrix);
+                                Rectangle dest = new Rectangle(
+                                    -(int)(art.Width / 2f), -(int)(art.Height / 2f),
+                                    art.Width, art.Height);
+                                g.DrawImage(art, dest, 0, 0, art.Width, art.Height,
+                                    GraphicsUnit.Pixel, fadeAttr);
+                            }
                         }
                         catch { }
                         finally { g.Restore(st); }
