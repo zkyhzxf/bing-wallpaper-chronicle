@@ -2554,6 +2554,19 @@ Check '接管窗口按钮不留空洞' {
     return $true
 }
 
+Check '刷新不会让缺口数字累加' {
+    $t = Get-Content (Join-Path $Root 'src\Forms\TakeoverForm.cs') -Raw
+    # fillMissing 等是字段，RefreshState 开头必须归零，否则每刷新一次就累加一遍
+    $i = $t.IndexOf('private void RefreshState()')
+    if ($i -lt 0) { return '找不到 RefreshState' }
+    $head = $t.Substring($i, 700)
+    if ($head.IndexOf('fillMissing = 0') -lt 0) { return 'fillMissing 没归零，缺口会越刷越大' }
+    if ($head.IndexOf('fillUnfixable = 0') -lt 0) { return 'fillUnfixable 没归零' }
+    if ($head.IndexOf('fillFrom = DateTime.MinValue') -lt 0) { return 'fillFrom 没归零' }
+    if ($t.IndexOf('private int fillMissing') -lt 0) { return '不是字段的话这条断言就没意义了' }
+    return $true
+}
+
 # ---------------------------------------------------------------- 汇总
 Write-Host ''
 Write-Host ('-' * 50) -ForegroundColor DarkGray

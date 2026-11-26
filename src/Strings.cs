@@ -608,13 +608,13 @@ namespace BingWallpaperLite
                        " recoverable (" + sample + "), " + unfixable + " before 2016-03 and not in Bing's index";
             }
             return "图库缺 " + (fixable + unfixable) + " 天：可补 " + fixable + " 天（" + sample +
-                   "），另有 " + unfixable + " 天在 2016 年 3 月前，索引没收录";
+                   "），另有 " + unfixable + " 天原图已取不到";
         }
         /// <summary>缺口里补不了的部分：2016 年 3 月之前，必应索引本身没收录这些日子。</summary>
         public static string TkMissingNoIndex(int n)
         {
-            return _en ? ("Another " + n + " day(s) fall before 2016-03 and are not in Bing's index — those cannot be recovered")
-                       : ("另有 " + n + " 天在 2016 年 3 月之前，必应索引本来就没收录，补不回来");
+            return _en ? ("Another " + n + " day(s) are not in Bing's index nor in the mirror archive — the original cannot be fetched")
+                       : ("另有 " + n + " 天必应索引和镜像站存档里都没有，原图取不到");
         }
         public static string TkFilling  { get { return T("正在补齐，进度见日志…", "Filling — see the log for progress…"); } }
         public static string TkFillAsk(DateTime from, DateTime to, int missing)

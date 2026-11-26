@@ -155,6 +155,14 @@ namespace BingWallpaperLite
 
         private void RefreshState()
         {
+            // 这四个是「本次扫描」的结果，每次重算都必须归零。
+            // 它们放在字段里是为了让 DoFill 复用，代价就是不会自动清零 ——
+            // 少了这几行，每点一次刷新缺口就翻一倍，点三次能显示成 60 多天。
+            fillFrom = DateTime.MinValue;
+            fillTo = DateTime.MinValue;
+            fillMissing = 0;
+            fillUnfixable = 0;
+
             try
             {
                 string root = Program.CurrentTakeoverRoot();
