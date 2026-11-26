@@ -1,6 +1,8 @@
 ﻿using System;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.IO;
+using System.Reflection;
 using System.Threading;
 using System.Windows.Forms;
 
@@ -10,17 +12,26 @@ namespace BingWallpaperLite
     /// 关于窗口：传统布局 —— 左上角图标，右侧名称与版本，中间正文，底部状态与按钮。
     /// 正文不再用只读 TextBox：那个白底在深色主题下是一块突兀的亮斑，
     /// 而且文字不能选中复制，除了「能滚动」之外没有一样好处。
+    ///
+    /// 双击左上角图标是个彩蛋：图标变羽毛，桌面开始飘羽毛，关窗即恢复。
     /// </summary>
     internal sealed class AboutForm : Form
     {
         private readonly Label lblUpdate;
         private readonly Button btnRecheck;
         private readonly PictureBox logo;
+        private readonly ToolTip logoTip;
         private bool probing;
+
+        // 彩蛋状态：一个开关管两件事（图标换不换、层开不开），不会出现半开半关
+        private bool eggOn;
+        private FeatherLayer egg;
+        private Image logoNormal;
+        private Image logoFeather;
 
         public AboutForm(string aboutText)
         {
-            Text = Program.AppName + (S.IsEn ? " · About" : " · 关于");
+            Text = S.AppNameFull + (S.IsEn ? " · About" : " · 关于");
             FormBorderStyle = FormBorderStyle.FixedDialog;
             StartPosition = FormStartPosition.CenterScreen;
             MaximizeBox = false;
@@ -28,28 +39,36 @@ namespace BingWallpaperLite
             ShowInTaskbar = true;
             ClientSize = new Size(680, 690);
             try { Font = new Font("Microsoft YaHei UI", 9F); } catch { }
-            try { Icon = LoadAppIcon(32); } catch { }
+            // 必须 Clone：Form.Icon 只是存引用，using 里那个 Icon 出了作用域就被 Dispose，
+            // 等窗体 CreateHandle 去取 Icon.Handle 时直接 ObjectDisposedException 崩掉
+            try
+            {
+                using (Icon ic = LoadWindowIcon())
+                {
+                    if (ic != null) { Icon = (Icon)ic.Clone(); }
+                }
+            }
+            catch { }
 
             // ---- 标题区：图标 + 名称 + 版本 + 一句话
             logo = new PictureBox();
             logo.SetBounds(20, 16, 48, 48);
             logo.SizeMode = PictureBoxSizeMode.Zoom;
             logo.BackColor = Color.Transparent;
-            try
-            {
-                using (Icon ic = LoadAppIcon(48))
-                {
-                    if (ic != null) { logo.Image = ic.ToBitmap(); }
-                }
-            }
+            logo.Cursor = Cursors.Hand;
+            try { logoNormal = LoadLogo(96); if (logoNormal != null) { logo.Image = logoNormal; } }
             catch { }
+            logo.DoubleClick += delegate { ToggleEgg(); };
             Controls.Add(logo);
+
+            logoTip = new ToolTip();
+            try { logoTip.SetToolTip(logo, S.EggTip); } catch { }
 
             Label name = new Label();
             name.AutoSize = false;
-            name.SetBounds(84, 16, 560, 26);
+            name.SetBounds(84, 16, 570, 26);
             try { name.Font = new Font("Microsoft YaHei UI", 13F, FontStyle.Bold); } catch { }
-            name.Text = Program.AppName;
+            name.Text = S.AppNameFull;
             Controls.Add(name);
 
             Label ver = new Label();
@@ -119,8 +138,72 @@ namespace BingWallpaperLite
             Shown += delegate { StartProbe(); };
         }
 
-        /// <summary>图标就在 exe 旁边，按需要的尺寸现取，不额外打包资源。</summary>
-        private static string LoadIconPath()
+        // ================================================================ 图标与彩蛋
+
+        /// <summary>
+        /// 关于窗口的图标：优先用内嵌的 logo.png（96×96）。
+        /// 退回路径是 ico 的 32×32 再放大 —— 40/48/128 这几个尺寸在
+        /// .NET Framework 的 Icon.ToBitmap() 上会抛 ArgumentOutOfRangeException
+        /// （stride 算错，报「请求的范围扩展超过了数组的结尾」），只有 16/32 和
+        /// 默认尺寸是安全的。这也是一开始左上角一片空白的原因。
+        /// </summary>
+        private static Image LoadLogo(int size)
+        {
+            // 1) 内嵌 PNG
+            try
+            {
+                Assembly asm = Assembly.GetExecutingAssembly();
+                using (Stream s = asm.GetManifestResourceStream("logo.png"))
+                {
+                    if (s != null)
+                    {
+                        using (Image raw = Image.FromStream(s))
+                        {
+                            return ScaleImage(raw, size);
+                        }
+                    }
+                }
+            }
+            catch { }
+
+            // 2) 退回 32×32 ico
+            try
+            {
+                string dir = Path.GetDirectoryName(Application.ExecutablePath);
+                if (!string.IsNullOrEmpty(dir))
+                {
+                    string p = Path.Combine(dir, "bing.ico");
+                    if (File.Exists(p))
+                    {
+                        using (Icon ic = new Icon(p, 32, 32))
+                        using (Bitmap b32 = ic.ToBitmap())
+                        {
+                            return ScaleImage(b32, size);
+                        }
+                    }
+                }
+            }
+            catch { }
+            return null;
+        }
+
+        /// <summary>高质量缩放并复制成独立位图（FromStream 的图不能脱离流使用）。</summary>
+        private static Bitmap ScaleImage(Image src, int size)
+        {
+            Bitmap dst = new Bitmap(size, size, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+            using (Graphics g = Graphics.FromImage(dst))
+            {
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                g.Clear(Color.Transparent);
+                g.DrawImage(src, 0, 0, size, size);
+            }
+            return dst;
+        }
+
+        /// <summary>窗口标题栏那个小图标：32×32 是 ico 里能安全转位图的尺寸。</summary>
+        private static Icon LoadWindowIcon()
         {
             try
             {
@@ -128,33 +211,65 @@ namespace BingWallpaperLite
                 if (!string.IsNullOrEmpty(dir))
                 {
                     string p = Path.Combine(dir, "bing.ico");
-                    if (File.Exists(p)) { return p; }
+                    if (File.Exists(p)) { return new Icon(p, 32, 32); }
                 }
             }
             catch { }
-            return "";
-        }
-
-        private static Icon LoadAppIcon(int size)
-        {
-            string p = LoadIconPath();
-            if (p.Length > 0)
-            {
-                try { return new Icon(p, size, size); } catch { }
-            }
             try { return Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
             return null;
         }
 
-        protected override void OnFormClosed(FormClosedEventArgs e)
+        /// <summary>双击图标：开彩蛋 / 关彩蛋。图标与飘落层一起变，不会只生效一半。</summary>
+        private void ToggleEgg()
         {
+            if (eggOn) { StopEgg(); return; }
+
             try
             {
-                if (logo != null && logo.Image != null) { logo.Image.Dispose(); logo.Image = null; }
+                if (logoFeather == null) { logoFeather = FeatherArt.Render(96); }
+                logo.Image = logoFeather;
             }
             catch { }
+
+            try
+            {
+                egg = new FeatherLayer();
+                egg.Show();
+            }
+            catch { egg = null; }
+
+            eggOn = true;
+        }
+
+        private void StopEgg()
+        {
+            eggOn = false;
+            try
+            {
+                if (egg != null)
+                {
+                    egg.Stop();
+                    egg.Close();
+                    egg.Dispose();
+                }
+            }
+            catch { }
+            egg = null;
+            try { if (logo != null && logoNormal != null) { logo.Image = logoNormal; } } catch { }
+        }
+
+        protected override void OnFormClosed(FormClosedEventArgs e)
+        {
+            // 彩蛋层归这个窗口管：窗口一关就撤，不留一片羽毛在桌面上转
+            StopEgg();
+            try { if (logo != null) { logo.Image = null; } } catch { }
+            try { if (logoTip != null) { logoTip.Dispose(); } } catch { }
+            try { if (logoNormal != null) { logoNormal.Dispose(); logoNormal = null; } } catch { }
+            try { if (logoFeather != null) { logoFeather.Dispose(); logoFeather = null; } } catch { }
             base.OnFormClosed(e);
         }
+
+        // ================================================================ 更新检查
 
         private void StartProbe()
         {

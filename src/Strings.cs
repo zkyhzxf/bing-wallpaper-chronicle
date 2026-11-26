@@ -1492,6 +1492,22 @@ namespace BingWallpaperLite
                        : ("图库缺 " + n + " 天（" + sample + "）");
         }
 
+        // ---- 带副标题的产品名（3.6.92）
+        //
+        // 只给关于窗口用。AppName 被气泡标题、计划任务描述、卸载注册项、
+        // 托盘 ToolTip 共用，ToolTip 有 60 字符上限，加上副标题就会把
+        // 「哪天的哪张图」挤没 —— 所以主标识保持短，副标题只在关于里出现。
+        public static string AppNameFull
+        {
+            get { return _en ? (Program.AppName + " (Chronicle)") : (Program.AppName + "（必年代记）"); }
+        }
+
+        /// <summary>彩蛋入口的悬停提示：不写「双击有彩蛋」，写得太白就没意思了。</summary>
+        public static string EggTip
+        {
+            get { return T("它会掉毛的", "It sheds"); }
+        }
+
         // ---- 自动更新（3.6.89）
         public static string AboutBtnAuthor { get { return T("作者主页", "Author"); } }
         public static string UpdNewTitle { get { return T("发现新版本", "Update available"); } }

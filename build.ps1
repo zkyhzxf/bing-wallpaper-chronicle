@@ -55,6 +55,11 @@ $snapFile  = Join-Path $resDir 'assets\all-index.json'
 $snapOld   = Join-Path $resDir 'assets\old-index.json'
 $snapWilii = Join-Path $resDir 'assets\wilii-index.json'
 $storyMap  = Join-Path $resDir 'assets\story-map.json'
+# 关于窗口左上角那张图：从 bing.ico 的 48x48 高质量放大成 96x96 的 PNG，
+# 因为 Icon.ToBitmap() 在 .NET Framework 上处理 40/48/128 会 stride 越界
+$logoPng   = Join-Path $resDir 'assets\logo.png'
+# 彩蛋羽毛：用户指定的 PNG（已抠成透明 + 淡蓝光晕）。没有就走矢量绘制
+$featherPng = Join-Path $resDir 'assets\feather.png'
 
 if (-not (Test-Path $csFile)) { throw "找不到源文件：$csFile" }
 if (-not (Test-Path $psFile)) { throw "找不到核心脚本：$psFile" }
@@ -183,6 +188,8 @@ if (Test-Path $snapFile) { $buildArgs += @("/resource:$snapFile,all-index.json")
 if (Test-Path $snapOld)  { $buildArgs += @("/resource:$snapOld,old-index.json") }
 if (Test-Path $snapWilii) { $buildArgs += @("/resource:$snapWilii,wilii-index.json") }
 if (Test-Path $storyMap)  { $buildArgs += @("/resource:$storyMap,story-map.json") }
+if (Test-Path $logoPng)   { $buildArgs += @("/resource:$logoPng,logo.png") }
+if (Test-Path $featherPng) { $buildArgs += @("/resource:$featherPng,feather.png") }
 
 # 离线故事包：把已抓到的每日故事正文压进一个 zip 一起发出去，
 # 装完就能看 2013 至今的故事，不用等联网抓。已存在的文件不会被覆盖。

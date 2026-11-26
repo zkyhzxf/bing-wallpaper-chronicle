@@ -6,6 +6,46 @@
 
 ---
 
+## [3.6.92] - 2026-11-26
+
+### 新增（副标题与左上角图标）
+
+关于窗口的标题区改成「必应壁纸编年史（必年代记）」，左上角补上了应用图标。
+
+图标一开始是空白的 —— 不是没加载，是 `.NET Framework` 的 `Icon.ToBitmap()` 对 ico 里 40/48/128 这类非常规宽的条目会 `Array.Copy` 越界，抛 `ArgumentOutOfRangeException`（「请求的范围扩展超过了数组的结尾」），被 `catch { }` 吞掉了。实测同一份 `bing.ico`：
+
+| 调用 | 结果 |
+| --- | --- |
+| `new Icon(ico, 32, 32).ToBitmap()` | ok |
+| `new Icon(ico, 40, 40).ToBitmap()` | FAIL |
+| `new Icon(ico, 48, 48).ToBitmap()` | FAIL |
+| `new Icon(ico).ToBitmap()` | ok（32×32） |
+
+改法是把 `bing.ico` 的 48×48 高质量放大成 `assets/logo.png`（96×96），`build.ps1` 嵌进 exe，窗体读资源；读不到再退回 32×32 ico 放大。
+
+副标题只进关于窗口，`AppName` 常量不动 —— 它被 40 处引用（气泡、计划任务描述、卸载注册项），而托盘 ToolTip 有 60 字符上限，加了副标题会把「哪天的哪张图」挤掉。
+
+### 新增（彩蛋）
+
+双击关于窗口左上角的图标，图标变羽毛，桌面上开始飘羽毛；再双击或关掉窗口即恢复。
+
+羽毛层 `FeatherLayer` 的几个关键点：
+
+| 项 | 做法 |
+| --- | --- |
+| 透明 | `UpdateLayeredWindow` + 逐像素 alpha，**不是** `TransparencyKey` 抠色 |
+| 鼠标 | `WS_EX_TRANSPARENT`，点桌面图标不受影响 |
+| z 序 | 不设 TopMost，`SetWindowPos(HWND_BOTTOM)` 压到底，任何窗口打开都会盖住它 |
+| 任务栏 | `WS_EX_TOOLWINDOW`，不进 Alt+Tab |
+| 范围 | `SystemInformation.VirtualScreen`，多显示器一起飘 |
+| 帧率 | 25 fps，全屏 2560×1440 下实测 CPU 约 4.7% 单核 |
+
+为什么不用抠色：抠色只认「完全等于该颜色」的像素，抗锯齿边缘是「羽毛色 × alpha + 抠色 × (1-alpha)」的混合值，既不是这个也不是那个，于是被保留下来 —— 屏幕上就是一圈品红边，半透明的羽枝更是直接被吃掉，羽毛会退化成几根紫线。这一点在实现过程中实际踩到了。
+
+羽毛素材用用户提供的 `assetseather.png`（512×512，自带 alpha），`FeatherArt` 优先读它，读不到才退回矢量绘制。
+
+---
+
 ## [3.6.91] - 2026-11-26
 
 ### 变更（关于窗口改成传统布局）

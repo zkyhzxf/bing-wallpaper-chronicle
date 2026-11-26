@@ -2446,6 +2446,40 @@ Check '关于窗口是传统布局' {
     return $true
 }
 
+Check '彩蛋：双击图标飘羽毛' {
+    $a = Get-Content (Join-Path $Root 'src\Forms\AboutForm.cs') -Raw
+    if ($a.IndexOf('DoubleClick') -lt 0) { return '图标没接双击' }
+    if ($a.IndexOf('FeatherLayer') -lt 0) { return '没有羽毛层' }
+    if ($a.IndexOf('ToggleEgg') -lt 0) { return '没有开关' }
+    if ($a.IndexOf('StopEgg()') -lt 0) { return '关窗没撤动画' }
+
+    $f = Get-Content (Join-Path $Root 'src\Forms\FeatherLayer.cs') -Raw
+    if ($f.IndexOf('UpdateLayeredWindow') -lt 0) { return '没用逐像素 alpha 的分层窗口' }
+    # 只看有没有真的设置，注释里解释「为什么不用」不算
+    if ($f -match 'TransparencyKey\\s*=') { return '还在用抠色，柔和边缘会出粉边' }
+    if ($f.IndexOf('WS_EX_TRANSPARENT') -lt 0) { return '鼠标不穿透，会挡住桌面图标' }
+    if ($f.IndexOf('WS_EX_TOOLWINDOW') -lt 0) { return '会出现在 Alt+Tab 里' }
+    if ($f.IndexOf('VirtualScreen') -lt 0) { return '没覆盖多显示器' }
+    return $true
+}
+
+Check '彩蛋羽毛用素材图' {
+    $png = Join-Path $Root 'assets\feather.png'
+    if (-not (Test-Path $png)) { return 'assets\feather.png 不存在' }
+    if ((Get-Item $png).Length -lt 20000) { return '素材太小，可能没内容' }
+
+    $b = Get-Content (Join-Path $Root 'build.ps1') -Raw
+    if ($b.IndexOf('feather.png') -lt 0) { return 'build.ps1 没把它嵌进 exe' }
+
+    $fa = Get-Content (Join-Path $Root 'src\Forms\FeatherArt.cs') -Raw
+    if ($fa.IndexOf('GetManifestResourceStream("feather.png")') -lt 0) { return 'FeatherArt 没读素材' }
+    if ($fa.IndexOf('MakeHardAlpha(asset)') -ge 0) { return '素材还被硬阈值化，柔和边缘会丢' }
+
+    $l = Join-Path $Root 'assets\logo.png'
+    if (-not (Test-Path $l)) { return 'assets\logo.png 不存在' }
+    return $true
+}
+
 # ---------------------------------------------------------------- 汇总
 Write-Host ''
 Write-Host ('-' * 50) -ForegroundColor DarkGray
