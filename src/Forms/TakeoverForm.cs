@@ -232,7 +232,8 @@ namespace BingWallpaperLite
                     // 统计时间附在目录那段末尾：窗口没开时看不到，开窗时一眼知道数据是新算的还是旧的
                     lblPath.Text = S.TkOnBody(root, n, days, latest, stale) +
                         "\r\n" + S.TkStatAt(DateTime.Now.ToString("HH:mm:ss"));
-                    btnPick.Text = S.TkChange;
+                    // 接管中不给「换一个目录」：换库要么先把当前库退出，要么两边搅在一起
+                    if (btnPick != null) { btnPick.Visible = false; }
                     btnExit.Enabled = true;
                     if (btnFill != null) { btnFill.Enabled = true; }
                 }
@@ -243,7 +244,7 @@ namespace BingWallpaperLite
                     lblAuto.Text = "";
                     lblMissing.Text = "";
                     lblPath.Text = S.TkBrokenBody(root);
-                    btnPick.Text = S.TkPick;
+                    if (btnPick != null) { btnPick.Visible = true; btnPick.Text = S.TkPick; }
                     btnExit.Enabled = true;
                 }
                 else
@@ -253,7 +254,7 @@ namespace BingWallpaperLite
                     lblAuto.Text = "";
                     lblMissing.Text = "";
                     lblPath.Text = S.TkTip;
-                    btnPick.Text = S.TkPick;
+                    if (btnPick != null) { btnPick.Visible = true; btnPick.Text = S.TkPick; }
                     btnExit.Enabled = false;
                 }
                 if (btnFill != null) { btnFill.Enabled = active; }
@@ -263,6 +264,11 @@ namespace BingWallpaperLite
 
         private void DoPick()
         {
+            if (Program.TakeoverActive())
+            {
+                MessageBox.Show(S.TkChangeBlocked, Program.AppName, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
             using (FolderBrowserDialog d = new FolderBrowserDialog())
             {
                 d.Description = S.TkChoose;

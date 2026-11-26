@@ -538,7 +538,7 @@ namespace BingWallpaperLite
         public static string TkHeader     { get { return T("接管 = 换一个图片仓库", "Takeover = switch the image store"); } }
         public static string TkTip
         {
-            get { return T("接管后只读这个目录：不清理、不移动、不改名。自动换图照常运行，新图直接下到这里；暂停自动换图也不会停止下载，只是不换桌面。\r\n例外只有两处：画质升级会把 2019 年后的低画质图原地覆盖成原图；补齐或采集会在图库里写一个 _bing-chronicle-index.json（记录每天对应哪张图）。\r\n退出接管会删掉 takeover 目录，软件回到接管前的样子，原来的配置一点都没动。", "While taken over, this folder is read-only for the app: nothing is cleaned, moved or renamed. Auto-change keeps running and new images land here; pausing auto-change only stops the desktop from switching, not the download.\r\nThe one exception is a quality upgrade: a post-2019 image below UHD gets overwritten in place when the original is fetched.\r\nLeaving takeover deletes the takeover folder and returns to the previous state."); }
+            get { return T("这个模式只增不减：每天的新图照常下进来，已有的图一张都不会被清掉、移动或改名——它是收集图片的模式，不是临时看图的地方。自动换图照常运行；暂停自动换图也不会停止下载，只是不换桌面。\r\n例外只有两处：画质升级会把 2019 年后的低画质图原地覆盖成原图；补齐或采集会在图库里写一个 _bing-chronicle-index.json（记录每天对应哪张图）。\r\n想换一个图库，先退出接管再重新选：接管中不再提供换目录，半路换库容易把两边的图搅在一起。退出接管会删掉 takeover 目录，软件回到接管前的样子，原来的配置一点都没动。", "This mode only grows: new images keep landing here and nothing already in the folder is ever cleaned, moved or renamed. It is a collection, not a scratch area. Auto-change keeps running; pausing it only stops the desktop from switching, not the download.\r\nThe one exception is a quality upgrade: a post-2019 image below UHD gets overwritten in place when the original is fetched.\r\nTo use a different library, leave takeover first and pick again. Leaving takeover deletes the takeover folder and returns to the previous state."); }
         }
         public static string TkOff        { get { return T("当前：未接管（用安装目录里的缓存与以前换过的壁纸）", "Current: not taken over (using the install folder)"); } }
         public static string TkOn         { get { return T("当前：接管中（只读这个目录）", "Current: taken over (read-only)"); } }
@@ -605,7 +605,7 @@ namespace BingWallpaperLite
         /// <summary>菜单里的常驻模式标牌：接管时显示「编年史 · 目录名」。</summary>
         public static string ModeBadge(string name)
         {
-            string tpl = _en ? "📁 Chronicle · {0}" : "📁 编年史 · {0}";
+            string tpl = _en ? "📁 Chronicle mode · {0}" : "📁 编年史模式 · {0}";
             return string.Format(tpl, name);
         }
         public static string ModeBadgeHint(string root)
@@ -652,7 +652,8 @@ namespace BingWallpaperLite
         public static string TkBrokenTitle { get { return T("接管目录不可用", "Takeover folder unavailable"); } }
         public static string TkBrokenBody2 { get { return T("已自动回到安装目录的模式", "Reverted to the install folder"); } }
         public static string TkPick       { get { return T("选择目录并接管", "Choose folder"); } }
-        public static string TkChange     { get { return T("换一个目录", "Change folder"); } }
+        /// <summary>接管中不再提供换目录：半路换库容易把两边的图搅在一起，先退出再重选。</summary>
+        public static string TkChangeBlocked { get { return T("接管中不能换目录：先退出接管，再重新选一个", "Cannot change folder while taken over: leave takeover first"); } }
         public static string TkExit       { get { return T("退出接管", "Leave takeover"); } }
         public static string TkImport     { get { return T("从备份接管…", "Take over from backup…"); } }
         public static string TkBackupAsk
@@ -1461,7 +1462,7 @@ namespace BingWallpaperLite
         public static string RotateCustomHint { get { return T("每隔多少分钟换一张（1–720）", "Minutes between switches (1–720)"); } }
 
         // ---- 编年史窗口状态行（3.6.89）
-        public static string TkHeading { get { return T("编年史：把桌面壁纸换成你自己的图库", "Chronicle: switch the desktop to your own image library"); } }
+        public static string TkHeading { get { return T("编年史模式：把桌面壁纸换成你预先下载好的必应图库", "Chronicle mode: point the desktop at a Bing library you already downloaded"); } }
         public static string TkStatLine(int n, int days, string first, string last)
         {
             string span = (first.Length > 0 ? (" · " + first + " ~ " + last) : "");

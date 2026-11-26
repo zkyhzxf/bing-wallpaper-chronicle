@@ -475,7 +475,7 @@ namespace BingWallpaperLite
 
         private static bool IsFavoritedName(string fileName)
         {
-            try { return File.Exists(Path.Combine(favDir, fileName)); }
+            try { return File.Exists(Path.Combine(ActiveFavDirPath, fileName)); }
             catch { return false; }
         }
 
@@ -485,9 +485,9 @@ namespace BingWallpaperLite
             if (lib == null) { return; }
             lib.DropDownItems.Clear();
 
-            string[] favFiles = SafeGetFiles(favDir);
-            string[] recentFiles = SafeGetFiles(cacheDir);
-            string[] archFiles = SafeGetFiles(archiveImgDir);
+            string[] favFiles = SafeGetFiles(ActiveFavDirPath);
+            string[] recentFiles = SafeGetFiles(ActiveCacheDir);
+            string[] archFiles = SafeGetFiles(ActiveArchiveImgPath);
             Dictionary<string, object> favIdx = ReadJson(FavIndexPathNow);
 
             // 接管时图库在别处；不管哪种模式，停摆都得让人一眼看见
@@ -559,14 +559,14 @@ namespace BingWallpaperLite
                 ToolStripMenuItem archSub = new ToolStripMenuItem(S.ArchiveHeaderN(archFiles.Length));
                 BuildLibPage(archSub, archFiles, LoadArchiveIndex(), currentDate, false, 0, 0);
                 archSub.DropDownItems.Add(new ToolStripSeparator());
-                archSub.DropDownItems.Add(MakeItem(S.OpenArchiveImg, delegate { OpenTarget(archiveImgDir); }));
+                archSub.DropDownItems.Add(MakeItem(S.OpenArchiveImg, delegate { OpenTarget(ActiveArchiveImgPath); }));
                 lib.DropDownItems.Add(archSub);
             }
 
             lib.DropDownItems.Add(new ToolStripSeparator());
-            lib.DropDownItems.Add(MakeItem(S.OpenCacheDir, delegate { OpenTarget(cacheDir); }));
-            lib.DropDownItems.Add(MakeItem(S.OpenFavDir, delegate { OpenTarget(favDir); }));
-            lib.DropDownItems.Add(MakeItem(S.OpenArchiveDir, delegate { OpenTarget(archiveImgDir); }));
+            lib.DropDownItems.Add(MakeItem(S.OpenCacheDir, delegate { OpenTarget(ActiveCacheDir); }));
+            lib.DropDownItems.Add(MakeItem(S.OpenFavDir, delegate { OpenTarget(ActiveFavDirPath); }));
+            lib.DropDownItems.Add(MakeItem(S.OpenArchiveDir, delegate { OpenTarget(ActiveArchiveImgPath); }));
             lib.DropDownItems.Add(MakeItem(S.ExportDownloaded, delegate { DoExportDownloaded(); }));
             lib.DropDownItems.Add(MakeItem(S.DownloadRange, delegate { DoDownloadRange(); }));
         }
@@ -1498,11 +1498,14 @@ namespace BingWallpaperLite
         /// <summary>本地随机池的日期数：收藏 + 缓存 + 归档 + 老存档，按日期去重（与脚本口径一致）。</summary>
         internal static int LocalPoolCount()
         {
+            // 取数必须跟脚本同口径：脚本在接管下扫 takeover\favorites、takeover\cache
+            // 和接管图库，老存档整个不用。这里用静态路径的话，菜单显示的是安装目录
+            // 里的张数，和图库里实际有的对不上，接管图库空了也照样显示有货。
             HashSet<string> set = new HashSet<string>();
-            CollectDates(set, favDir, false);
-            CollectDates(set, cacheDir, false);
-            CollectDates(set, archiveImgDir, false);
-            CollectDates(set, OldDirPath, true);
+            CollectDates(set, ActiveFavDirPath, false);
+            CollectDates(set, ActiveCacheDir, false);
+            CollectDates(set, ActiveArchiveImgPath, false);
+            if (!TakeoverActive()) { CollectDates(set, OldDirPath, true); }
             return set.Count;
         }
 
@@ -1510,7 +1513,7 @@ namespace BingWallpaperLite
         internal static int FavDateCount()
         {
             HashSet<string> set = new HashSet<string>();
-            CollectDates(set, favDir, false);
+            CollectDates(set, ActiveFavDirPath, false);
             return set.Count;
         }
 

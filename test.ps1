@@ -2389,6 +2389,51 @@ Check '没偷偷接入聚焦接口' {
     return $true
 }
 
+# ---------------------------------------------------------------- 3.6.90 编年史调整
+
+Check '编年史文案写明只增不减' {
+    $s = Get-Content (Join-Path $Root 'src\Strings.cs') -Raw
+    if ($s.IndexOf([string][char]0x53EA + [char]0x589E + [char]0x4E0D + [char]0x51CF) -lt 0) {
+        return '灰字里没有「只增不减」'
+    }
+    if ($s.IndexOf([string][char]0x9884 + [char]0x5148 + [char]0x4E0B + [char]0x8F7D) -lt 0) {
+        return '标题没提到「预先下载」'
+    }
+    if ($s.IndexOf([string][char]0x7F16 + [char]0x5E74 + [char]0x53F2 + [char]0x6A21 + [char]0x5F0F) -lt 0) {
+        return '没有「编年史模式」这个说法'
+    }
+    return $true
+}
+
+Check '接管中不能换目录' {
+    $t = Get-Content (Join-Path $Root 'src\Forms\TakeoverForm.cs') -Raw
+    if ($t.IndexOf('btnPick.Visible = false') -lt 0) { return '接管时没藏起选择目录按钮' }
+    if ($t.IndexOf('S.TkChangeBlocked') -lt 0) { return 'DoPick 没拦接管' }
+    $s = Get-Content (Join-Path $Root 'src\Strings.cs') -Raw
+    if ($s.IndexOf('TkChangeBlocked') -lt 0) { return '没有拦截文案' }
+    if ($s.IndexOf('public static string TkChange ') -ge 0) { return 'TkChange 还在，说明换目录入口没删净' }
+    return $true
+}
+
+Check '随机池按接管目录取数' {
+    $r = Get-Content (Join-Path $Root 'src\Refresh.cs') -Raw
+    $i = $r.IndexOf('internal static int LocalPoolCount()')
+    if ($i -lt 0) { return '找不到 LocalPoolCount' }
+    $body = $r.Substring($i, 900)
+    if ($body.IndexOf('ActiveArchiveImgPath') -lt 0) { return '归档没走接管目录' }
+    if ($body.IndexOf('ActiveFavDirPath') -lt 0) { return '收藏没走接管目录' }
+    if ($body.IndexOf('ActiveCacheDir') -lt 0) { return '缓存没走接管目录' }
+    if ($body.IndexOf('if (!TakeoverActive())') -lt 0) { return '接管下没跳过老存档' }
+    # 裸 favDir / cacheDir 参与计数就是老 bug 回来了
+    if ($body -match 'CollectDates\(set, favDir') { return '还在数安装目录的收藏' }
+    if ($body -match 'CollectDates\(set, cacheDir') { return '还在数安装目录的缓存' }
+    if ($body -match 'CollectDates\(set, archiveImgDir') { return '还在数安装目录的归档' }
+    if ($r.IndexOf('CollectDates(set, ActiveFavDirPath, false);' + "`r`n            return set.Count;") -lt 0) {
+        return 'FavDateCount 没跟着改'
+    }
+    return $true
+}
+
 # ---------------------------------------------------------------- 汇总
 Write-Host ''
 Write-Host ('-' * 50) -ForegroundColor DarkGray
