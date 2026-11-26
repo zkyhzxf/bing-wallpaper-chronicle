@@ -43,11 +43,12 @@ namespace BingWallpaperLite
         }
 
         /// <summary>busy 期间照旧可点的项：查看、配置、自救出口。少一个就可能把用户锁在灰菜单里。</summary>
+        /// <summary>轮播开关与间隔：都是改配置，不起脚本，busy 期间也允许动。</summary>
         private static readonly string[] MenuAlwaysOn = new string[]
         {
-            "taskstate", "gallerytoggle", "wherethis",
+            "taskstate", "wherethis",
             "favtoggle", "favmgr", "pinmgr",
-            "lock", "notify", "startup", "theme", "sys", "exit"
+            "lock", "rotate", "rotateint", "notify", "startup", "theme", "sys", "exit"
         };
 
         /// <summary>纯展示的信息行：永远禁用，点了也不做事。灰着才是正确表达。</summary>
@@ -88,6 +89,9 @@ namespace BingWallpaperLite
             if (NameIn(MenuAlwaysOn, name)) { return true; }
             // 接管模式下快速换图不生效：图库只读语义 + 不做两步走，开关必须如实置灰
             if (string.Equals(name, "fastswitch", StringComparison.OrdinalIgnoreCase)) { return !g.Takeover; }
+            // 编年史模式下画廊没有意义：临时试看区与长期图库语义冲突。
+            // 直接置灰，让人一眼看出「这里不能用」，而不是点下去再弹一段解释。
+            if (string.Equals(name, "gallerytoggle", StringComparison.OrdinalIgnoreCase)) { return !g.Takeover; }
             if (g.Busy) { return !NameIn(MenuBusyBlocked, name); }
             if (string.Equals(name, "clean", StringComparison.OrdinalIgnoreCase)) { return !g.Takeover; }
             // 模式标牌只在接管时出现；出现时就是个入口（点开图库文件夹）
@@ -207,7 +211,13 @@ namespace BingWallpaperLite
             total++;
             if (!ShouldEnable("modestate", tkG)) { bad.Add("FAIL takeover:modestate 应为可用"); }
             total++;
-            if (!ShouldEnable("gallerytoggle", tkG)) { bad.Add("FAIL takeover:gallerytoggle 应为可用"); }
+            if (ShouldEnable("gallerytoggle", tkG)) { bad.Add("FAIL takeover:gallerytoggle 应为禁用"); }
+            total++;
+            if (!ShouldEnable("rotate", tkG)) { bad.Add("FAIL takeover:rotate 应为可用"); }
+            total++;
+            if (!ShouldEnable("rotate", idle)) { bad.Add("FAIL idle:rotate 应为可用"); }
+            total++;
+            if (!ShouldEnable("rotateint", busyG)) { bad.Add("FAIL busy:rotateint 应为可用"); }
 
             // 无本地候选：随机换一张必须挡
             total++;

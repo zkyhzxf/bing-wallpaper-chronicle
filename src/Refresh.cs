@@ -1375,10 +1375,69 @@ namespace BingWallpaperLite
 
         private static void RefreshLockCheck()
         {
+            // 「暂停」这一项在轮播态下显示为未暂停：轮播本身也是自动换图的一种，
+            // 点它等于「停掉轮播并转入暂停」，这是设计好的出口，不是状态错乱。
             ToolStripMenuItem it = menu.Items["lock"] as ToolStripMenuItem;
-            if (it == null) { return; }
-            bool on = GetCfgBool(ReadConfig(), "locked", false);
-            it.Text = on ? S.LockOn : S.LockOff;
+            if (it != null)
+            {
+                bool on = CurrentWallMode() == WallModePaused;
+                it.Text = on ? S.LockOn : S.LockOff;
+            }
+            RefreshRotateCheck();
+        }
+
+        /// <summary>轮播开关与档位：状态文字、当前间隔、选中标记都在这一处落。</summary>
+        private static void RefreshRotateCheck()
+        {
+            ToolStripMenuItem rp = menu.Items["randompick"] as ToolStripMenuItem;
+            if (rp == null) { return; }
+
+            bool on;
+            int mins;
+            try
+            {
+                on = CurrentWallMode() == WallModeRotate;
+                mins = RotateMinutes;
+            }
+            catch { return; }
+
+            foreach (ToolStripItem x in rp.DropDownItems)
+            {
+                ToolStripMenuItem mi = x as ToolStripMenuItem;
+                if (mi == null) { continue; }
+
+                if (string.Equals(mi.Name, "rotate", StringComparison.OrdinalIgnoreCase))
+                {
+                    mi.Text = on ? S.RotateOn(mins) : S.RotateOff;
+                    continue;
+                }
+
+                if (string.Equals(mi.Name, "rotateint", StringComparison.OrdinalIgnoreCase))
+                {
+                    mi.Text = S.RotateIntervalMenuN(mins);
+                    ToolStripMenuItem riCustom = null;
+                    foreach (ToolStripItem y in mi.DropDownItems)
+                    {
+                        ToolStripMenuItem sub = y as ToolStripMenuItem;
+                        if (sub == null) { continue; }
+                        if (string.Equals(sub.Name, "rotateintcustom", StringComparison.OrdinalIgnoreCase))
+                        {
+                            riCustom = sub;
+                            continue;
+                        }
+                        if (sub.Tag == null) { continue; }
+                        int v = 0;
+                        try { v = Convert.ToInt32(sub.Tag); } catch { continue; }
+                        if (sub.Checked != (v == mins)) { sub.Checked = (v == mins); }
+                    }
+                    // 当前值不在预设档位里 → 勾在「自定义」
+                    if (riCustom != null)
+                    {
+                        bool preset = (mins == 5 || mins == 10 || mins == 15 || mins == 30 || mins == 60 || mins == 120);
+                        if (riCustom.Checked == preset) { riCustom.Checked = !preset; }
+                    }
+                }
+            }
         }
 
         /// <summary>「收藏管理」「换过的图」两项后面带上张数与体积，让用户一眼看到规模。</summary>
@@ -1456,6 +1515,101 @@ namespace BingWallpaperLite
         }
 
         /// <summary>选中某个随机范围：先落盘，再让脚本按这个范围换一张。</summary>
+        /// <summary>
+        /// 轮播一跳。六道门，任何一道不过就静默返回：不弹窗、不写盘、不打扰。
+        ///   1 轮播开着  2 脚本空闲  3 不在画廊  4 今天的图已就位  5 到点了  6 池子非空
+        /// 第 4 道是「每天开机第一张必须从今天的图开始」的落点。
+        /// </summary>
+        private static void RotateTick()
+        {
+            Dictionary<string, object> cfg;
+            try { cfg = ReadConfig(); } catch { return; }
+            if (!GetCfgBool(cfg, "rotate", false)) { return; }
+
+            // 门 2：脚本在跑，或者托盘还在忙 —— 让路，下一跳再说
+            if (busy) { return; }
+            try { if (File.Exists(LockPathNow)) { return; } } catch { }
+
+            // 门 3：画廊是临时试看区，轮播会把试看的图挤掉
+            if (GalleryMode) { return; }
+
+            // 门 4：今天的图没就位，先补图，本跳不轮播。
+            // 开机时 state 还停在前一天，这里拉 -Index 0 把今天那张下载换上；
+            // 下一跳 state.date 已经是今天，才真正进入轮播。
+            string today = DateTime.Today.ToString("yyyyMMdd");
+            Dictionary<string, object> state;
+            try { state = ReadJson(StatePathNow); } catch { state = null; }
+            string stDate = state == null ? "" : GetStr(state, "date");
+            if (!string.Equals(stDate, today, StringComparison.Ordinal))
+            {
+                RotateCatchupToday();
+                return;
+            }
+
+            // 门 5：到点没有
+            int mins = RotateMinutes;
+            if (mins < 1) { mins = 30; }
+            DateTime last;
+            string lastRaw = GetStr(cfg, "lastRotate");
+            if (!DateTime.TryParse(lastRaw, out last))
+            {
+                // 没有锚点（首次开轮播、或配置被改坏）：从现在开始计时，不立刻换图
+                CfgSetString("lastRotate", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
+                return;
+            }
+            if ((DateTime.Now - last).TotalMinutes < mins) { return; }
+
+            // 门 6：池子非空。gate 是上次 RefreshAll 的快照，可能过期，先真扫一次
+            int localN = 0;
+            try { localN = GateNow.LocalN; } catch { }
+            if (localN <= 0)
+            {
+                try { RefreshAllPublic(); } catch { }
+                try { localN = GateNow.LocalN; } catch { }
+            }
+            if (localN <= 0)
+            {
+                SetWallMode(WallModeDaily);
+                try { Balloon(S.RotateEmptyBalloon, S.RotateEmptyHint); } catch { }
+                return;
+            }
+
+            // any 会先做联网预检（最坏一分钟以上），轮播不能卡这个 → 降级成本地池
+            string scope = GetStr(cfg, "randomScope");
+            if (scope != "fav" && scope != "local") { scope = "local"; }
+
+            CfgSetString("lastRotate", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
+            RunScriptEx("-Random -RandomScope " + scope, "rotate");
+        }
+
+        /// <summary>
+        /// 今天那张还没就位：拉一次 -Index 0。同一自然日最多 3 次，
+        /// 网络不通时不能让 60 秒一跳的定时器反复拉脚本。
+        /// </summary>
+        private static void RotateCatchupToday()
+        {
+            string today = DateTime.Today.ToString("yyyyMMdd");
+            if (!string.Equals(rotateCatchupDay, today, StringComparison.Ordinal))
+            {
+                rotateCatchupDay = today;
+                rotateCatchupTries = 0;
+            }
+            if (rotateCatchupTries >= 3) { return; }
+            rotateCatchupTries++;
+            RunScriptEx("-Index 0", "rotate");
+        }
+
+        /// <summary>自定义轮播间隔。取消则原样不动。</summary>
+        internal static void DoRotateCustom()
+        {
+            using (MinutesForm f = new MinutesForm(RotateMinutes))
+            {
+                if (f.ShowDialog() != DialogResult.OK) { return; }
+                RotateMinutes = f.SelectedMinutes;
+            }
+            try { RefreshAllPublic(); } catch { }
+        }
+
         internal static void DoRandomPick(string scope)
         {
             try

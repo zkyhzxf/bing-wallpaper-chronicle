@@ -1418,7 +1418,9 @@ Check '出口项永不禁用' {
     $t = Get-Content (Join-Path $Root 'src\MenuState.cs') -Raw
     $m = [regex]::Match($t, '(?s)MenuAlwaysOn = new string\[\]\s*\{(.*?)\};')
     if (-not $m.Success) { return 'MenuState.cs 里找不到 MenuAlwaysOn' }
-    foreach ($must in @('"gallerytoggle"', '"exit"', '"lock"', '"startup"', '"sys"', '"taskstate"')) {
+    # gallerytoggle 从 v3.6.89 起不在这个名单里：编年史下必须能置灰，
+    # 而 AlwaysOn 是「无条件可用」，放进来的东西盖不掉。它改由 ShouldEnable 专门判。
+    foreach ($must in @('"exit"', '"lock"', '"rotate"', '"startup"', '"sys"', '"taskstate"')) {
         if ($m.Groups[1].Value -notmatch [regex]::Escape($must)) { return ('MenuAlwaysOn 缺 ' + $must) }
     }
     return $true
@@ -2129,7 +2131,7 @@ Check '照片墙认接管图库（Active 路径）' {
     return $true
 }
 
-Check '收藏家模式可点开文件夹' {
+Check '编年史模式可点开文件夹' {
     $m = Get-Content (Join-Path $Root 'src\Menu.cs') -Raw
     if ($m -notmatch 'modeState\.Click \+= delegate') { return 'modestate 没绑点击' }
     if ($m.IndexOf('Program.OpenTakeoverRoot') -lt 0) { return '没调打开目录的方法' }
@@ -2265,6 +2267,125 @@ Check '回到今天在边界时给反馈' {
     if ($s.IndexOf('S.AlreadyToday') -lt 0) { return '没有 AlreadyToday 提示' }
     $st = Get-Content (Join-Path $Root 'src\Strings.cs') -Raw
     if ($st.IndexOf('AlreadyTodayHint') -lt 0) { return '没有提示文案' }
+    return $true
+}
+
+# ---------------------------------------------------------------- 3.6.89
+
+Check '收藏家已全部改名为编年史' {
+    $hits = @()
+    foreach ($rel in @('src\Strings.cs', 'src\Menu.cs', 'src\Refresh.cs', 'README.md')) {
+        $f = Join-Path $Root $rel
+        if (-not (Test-Path $f)) { continue }
+        if ((Get-Content $f -Raw).IndexOf([string][char]0x6536 + [char]0x85CF + [char]0x5BB6) -ge 0) { $hits += $rel }
+    }
+    if ($hits.Count -gt 0) { return ('还有旧名字：' + ($hits -join ', ')) }
+    return $true
+}
+
+Check '轮播三态互斥只有一处实现' {
+    $s = Get-Content (Join-Path $Root 'src\Program.cs') -Raw
+    if ($s.IndexOf('internal static void SetWallMode(string mode)') -lt 0) { return '没有 SetWallMode' }
+    # 写入口必须一次写完两个键，否则会出现「暂停」和「轮播」同时亮
+    $body = $s.Substring($s.IndexOf('internal static void SetWallMode(string mode)'))
+    $end = $body.IndexOf('internal static int RotateMinutes')
+    if ($end -gt 0) { $body = $body.Substring(0, $end) }
+    if ($body.IndexOf('"locked"') -lt 0) { return 'SetWallMode 没写 locked' }
+    if ($body.IndexOf('"rotate"') -lt 0) { return 'SetWallMode 没写 rotate' }
+    # lock 项与 rotate 项都只许调 SetWallMode，不许自己 SetCfg
+    $m = Get-Content (Join-Path $Root 'src\Menu.cs') -Raw
+    if ($m.IndexOf('SetWallMode(WallModePaused)') -lt 0) { return 'lock 项没走 SetWallMode' }
+    if ($m.IndexOf('SetWallMode(WallModeRotate)') -lt 0) { return 'rotate 项没走 SetWallMode' }
+    return $true
+}
+
+Check '轮播间隔夹在 1-720' {
+    $s = Get-Content (Join-Path $Root 'src\Program.cs') -Raw
+    if ($s.IndexOf('v < 1 ? 1 : (v > 720 ? 720 : v)') -lt 0) { return '没有夹取' }
+    $f = Get-Content (Join-Path $Root 'src\Forms\MinutesForm.cs') -Raw
+    if ($f.IndexOf('picker.Minimum = 1') -lt 0) { return '输入框没设下限' }
+    if ($f.IndexOf('picker.Maximum = 720') -lt 0) { return '输入框没设上限' }
+    return $true
+}
+
+Check '轮播等今天的图到位才开始' {
+    $s = Get-Content (Join-Path $Root 'src\Refresh.cs') -Raw
+    if ($s.IndexOf('private static void RotateTick()') -lt 0) { return '没有 RotateTick' }
+    if ($s.IndexOf('RotateCatchupToday()') -lt 0) { return '没就位时不补今天的图' }
+    if ($s.IndexOf('rotateCatchupTries >= 3') -lt 0) { return '补跑没有次数上限' }
+    if ($s.IndexOf('string.Equals(stDate, today, StringComparison.Ordinal)') -lt 0) { return '没有把 state.date 和今天比对' }
+    # any 会联网预检，轮播下必须降级
+    if ($s.IndexOf('scope = "local"') -lt 0) { return 'any 没降级成本地池' }
+    return $true
+}
+
+Check '轮播定时器独立于忙碌图标定时器' {
+    $s = Get-Content (Join-Path $Root 'src\Program.cs') -Raw
+    if ($s.IndexOf('rotateWatch.Interval = 60000') -lt 0) { return '没有 60 秒轮播定时器' }
+    if ($s.IndexOf('rotateWatch.Tick') -lt 0) { return '没有挂 Tick' }
+    if ($s.IndexOf('private static System.Windows.Forms.Timer rotateWatch;') -lt 0) { return '没有字段' }
+    return $true
+}
+
+Check '编年史下画廊直接置灰' {
+    $s = Get-Content (Join-Path $Root 'src\MenuState.cs') -Raw
+    if ($s.IndexOf('"gallerytoggle", StringComparison.OrdinalIgnoreCase)) { return !g.Takeover; }') -lt 0) {
+        return 'ShouldEnable 没有按接管置灰'
+    }
+    $m = [regex]::Match($s, '(?s)MenuAlwaysOn = new string\[\]\s*\{(.*?)\};')
+    if (-not $m.Success) { return '找不到 MenuAlwaysOn' }
+    if ($m.Groups[1].Value -match '"gallerytoggle"') { return '还在 AlwaysOn 名单里，盖不掉' }
+    $t = Get-Content (Join-Path $Root 'src\Forms\TakeoverForm.cs') -Raw
+    if ($t.IndexOf('Program.RunGalleryClear') -lt 0) { return '进接管时没清画廊' }
+    return $true
+}
+
+Check '编年史窗口有今日与自动换图两行' {
+    $s = Get-Content (Join-Path $Root 'src\Forms\TakeoverForm.cs') -Raw
+    if ($s.IndexOf('lblToday') -lt 0) { return '没有今日那行' }
+    if ($s.IndexOf('lblAuto') -lt 0) { return '没有自动换图那行' }
+    if ($s.IndexOf('S.TkStatLine') -lt 0) { return '统计行没换成带跨度的' }
+    if ($s.IndexOf('S.TkMissingDays') -lt 0) { return '没有断档提示' }
+    $st = Get-Content (Join-Path $Root 'src\Strings.cs') -Raw
+    if ($st.IndexOf('TkTodayMissing') -lt 0) { return '没有未就位文案' }
+    return $true
+}
+
+Check '更新检查能解析安装包' {
+    $s = Get-Content (Join-Path $Root 'src\Update.cs') -Raw
+    if ($s.IndexOf('AssetUrl') -lt 0) { return 'UpdateProbe 没扩展 AssetUrl' }
+    if ($s.IndexOf('browser_download_url') -lt 0) { return '没解析下载地址' }
+    if ($s.IndexOf('AssetSize') -lt 0) { return '没解析体积' }
+    $u = Get-Content (Join-Path $Root 'src\SelfUpdate.cs') -Raw
+    if ($u.IndexOf('gh-proxy.com/') -lt 0) { return '下载没走 gh-proxy' }
+    if ($u.IndexOf("(byte)'M'") -lt 0) { return '下载后没校验 PE 头' }
+    if ($u.IndexOf('HttpStatusCode.PartialContent') -lt 0) { return '续传没判 206' }
+    if ($u.IndexOf('skipVersion') -lt 0) { return '没有跳过版本' }
+    if ($u.IndexOf('lastUpdateCheck') -lt 0) { return '没有每天一次的节流' }
+    return $true
+}
+
+Check '作者主页按钮指向正确' {
+    $u = Get-Content (Join-Path $Root 'src\Update.cs') -Raw
+    if ($u.IndexOf('https://space.bilibili.com/14027543') -lt 0) { return 'URL 不对' }
+    $a = Get-Content (Join-Path $Root 'src\Forms\AboutForm.cs') -Raw
+    if ($a.IndexOf('Program.OpenAuthorPage()') -lt 0) { return '关于窗口没有按钮' }
+    return $true
+}
+
+Check '版本比较按点分段' {
+    $s = Get-Content (Join-Path $Root 'src\Update.cs') -Raw
+    if ($s.IndexOf('TrimStart(' + "'v', 'V'" + ')') -lt 0) { return '没忽略 v 前缀' }
+    if ($s.IndexOf('int.TryParse') -lt 0) { return '没按数字比较' }
+    return $true
+}
+
+Check '没偷偷接入聚焦接口' {
+    $bad = @()
+    Get-ChildItem (Join-Path $Root 'src') -Recurse -Filter *.cs -File | ForEach-Object {
+        if ((Get-Content $_.FullName -Raw).IndexOf('arc.msn.com') -ge 0) { $bad += $_.Name }
+    }
+    if ($bad.Count -gt 0) { return ('混进了聚焦接口：' + ($bad -join ', ')) }
     return $true
 }
 

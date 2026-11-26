@@ -19,9 +19,9 @@ using Microsoft.Win32;
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyConfiguration("Release")]
 [assembly: AssemblyCulture("")]
-[assembly: AssemblyVersion("3.6.88.0")]
-[assembly: AssemblyFileVersion("3.6.88.0")]
-[assembly: AssemblyInformationalVersion("3.6.88")]
+[assembly: AssemblyVersion("3.6.89.0")]
+[assembly: AssemblyFileVersion("3.6.89.0")]
+[assembly: AssemblyInformationalVersion("3.6.89")]
 [assembly: ComVisible(false)]
 
 namespace BingWallpaperLite
@@ -31,7 +31,7 @@ namespace BingWallpaperLite
         // ---------------------------------------------------------------- 常量
 
         internal const string AppName     = "必应壁纸编年史";
-        internal const string AppVersion  = "3.6.88";
+        internal const string AppVersion  = "3.6.89";
         private const string TaskName    = "BingWallpaperChronicle";
         private const string RunValue    = "BingWallpaperChronicle";
 
@@ -370,6 +370,106 @@ namespace BingWallpaperLite
             catch { }
         }
 
+        /// <summary>写一个布尔配置。</summary>
+        internal static void CfgSetBool(string key, bool val)
+        {
+            try
+            {
+                Dictionary<string, object> c = ReadConfig();
+                SetCfg(c, key, val);
+                WriteConfig(c);
+            }
+            catch { }
+        }
+
+        /// <summary>写一个整型配置。</summary>
+        internal static void CfgSetInt(string key, int val)
+        {
+            try
+            {
+                Dictionary<string, object> c = ReadConfig();
+                SetCfg(c, key, val);
+                WriteConfig(c);
+            }
+            catch { }
+        }
+
+        // ================================================================ 换图策略三态
+        //
+        //   daily  ：每天一次（默认）
+        //   paused ：暂停自动换图，照常下载，只是不换桌面
+        //   rotate ：随机轮播，每 rotateMinutes 分钟换一张
+        //
+        // 三态共用 config.json 的两个键（locked / rotate），一次写完。
+        // 互斥只在这里实现：散到各个 Click 里去写，迟早出现「暂停」和「轮播」同时亮
+        // 这种自相矛盾的状态，而且谁也说不清该以哪个为准。
+
+        internal const string WallModeDaily = "daily";
+        internal const string WallModePaused = "paused";
+        internal const string WallModeRotate = "rotate";
+
+        /// <summary>当前换图策略。派生值，不单独存盘。</summary>
+        internal static string CurrentWallMode()
+        {
+            Dictionary<string, object> c;
+            try { c = ReadConfig(); } catch { return WallModeDaily; }
+            try
+            {
+                if (GetCfgBool(c, "rotate", false)) { return WallModeRotate; }
+                if (GetCfgBool(c, "locked", false)) { return WallModePaused; }
+            }
+            catch { }
+            return WallModeDaily;
+        }
+
+        /// <summary>
+        /// 唯一写入口。定下一态：locked 与 rotate 一次性落盘，互斥由这里保证。
+        /// 切进 rotate 时把锚点重设为现在 —— 否则上一次轮播的时间差会让它立刻又换一张。
+        /// </summary>
+        internal static void SetWallMode(string mode)
+        {
+            try
+            {
+                Dictionary<string, object> c = ReadConfig();
+                SetCfg(c, "locked", mode == WallModePaused);
+                SetCfg(c, "rotate", mode == WallModeRotate);
+                if (mode == WallModeRotate)
+                {
+                    SetCfg(c, "lastRotate", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
+                }
+                WriteConfig(c);
+            }
+            catch { }
+        }
+
+        /// <summary>
+        /// 当前生效的 state.json 的日期与标题。接管时读沙盒里那份，不是安装目录那份 ——
+        /// 两处 state 内容不同，读错了会显示成别人家的图。
+        /// </summary>
+        internal static void CurrentStateDateTitle(out string date, out string title)
+        {
+            date = "";
+            title = "";
+            try
+            {
+                Dictionary<string, object> st = ReadJson(StatePathNow);
+                date = GetStr(st, "date");
+                title = GetStr(st, "title");
+            }
+            catch { }
+        }
+
+        /// <summary>轮播间隔（分钟），夹在 1–720。越界不报错，直接夹住。</summary>
+        internal static int RotateMinutes
+        {
+            get
+            {
+                int v = CfgInt("rotateMinutes", 30);
+                return v < 1 ? 1 : (v > 720 ? 720 : v);
+            }
+            set { CfgSetInt("rotateMinutes", value < 1 ? 1 : (value > 720 ? 720 : value)); }
+        }
+
         /// <summary>
         /// 缩略图三重封顶之一：清孤儿（源图已经不在）+ 按上限淘汰最久未写的。
         /// 缩略图是派生数据，重建成本低，直接删不进回收站。
@@ -505,6 +605,10 @@ namespace BingWallpaperLite
         private static bool themeApplied = false;
         private static bool lastAppliedDark = false;
         private static System.Windows.Forms.Timer lockWatch;
+        private static System.Windows.Forms.Timer rotateWatch;
+        // 轮播补跑节流：同一自然日最多拉脚本补当天的图 3 次，网络不通时不刷屏
+        private static string rotateCatchupDay = "";
+        private static int rotateCatchupTries = 0;
 
         private static void ResolvePaths()
         {
@@ -1296,6 +1400,14 @@ namespace BingWallpaperLite
                     };
                     lockWatch.Start();
 
+                    // ---- 随机轮播：60 秒一跳，到点从本地池随机换一张。
+                    // 单独一个 Timer 而不是塞进 lockWatch：那个每秒一跳、只干图标校正，
+                    // 混进来会让「换图」和「刷图标」互相牵连，出问题不好定位。
+                    rotateWatch = new System.Windows.Forms.Timer();
+                    rotateWatch.Interval = 60000;
+                    rotateWatch.Tick += delegate { try { RotateTick(); } catch { } };
+                    rotateWatch.Start();
+
                     if (firstRun)
                     {
                         // 全新安装：立刻换一张，别让人对着没反应的托盘发呆
@@ -1311,6 +1423,9 @@ namespace BingWallpaperLite
                         try { EnsureRegistered(false); } catch { }
                     };
                     regTimer.Start();
+
+                    // 15 秒后静默查一次新版；每天一次，失败不重试
+                    try { StartUpdateWatch(); } catch { }
 
                     Application.Run();
                 }

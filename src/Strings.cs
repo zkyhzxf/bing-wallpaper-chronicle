@@ -602,10 +602,10 @@ namespace BingWallpaperLite
                 ? ("Add every day between " + a + " and " + b + " that the library does not have yet.\r\nExisting days are skipped, nothing is overwritten. Roughly 2 seconds per image; close this window to stop.\r\n\r\nStart?")
                 : ("把 " + a + " ~ " + b + " 之间图库还没有的日期逐天补进来。\r\n已有的一张都不动、不覆盖；每张约 2 秒，关掉这个窗口就停。\r\n\r\n开始吗？");
         }
-        /// <summary>菜单里的常驻模式标牌：接管时显示「收藏家模式 · 目录名」。</summary>
+        /// <summary>菜单里的常驻模式标牌：接管时显示「编年史 · 目录名」。</summary>
         public static string ModeBadge(string name)
         {
-            string tpl = _en ? "📁 Collector mode · {0}" : "📁 收藏家模式 · {0}";
+            string tpl = _en ? "📁 Chronicle · {0}" : "📁 编年史 · {0}";
             return string.Format(tpl, name);
         }
         public static string ModeBadgeHint(string root)
@@ -1420,6 +1420,109 @@ namespace BingWallpaperLite
             return "缓存  " + cCount + " 张 / " + cMb.ToString("0.0") + " MB（最近 " + KeepDaysN + " 天，自动清理）\r\n" +
                    "收藏  " + fCount + " 张 / " + fMb.ToString("0.0") + " MB（永久保留）\r\n" +
                    "以前换过的壁纸  " + aCount + " 张 / " + aMb.ToString("0.0") + " MB（有容量上限，满了从旧到新清）";
+        }
+
+        // ---- 随机轮播（3.6.89）
+        public static string RotateOff { get { return T("☐ 随机轮播", "☐ Random rotation"); } }
+        public static string RotateOn(int min)
+        {
+            return _en ? ("☑ Random rotation · on (every " + min + " min)")
+                       : ("☑ 随机轮播 · 运行中（每 " + min + " 分钟）");
+        }
+        public static string RotateTip
+        {
+            get
+            {
+                return T("开着就按间隔自动换桌面，和每日一换互斥：开轮播会解除暂停，点暂停又会停掉轮播。\r\n只从本地已有的图里挑，不下载新图；今天的图没到位之前不开始计时。",
+                         "Rotates the desktop on a timer. Exclusive with Pause auto-change. Picks from local images only; the clock starts after today's image is in place.");
+            }
+        }
+        public static string RotateIntervalMenu { get { return T("轮播间隔", "Rotation interval"); } }
+        public static string RotateIntervalMenuN(int min)
+        {
+            return _en ? ("Rotation interval (" + min + " min)") : ("轮播间隔（" + min + " 分钟）");
+        }
+        public static string RotateEvery(int min)
+        {
+            return _en ? ("Every " + min + " min") : ("每 " + min + " 分钟");
+        }
+        public static string RotateCustom { get { return T("自定义…", "Custom…"); } }
+        public static string RotateOnBalloon(int min)
+        {
+            return _en ? ("Random rotation on, every " + min + " min")
+                       : ("随机轮播已开，每 " + min + " 分钟换一张");
+        }
+        public static string RotateOnHint { get { return T("只从本地已有的图里挑；今天的图到位后才开始计时", "Picks from local images; the clock starts once today's image is in place"); } }
+        public static string RotateOffBalloon { get { return T("随机轮播已关", "Random rotation off"); } }
+        public static string RotateOffHint { get { return T("回到每日一换", "Back to one change per day"); } }
+        public static string RotateEmptyBalloon { get { return T("图库是空的，轮播已停", "The library is empty, rotation stopped"); } }
+        public static string RotateEmptyHint { get { return T("先换一张图或补齐图库，再开轮播", "Switch to an image or fill the library first"); } }
+        public static string RotateCustomTitle { get { return T(" · 轮播间隔", " · Rotation interval"); } }
+        public static string RotateCustomHint { get { return T("每隔多少分钟换一张（1–720）", "Minutes between switches (1–720)"); } }
+
+        // ---- 编年史窗口状态行（3.6.89）
+        public static string TkHeading { get { return T("编年史：把桌面壁纸换成你自己的图库", "Chronicle: switch the desktop to your own image library"); } }
+        public static string TkStatLine(int n, int days, string first, string last)
+        {
+            string span = (first.Length > 0 ? (" · " + first + " ~ " + last) : "");
+            return _en ? ("● Taken over · " + n + " images / " + days + " days" + span)
+                       : ("● 接管中 · " + n + " 张 / " + days + " 天" + span);
+        }
+        public static string TkTodayLine(string dateCn, string title)
+        {
+            return _en ? ("Today " + dateCn + " · " + title) : ("今日 " + dateCn + " · " + title);
+        }
+        public static string TkTodayMissing(string deskDateCn)
+        {
+            return _en ? ("Today's image is not in place yet; the desktop still shows " + deskDateCn)
+                       : ("今日的图还没到位，桌面还是 " + deskDateCn + " 那张");
+        }
+        public static string TkAutoLine(bool paused, bool rotating, int mins)
+        {
+            string auto = _en ? (paused ? "auto-change paused" : "auto-change on")
+                              : (paused ? "自动换图 已暂停" : "自动换图 运行中");
+            string rot = _en ? (rotating ? ("rotation every " + mins + " min") : "rotation off")
+                             : (rotating ? ("轮播 每 " + mins + " 分钟") : "轮播 关");
+            return auto + " · " + rot + (_en ? " · read-only" : " · 只读挂载");
+        }
+        public static string TkMissingDays(int n, string sample)
+        {
+            return _en ? ("Missing " + n + " day(s) in the library (" + sample + ")")
+                       : ("图库缺 " + n + " 天（" + sample + "）");
+        }
+
+        // ---- 自动更新（3.6.89）
+        public static string AboutBtnAuthor { get { return T("作者主页", "Author"); } }
+        public static string UpdNewTitle { get { return T("发现新版本", "Update available"); } }
+        public static string UpdNewBody(string latest, string cur, string size)
+        {
+            if (_en)
+            {
+                return "v" + latest + " is available (you are on v" + cur + ").\r\n" +
+                       (size.Length > 0 ? ("Installer size " + size + ".\r\n") : "") +
+                       "Download it now and start the installer?";
+            }
+            return "新版本 v" + latest + " 已发布（当前 v" + cur + "）。\r\n" +
+                   (size.Length > 0 ? ("安装包 " + size + "。\r\n") : "") +
+                   "现在下载并启动安装程序吗？";
+        }
+        public static string BtnUpgradeNow { get { return T("立即升级", "Upgrade now"); } }
+        public static string BtnLater { get { return T("以后再说", "Later"); } }
+        public static string BtnSkipVer { get { return T("跳过这个版本", "Skip this version"); } }
+        public static string UpdDownloading(int pct)
+        {
+            return _en ? ("Downloading " + pct + "%") : ("下载中 " + pct + "%");
+        }
+        public static string UpdDownloadOk { get { return T("下载完成，正在启动安装程序", "Downloaded, starting the installer"); } }
+        public static string UpdDownloadFail { get { return T("下载失败，已在浏览器打开 Release 页", "Download failed; the release page has been opened"); } }
+        public static string UpdBadAsset { get { return T("这个版本没有可用的安装包，已打开 Release 页", "No installer asset for this version; the release page has been opened"); } }
+        public static string UpdNewHint
+        {
+            get
+            {
+                return T("升级会关掉托盘、运行安装程序；配置、收藏和接管目录都不动。\r\n「跳过这个版本」只跳过这一个，以后有更高版本还会再提。",
+                         "Upgrading closes the tray icon and runs the installer; settings, favorites and the takeover folder stay untouched.\r\nSkip only applies to this version.");
+            }
         }
     }
 

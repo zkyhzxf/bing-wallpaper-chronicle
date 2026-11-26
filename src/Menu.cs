@@ -193,6 +193,60 @@ namespace BingWallpaperLite
             // 随机换一张：范围是每次都可能变的意图，所以做成子菜单而不是塞进设置
             ToolStripMenuItem randItem = new ToolStripMenuItem(S.RandomFav);
             randItem.Name = "randompick";
+
+            // 轮播：把「随机换一张」从一次性动作变成持续行为。
+            // 与「暂停自动换图」互斥，两边都只调 SetWallMode，互斥规则只有一处实现。
+            ToolStripMenuItem rotateItem = new ToolStripMenuItem(S.RotateOff);
+            rotateItem.Name = "rotate";
+            rotateItem.CheckOnClick = false;
+            rotateItem.ToolTipText = S.RotateTip;
+            rotateItem.Click += delegate
+            {
+                keepMenuOpenAfterClick = true;
+                if (CurrentWallMode() == WallModeRotate)
+                {
+                    SetWallMode(WallModeDaily);
+                    Balloon(S.RotateOffBalloon, S.RotateOffHint);
+                }
+                else if (GateNow.LocalN <= 0)
+                {
+                    // 池子空了开轮播等于开了个空转的定时器，直接拦下比让它静默不干活好
+                    Balloon(S.RotateEmptyBalloon, S.RotateEmptyHint);
+                }
+                else
+                {
+                    SetWallMode(WallModeRotate);
+                    Balloon(S.RotateOnBalloon(RotateMinutes), S.RotateOnHint);
+                }
+                anchor.BeginInvoke((MethodInvoker)delegate { try { RefreshAllPublic(); } catch { } });
+            };
+            randItem.DropDownItems.Add(rotateItem);
+
+            // 轮播间隔：常用档位点一下就生效，冷门值走自定义输入
+            ToolStripMenuItem riMenu = new ToolStripMenuItem(S.RotateIntervalMenu);
+            riMenu.Name = "rotateint";
+            foreach (int mins in new int[] { 5, 10, 15, 30, 60, 120 })
+            {
+                int mm = mins;
+                ToolStripMenuItem mi = new ToolStripMenuItem(S.RotateEvery(mm));
+                mi.Name = "rotateint" + mm;
+                mi.Tag = mm;
+                mi.Click += delegate
+                {
+                    keepMenuOpenAfterClick = true;
+                    RotateMinutes = mm;
+                    anchor.BeginInvoke((MethodInvoker)delegate { try { RefreshAllPublic(); } catch { } });
+                };
+                riMenu.DropDownItems.Add(mi);
+            }
+            riMenu.DropDownItems.Add(new ToolStripSeparator());
+            ToolStripMenuItem riCustom = new ToolStripMenuItem(S.RotateCustom);
+            riCustom.Name = "rotateintcustom";
+            riCustom.Click += delegate { DoRotateCustom(); };
+            riMenu.DropDownItems.Add(riCustom);
+            randItem.DropDownItems.Add(riMenu);
+            randItem.DropDownItems.Add(new ToolStripSeparator());
+
             foreach (string[] sc in new string[][] {
                 new string[] { "fav",   "randfav"   },
                 new string[] { "local", "randlocal" },
@@ -246,18 +300,18 @@ namespace BingWallpaperLite
             lockItem.Click += delegate
             {
                 keepMenuOpenAfterClick = true;
-                Dictionary<string, object> c = ReadConfig();
-                bool next = !GetCfgBool(c, "locked", false);
-                SetCfg(c, "locked", next);
-                WriteConfig(c);
-
-                if (next)
+                // 三态互斥统一走 SetWallMode：点这一下要么进暂停，要么回每日一换。
+                // 回每日一换时轮播一并关掉 —— 「打开自动换图」就该让轮播让位。
+                bool wasPaused = CurrentWallMode() == WallModePaused;
+                if (wasPaused)
                 {
-                    Balloon(S.BLocked, S.LockedHint);
+                    SetWallMode(WallModeDaily);
+                    anchor.BeginInvoke((MethodInvoker)delegate { RunScript("-Index 0"); });
                 }
                 else
                 {
-                    anchor.BeginInvoke((MethodInvoker)delegate { RunScript("-Index 0"); });
+                    SetWallMode(WallModePaused);
+                    Balloon(S.BLocked, S.LockedHint);
                 }
             };
             m.Items.Add(lockItem);

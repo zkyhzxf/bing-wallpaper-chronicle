@@ -42,21 +42,27 @@ namespace BingWallpaperLite
             lblUpdate.Text = S.UpdChecking;
             Controls.Add(lblUpdate);
 
+            Button btnAuthor = new Button();
+            btnAuthor.Text = S.AboutBtnAuthor;
+            btnAuthor.SetBounds(244, 526, 96, 30);
+            btnAuthor.Click += delegate { Program.OpenAuthorPage(); };
+            Controls.Add(btnAuthor);
+
             Button btnReleases = new Button();
             btnReleases.Text = S.AboutBtnReleases;
-            btnReleases.SetBounds(344, 526, 120, 30);
+            btnReleases.SetBounds(348, 526, 96, 30);
             btnReleases.Click += delegate { Program.OpenReleasesPage(); };
             Controls.Add(btnReleases);
 
             btnRecheck = new Button();
             btnRecheck.Text = S.AboutBtnRecheck;
-            btnRecheck.SetBounds(472, 526, 92, 30);
+            btnRecheck.SetBounds(452, 526, 80, 30);
             btnRecheck.Click += delegate { StartProbe(); };
             Controls.Add(btnRecheck);
 
             Button btnClose = new Button();
             btnClose.Text = S.AboutBtnClose;
-            btnClose.SetBounds(572, 526, 72, 30);
+            btnClose.SetBounds(540, 526, 104, 30);
             btnClose.DialogResult = DialogResult.Cancel;
             btnClose.Click += delegate { Close(); };
             Controls.Add(btnClose);
