@@ -2434,6 +2434,18 @@ Check '随机池按接管目录取数' {
     return $true
 }
 
+Check '关于窗口是传统布局' {
+    $a = Get-Content (Join-Path $Root 'src\Forms\AboutForm.cs') -Raw
+    if ($a.IndexOf('new TextBox()') -ge 0) { return '还在用白底 TextBox 装正文' }
+    if ($a.IndexOf('PictureBox') -lt 0) { return '左上没有图标' }
+    if ($a.IndexOf('bing.ico') -lt 0) { return '图标没取 bing.ico' }
+    if ($a.IndexOf('new Label()') -lt 0) { return '正文没改成 Label' }
+    if ($a.IndexOf('S.AboutTagline') -lt 0) { return '标题区没有一句话简介' }
+    $i = Get-Content (Join-Path $Root 'src\Info.cs') -Raw
+    if ($i.IndexOf('sb.AppendLine(AppName + "  v" + AppVersion);') -ge 0) { return '正文还留着重复的标题行' }
+    return $true
+}
+
 # ---------------------------------------------------------------- 汇总
 Write-Host ''
 Write-Host ('-' * 50) -ForegroundColor DarkGray

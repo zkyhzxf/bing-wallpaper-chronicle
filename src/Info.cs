@@ -228,11 +228,9 @@ namespace BingWallpaperLite
             }
             catch { }
 
+            // 名称、版本、一句话都挪到窗口标题区了，正文直接从小节标题开始；
+            // 留一份在上面的结果是同一句话在窗口里出现两遍。
             StringBuilder sb = new StringBuilder();
-            sb.AppendLine(AppName + "  v" + AppVersion);
-            sb.AppendLine();
-            sb.AppendLine(S.AboutTagline);
-            sb.AppendLine();
             sb.AppendLine(S.AboutCanDo);
             sb.AppendLine(S.AboutFeat1);
             sb.AppendLine(S.AboutFeat2);
