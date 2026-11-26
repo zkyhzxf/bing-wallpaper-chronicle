@@ -2497,6 +2497,34 @@ Check '双击图标换成指定素材' {
     return $true
 }
 
+Check '随机换图能取到全历史标题' {
+    $s = Get-Content (Join-Path $Root 'bing-wallpaper.ps1') -Raw
+    if ($s.IndexOf('function Get-LocalTitleMap') -lt 0) { return '没有本地标题索引' }
+    # 两张本地索引都要读：老存档铺底、全量索引覆盖
+    $i = $s.IndexOf('function Get-LocalTitleMap')
+    $body = $s.Substring($i, 1600)
+    if ($body.IndexOf('Get-OldIndexMap') -lt 0) { return '没合老存档' }
+    if ($body.IndexOf('$AllIndexPath') -lt 0) { return '没合全量索引' }
+    # 走 Get-FullIndex 会联网，随机换图不能这么干
+    if ($body.IndexOf('Get-FullIndex') -ge 0) { return '用了会联网的 Get-FullIndex' }
+    # 随机分支必须真的调用它
+    $j = $s.IndexOf('随机切换（')
+    if ($s.IndexOf('$tm = Get-LocalTitleMap') -lt 0) { return '随机分支没调本地索引' }
+    return $true
+}
+
+Check '开轮播自动关掉换图通知' {
+    $s = Get-Content (Join-Path $Root 'src\Program.cs') -Raw
+    $i = $s.IndexOf('internal static void SetWallMode(string mode)')
+    if ($i -lt 0) { return '找不到 SetWallMode' }
+    $body = $s.Substring($i, 1200)
+    if ($body.IndexOf('"notify", false') -lt 0) { return '切轮播时没关通知' }
+    if ($body.IndexOf('"lastRotate"') -lt 0) { return '锚点也没写，可能改错地方了' }
+    $m = Get-Content (Join-Path $Root 'src\Menu.cs') -Raw
+    if ($m.IndexOf('S.RotateNotifOffHint') -lt 0) { return '关通知时没提示用户' }
+    return $true
+}
+
 # ---------------------------------------------------------------- 汇总
 Write-Host ''
 Write-Host ('-' * 50) -ForegroundColor DarkGray

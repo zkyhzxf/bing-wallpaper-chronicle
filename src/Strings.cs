@@ -1454,6 +1454,10 @@ namespace BingWallpaperLite
                        : ("随机轮播已开，每 " + min + " 分钟换一张");
         }
         public static string RotateOnHint { get { return T("只从本地已有的图里挑；今天的图到位后才开始计时", "Picks from local images; the clock starts once today's image is in place"); } }
+        public static string RotateNotifOffHint
+        {
+            get { return T("换图后通知已一并关掉：轮播每次都弹太吵", "Change notifications were turned off too — one per rotation would be noise"); }
+        }
         public static string RotateOffBalloon { get { return T("随机轮播已关", "Random rotation off"); } }
         public static string RotateOffHint { get { return T("回到每日一换", "Back to one change per day"); } }
         public static string RotateEmptyBalloon { get { return T("图库是空的，轮播已停", "The library is empty, rotation stopped"); } }

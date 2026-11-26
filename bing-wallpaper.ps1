@@ -931,6 +931,45 @@ function Get-OldIndexMap {
     return $script:OldMap
 }
 
+# 本地标题查找表：老存档（2009-07 ~ 2016-03）+ 全量索引（2016-03 ~ 今）合并成一张按日期查的表。
+#
+# 为什么要这张表：随机换图以前只查 $FavIndex 和 $IndexPath 两个「最近」的文件，
+# 随机到半年前的图时标题是空的 —— 托盘和菜单只能退回显示日期。
+# 2016 年之后的标题在全量索引里，之前的老存档里也有，两张都是本地文件，
+# 合起来覆盖全部历史，而且不联网（Get-FullIndex 在缓存过期时会去下载，不能用在这条路上）。
+$script:LocalTitleMap = $null
+function Get-LocalTitleMap {
+    if ($null -ne $script:LocalTitleMap) { return $script:LocalTitleMap }
+    $script:LocalTitleMap = @{}
+
+    # 老存档先铺底（2009-07 ~ 2016-03）
+    try {
+        $om = Get-OldIndexMap
+        foreach ($k in $om.Keys) {
+            $script:LocalTitleMap[[string]$k] = @{ t = [string]$om[$k].t; i = '' }
+        }
+    } catch {
+        Write-Log ("老存档合并进标题索引失败：" + $_.Exception.Message) 'WARN'
+    }
+
+    # 全量索引覆盖上去（2016-03 ~ 今）
+    try {
+        if (Test-Path $AllIndexPath) {
+            $arrA = Get-Content $AllIndexPath -Raw -Encoding UTF8 | ConvertFrom-Json
+            foreach ($x in @($arrA)) {
+                $k = [string]$x.d
+                if ($k.Length -ne 8) { continue }
+                $script:LocalTitleMap[$k] = @{ t = [string]$x.t; i = [string]$x.i }
+            }
+        }
+    } catch {
+        Write-Log ("全量索引合并进标题索引失败：" + $_.Exception.Message) 'WARN'
+    }
+
+    Write-Log ("本地标题索引已合并：" + $script:LocalTitleMap.Count + " 天")
+    return $script:LocalTitleMap
+}
+
 function Get-ImageIdFromFileName {
     param([string]$Name)
     if (-not $Name) { return '' }
@@ -4376,6 +4415,20 @@ if ($FillLibrary) {
                 } catch { }
             }
         }
+
+        # 两个「最近」索引都查不到（随机到老图就是这样），退到本地全量索引：
+        # 老存档 + 全量合并后覆盖 2009-07 至今，标题和 imageId 都能取到
+        if (-not $ttl) {
+            try {
+                $tm = Get-LocalTitleMap
+                if ($tm.ContainsKey($pickDate)) {
+                    if (-not $ttl) { $ttl = [string]$tm[$pickDate].t }
+                    if (-not $iid) { $iid = [string]$tm[$pickDate].i }
+                    if ($ttl) { Write-Log ("标题取本地索引：" + $pickDate + " -> " + $ttl) }
+                }
+            } catch { }
+        }
+
         Write-State -Date $pickDate -File $pick.file.FullName -Title $ttl -ImageId $iid -AppliedDate $pickDate
         Write-Log '--- 完成 ---'
         if ([bool]$config['autoClean']) {

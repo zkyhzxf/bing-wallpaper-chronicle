@@ -19,9 +19,9 @@ using Microsoft.Win32;
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyConfiguration("Release")]
 [assembly: AssemblyCulture("")]
-[assembly: AssemblyVersion("3.6.93.0")]
-[assembly: AssemblyFileVersion("3.6.93.0")]
-[assembly: AssemblyInformationalVersion("3.6.93")]
+[assembly: AssemblyVersion("3.6.94.0")]
+[assembly: AssemblyFileVersion("3.6.94.0")]
+[assembly: AssemblyInformationalVersion("3.6.94")]
 [assembly: ComVisible(false)]
 
 namespace BingWallpaperLite
@@ -31,7 +31,7 @@ namespace BingWallpaperLite
         // ---------------------------------------------------------------- 常量
 
         internal const string AppName     = "必应壁纸编年史";
-        internal const string AppVersion  = "3.6.93";
+        internal const string AppVersion  = "3.6.94";
         private const string TaskName    = "BingWallpaperChronicle";
         private const string RunValue    = "BingWallpaperChronicle";
 
@@ -436,6 +436,10 @@ namespace BingWallpaperLite
                 if (mode == WallModeRotate)
                 {
                     SetCfg(c, "lastRotate", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
+                    // 轮播每半小时换一张，每次都弹「已换成 X」等于骚扰，
+                    // 所以进轮播就顺手把换图后通知关掉；切回每日一换不自动打开，
+                    // 那是用户自己的选择，程序不替他恢复。
+                    SetCfg(c, "notify", false);
                 }
                 WriteConfig(c);
             }

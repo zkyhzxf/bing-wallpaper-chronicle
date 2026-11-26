@@ -215,8 +215,12 @@ namespace BingWallpaperLite
                 }
                 else
                 {
+                    // 进轮播会顺手关掉换图后通知；原本开着的话，得让人知道这事儿发生了
+                    bool hadNotify = false;
+                    try { hadNotify = GetCfgBool(ReadConfig(), "notify", false); } catch { }
                     SetWallMode(WallModeRotate);
-                    Balloon(S.RotateOnBalloon(RotateMinutes), S.RotateOnHint);
+                    Balloon(S.RotateOnBalloon(RotateMinutes),
+                            hadNotify ? S.RotateNotifOffHint : S.RotateOnHint);
                 }
                 anchor.BeginInvoke((MethodInvoker)delegate { try { RefreshAllPublic(); } catch { } });
             };
