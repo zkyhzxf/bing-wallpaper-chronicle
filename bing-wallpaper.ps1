@@ -773,15 +773,47 @@ function Get-WiliiCandidates {
     param([string]$Date)
     $Date = ([string]$Date) -replace '[^0-9]', ''
     if ($Date.Length -ne 8) { return @() }
-    $map = Get-WiliiMap
-    if (-not $map.ContainsKey($Date)) { return @() }
-    $base = [string]$map[$Date]
-    if (-not $base) { return @() }
-    $root = 'https://img.wilii.cn/bingimages/' + $Date.Substring(0,4) + '/' + $Date.Substring(4,2) + '/' + $Date.Substring(6,2) + '/'
-    return @(
-        ($root + $base + '_1920x1080.jpg'),
-        ($root + $base + '.jpg')
-    )
+
+    # 站点实际路径是 .../{dd}//{name}.jpg —— 日目录后面是两个斜杠。
+    # 少写一个就是 404，这一条踩过。
+    $root = 'https://img.wilii.cn/bingimages/' + $Date.Substring(0,4) + '/' + $Date.Substring(4,2) + '/' + $Date.Substring(6,2) + '//'
+    $out = @()
+
+    # 1) wilii 自己的索引（2016-03 起）
+    try {
+        $map = Get-WiliiMap
+        if ($map.ContainsKey($Date)) {
+            $b = [string]$map[$Date]
+            if ($b) {
+                # 老图只留过 1366x768，新图才有 1920x1080，两个都要试
+                $out += ($root + $b + '_1366x768.jpg')
+                $out += ($root + $b + '_1920x1080.jpg')
+                $out += ($root + $b + '.jpg')
+            }
+        }
+    } catch {
+        Write-Log ("wilii 索引查询失败：" + $_.Exception.Message) 'WARN'
+    }
+
+    # 2) 老存档索引（2009-07 ~ 2016-03）：那里存的是带分辨率后缀的原始文件名
+    try {
+        $rec = Get-OldIndexRecord -Date $Date
+        if ($rec) {
+            $fn = [string]$rec.wiliiFile
+            if ($fn) {
+                $b2 = $fn -replace '_\d+x\d+\.jpg$', ''
+                $b2 = $b2 -replace '\.jpg$', ''
+                if ($b2) {
+                    $out += ($root + $b2 + '_1366x768.jpg')
+                    $out += ($root + $b2 + '.jpg')
+                }
+            }
+        }
+    } catch {
+        Write-Log ("老存档文件名查询失败：" + $_.Exception.Message) 'WARN'
+    }
+
+    return @($out | Where-Object { $_ } | Select-Object -Unique)
 }
 
 # 每日故事：正文按需抓取并缓存在 archive\stories\{YYYYMMDD}.txt
@@ -997,7 +1029,8 @@ function Get-OldIndexRecord {
     $anergUrl = ''
     if ($slug) { $anergUrl = 'https://img.nanxiongnandi.com/' + $ym + '/' + $slug + '.jpg' }
     $wiliiUrl = ''
-    if ($fn) { $wiliiUrl = 'https://img.wilii.cn/bingimages/' + $y4 + '/' + $m2 + '/' + $d2 + '/' + $fn }
+    # 两个斜杠：日目录后面原本就空一层
+    if ($fn) { $wiliiUrl = 'https://img.wilii.cn/bingimages/' + $y4 + '/' + $m2 + '/' + $d2 + '//' + $fn }
 
     # 文件名取短的：优先 anerg slug，没有就用 wilii 文件名去掉分辨率后缀
     $core = $slug
@@ -1022,6 +1055,8 @@ function Get-OldIndexRecord {
         id         = ''
         title      = [string]$x.t
         copyright  = [string]$x.c
+        # 原始文件名要给 Get-WiliiCandidates 拼镜像地址用（它还带着分辨率后缀）
+        wiliiFile  = $fn
         url        = $wiliiUrl
         slug       = $core
         anergUrl   = $anergUrl
@@ -4105,6 +4140,22 @@ if ($FillLibrary) {
     $haveF = Get-LibraryDates -Dir $tgtDir
     $idxF = @()
     try { $idxF = @(Get-FullIndex) } catch { }
+
+    # 老存档（2009-07 ~ 2016-03）也进待办：官方索引里没有这批日期，
+    # 但镜像站还存着一部分 1366x768。它们没有 imageId，官方链接拼不出来，
+    # 只能走镜像候选。
+    $nOldF = 0
+    try {
+        $omF = Get-OldIndexMap
+        foreach ($kF in $omF.Keys) {
+            $idxF += [pscustomobject]@{ d = [string]$kF; i = ''; t = '' }
+            $nOldF++
+        }
+    } catch {
+        Write-Log ("老存档并入补齐待办失败：" + $_.Exception.Message) 'WARN'
+    }
+    if ($nOldF -gt 0) { Write-Log ("待办并入老存档 " + $nOldF + " 天") }
+
     if ($idxF.Count -eq 0) { Write-Log '索引为空，无法确定要补哪些日期' 'ERROR'; Exit-Run 5 }
 
     $todoF = @()
@@ -4125,20 +4176,37 @@ if ($FillLibrary) {
         $dd = ([string]$it.d) -replace '[^0-9]', ''
         if ($deadF.ContainsKey($dd)) { $skipF++; continue }
         $imgId = [string]$it.i
-        if (-not $imgId) { $skipF++; continue }
-        $shortIdF = $imgId -replace '_[A-Za-z]{2}-[A-Za-z]{2}\d+$', ''
-        $nameF = "${dd}_$shortIdF.jpg"
+        # 没有 imageId（老存档那批）就只能走镜像；有 imageId 的官方三条在前，镜像垫底
+        $shortIdF = if ($imgId) { $imgId -replace '_[A-Za-z]{2}-[A-Za-z]{2}\d+$', '' } else { '' }
+
+        # 镜像候选先算出来：没有 imageId 时文件名得从镜像 URL 末段取，
+        # 不然落地成 20131001_mirror.jpg —— 能用但和图库其它文件不是一个风格
+        $wiliiCandsF = @(Get-WiliiCandidates -Date $dd)
+        $mirrorNameF = ''
+        if ($wiliiCandsF.Count -gt 0) {
+            $lastUrlF = [string]$wiliiCandsF[0]
+            $bnF = $lastUrlF.Substring($lastUrlF.LastIndexOf('/') + 1)
+            $bnF = $bnF -replace '_\d+x\d+\.jpg$', ''
+            $bnF = $bnF -replace '\.jpg$', ''
+            if ($bnF) { $mirrorNameF = "${dd}_$bnF.jpg" }
+        }
+
+        $nameF = if ($shortIdF) { "${dd}_$shortIdF.jpg" } elseif ($mirrorNameF) { $mirrorNameF } else { "${dd}_mirror.jpg" }
         $destF = Join-Path $tgtDir $nameF
         if (Test-Path -LiteralPath $destF) { $skipF++; continue }
         $szF = 0
         $doneF = $false
         $lowKeptF = $false
         $minWF = if ($MaxRes -ne 'hd') { 3000 } else { 0 }
-        $candsF = @(
-            ('https://cn.bing.com/th?id=' + $imgId + '_UHD.jpg&w=3840&h=2160&rs=1&c=4'),
-            ('https://www.bing.com/th?id=' + $imgId + '_UHD.jpg&w=3840&h=2160&rs=1&c=4'),
-            ('https://www.bing.com/th?id=' + $imgId + '_1920x1080.jpg')
-        )
+        $candsF = @()
+        if ($imgId) {
+            $candsF += ('https://cn.bing.com/th?id=' + $imgId + '_UHD.jpg&w=3840&h=2160&rs=1&c=4')
+            $candsF += ('https://www.bing.com/th?id=' + $imgId + '_UHD.jpg&w=3840&h=2160&rs=1&c=4')
+            $candsF += ('https://www.bing.com/th?id=' + $imgId + '_1920x1080.jpg')
+        }
+        # 镜像站：老图只有 1366x768
+        $candsF += $wiliiCandsF
+        if ($candsF.Count -eq 0) { $skipF++; continue }
         foreach ($uF in $candsF) {
             try {
                 $szF = Save-BingImageAtLeast -Url $uF -Dest $destF -MinKB 60 -MinWidth $minWF -Retry 1

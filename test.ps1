@@ -2567,6 +2567,24 @@ Check '刷新不会让缺口数字累加' {
     return $true
 }
 
+Check '补齐能走镜像站' {
+    $s = Get-Content (Join-Path $Root 'bing-wallpaper.ps1') -Raw
+
+    # 站点实际路径是 .../{dd}//{name}.jpg，少一个斜杠就 404
+    if ($s.IndexOf("Substring(6,2) + '//'") -lt 0) { return '镜像路径少了双斜杠' }
+    # 老图只有 1366x768
+    if ($s.IndexOf("'_1366x768.jpg'") -lt 0) { return '没试 1366x768 后缀' }
+    # 老存档要能被候选查出来
+    if ($s.IndexOf('wiliiFile  = $fn') -lt 0) { return 'Get-OldIndexRecord 没暴露原始文件名' }
+
+    $i = $s.IndexOf('if ($FillLibrary)')
+    $body = $s.Substring($i, 6000)
+    if ($body.IndexOf('Get-OldIndexMap') -lt 0) { return '补齐待办没并入老存档' }
+    if ($body.IndexOf('Get-WiliiCandidates') -lt 0) { return '补齐候选没加镜像' }
+    if ($body.IndexOf('mirrorNameF') -lt 0) { return '镜像文件名没从 URL 取' }
+    return $true
+}
+
 # ---------------------------------------------------------------- 汇总
 Write-Host ''
 Write-Host ('-' * 50) -ForegroundColor DarkGray
