@@ -53,7 +53,7 @@ namespace BingWallpaperLite
         /// <summary>纯展示的信息行：永远禁用，点了也不做事。灰着才是正确表达。</summary>
         private static readonly string[] MenuInfoOnly = new string[]
         {
-            "header", "modestate", "taskinfo", "taskauto"
+            "header", "taskinfo", "taskauto"
         };
 
         /// <summary>busy 期间禁用的项：点一下就会再起一个 powershell 去跑脚本。</summary>
@@ -86,8 +86,12 @@ namespace BingWallpaperLite
             if (NameIn(MenuInfoOnly, name)) { return false; }
 
             if (NameIn(MenuAlwaysOn, name)) { return true; }
+            // 接管模式下快速换图不生效：图库只读语义 + 不做两步走，开关必须如实置灰
+            if (string.Equals(name, "fastswitch", StringComparison.OrdinalIgnoreCase)) { return !g.Takeover; }
             if (g.Busy) { return !NameIn(MenuBusyBlocked, name); }
             if (string.Equals(name, "clean", StringComparison.OrdinalIgnoreCase)) { return !g.Takeover; }
+            // 模式标牌只在接管时出现；出现时就是个入口（点开图库文件夹）
+            if (string.Equals(name, "modestate", StringComparison.OrdinalIgnoreCase)) { return g.Takeover; }
             if (string.Equals(name, "randompick", StringComparison.OrdinalIgnoreCase)) { return g.LocalN > 0; }
             return true;
         }
@@ -121,7 +125,7 @@ namespace BingWallpaperLite
         {
             if (!busy) { return; }
             bool locked = false;
-            try { locked = File.Exists(lockPath); } catch { }
+            try { locked = File.Exists(LockPathNow); } catch { }
             if (locked) { return; }
             // 刚起的 3 秒内锁可能还没写出来，别急着复位
             if (busySince == DateTime.MinValue) { SetBusy(false); return; }
@@ -198,6 +202,10 @@ namespace BingWallpaperLite
             // 接管：清理必须挡，其余照常
             total++;
             if (ShouldEnable("clean", tkG)) { bad.Add("FAIL takeover:clean 应为禁用"); }
+            total++;
+            if (ShouldEnable("fastswitch", tkG)) { bad.Add("FAIL takeover:fastswitch 应为禁用"); }
+            total++;
+            if (!ShouldEnable("modestate", tkG)) { bad.Add("FAIL takeover:modestate 应为可用"); }
             total++;
             if (!ShouldEnable("gallerytoggle", tkG)) { bad.Add("FAIL takeover:gallerytoggle 应为可用"); }
 

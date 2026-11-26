@@ -1,4 +1,4 @@
-﻿﻿using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -115,7 +115,7 @@ namespace BingWallpaperLite
         {
             try
             {
-                Dictionary<string, object> state = ReadJson(statePath);
+                Dictionary<string, object> state = ReadJson(StatePathNow);
                 if (state == null) { return null; }
                 string date = GetStr(state, "date");
                 if (date.Length != 8) { return null; }

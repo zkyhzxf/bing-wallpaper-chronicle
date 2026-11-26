@@ -50,6 +50,8 @@ param(
     [switch]$DryRun,
     [switch]$Clean,
     [int]$Keep = 0,
+[string]$CleanItems = '',
+[string]$UpgradeFile = '',
     [switch]$CleanAll,
     [switch]$Favorite,
     [switch]$Unfavorite,
@@ -283,6 +285,11 @@ if ($TestArchiveDir) {
         Write-Host '测试沙盒不存在，已拒绝'
         exit 4
     }
+    # 沙盒测试必须当作「非接管」：否则 Clear-ArchiveBySize 的只读短路
+    # 会让归档清理测试全部落空（用户开着接管时跑 test.ps1 必红）。
+    $script:Takeover     = $false
+    $script:TakeoverRoot = ''
+    $script:LibStaging   = ''
     $ArchiveImgDir    = Join-Path $sbRoot 'archive'
     $FavDir           = Join-Path $sbRoot 'favorites'
     $FavIndex         = Join-Path $FavDir 'index.json'
@@ -298,8 +305,10 @@ if (-not (Test-Path $CacheDir)) { New-Item -ItemType Directory -Path $CacheDir -
 function Get-DownloadDir {
     if ($script:WallMode -and $script:WallArchive) { $d = $ArchiveImgDir }
     elseif ($script:WallMode) { $d = $WallDir }
-    elseif ($script:NoApply) { $d = $PrefetchDir }
+    # 画廊排在预取前面：开着画廊时看的图都该是临时的，退出画廊时一并清掉。
+    # 原来预取优先，会把图悄悄落到 cache\prefetch，画廊退出清不到，用户以为漏了。
     elseif ($Gallery) { $d = $GalleryDir }
+    elseif ($script:NoApply) { $d = $PrefetchDir }
     elseif ($script:Takeover) { $d = $script:TakeoverRoot }
     else { $d = $CacheDir }
     if ($d -and -not (Test-Path $d)) { try { New-Item -ItemType Directory -Path $d -Force | Out-Null } catch { Write-Log ('下载目录创建失败：' + $d + ' - ' + $_.Exception.Message) 'WARN' } }
@@ -460,6 +469,8 @@ $defaults = [ordered]@{
     resolution     = 'UHD'
     keepDays       = 30
     autoClean      = $true
+    autoCleanItems = 'cache,archive'
+    fastSwitch     = $true
     notify         = $false
     archive        = $true
     locked         = $false
@@ -481,6 +492,8 @@ if (Test-Path $ConfigPath) {
 
 $keepDays = [int]$config['keepDays']
 if ($keepDays -lt 8) { $keepDays = 8 }
+$autoCleanItems = [string]$config['autoCleanItems']
+if (-not $autoCleanItems) { $autoCleanItems = 'cache,archive' }
 $proxy = [string]$config['proxy']
 
 function Invoke-Web {
@@ -1249,8 +1262,22 @@ function Save-BingImage {
     for ($i = 0; $i -lt $attempts; $i++) {
         if ($script:deadline -and (Get-Date) -gt $script:deadline) { throw '本次预算已用尽' }
         try {
-            $p = Invoke-Web @{ Uri = $Url; OutFile = $tmp; TimeoutSec = 60; UseBasicParsing = $true }
-            Invoke-WebRequest @p
+            # 优先用系统 curl：--max-time 是硬时限（DNS、TLS、半开连接全算），
+            # 而 Invoke-WebRequest 的 TimeoutSec 在 DNS 卡住时不生效——实测有进程
+            # 在 0 字节 .tmp 上僵了 19 分钟，必须靠外部进程兜住。
+            $curlExe = 'C:\Windows\System32\curl.exe'
+            if (Test-Path $curlExe) {
+                $ca = @('--fail', '--location', '--silent', '--show-error',
+                        '--connect-timeout', '15', '--max-time', '60',
+                        '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+                        '--output', $tmp, '--url', $Url)
+                if ($proxy) { $ca += @('--proxy', $proxy) }
+                & $curlExe @ca 2>$null | Out-Null
+                if ($LASTEXITCODE -ne 0) { throw ('curl 退出码 ' + $LASTEXITCODE) }
+            } else {
+                $p = Invoke-Web @{ Uri = $Url; OutFile = $tmp; TimeoutSec = 60; UseBasicParsing = $true }
+                Invoke-WebRequest @p
+            }
             $size = (Get-Item $tmp).Length
             if ($size -lt ($MinKB * 1024)) { throw "体积异常 $size 字节" }
             Move-Item -LiteralPath $tmp -Destination $realDest -Force
@@ -2017,6 +2044,47 @@ function Remove-OneFile {
 # 清掉每日故事的本地缓存，返回删除条数。
 # 故事是可再生数据：删了只是下次查看那天时重抓一次，不影响壁纸与索引，
 # 所以它既能单独清，也能挂在「清理历史归档」里当可选步骤一起清。
+# 按日期找本地图：先查索引拼文件名（毫秒级），查不到再扫目录兜底。
+# 归档目录有 6000+ 文件，Get-ChildItem -Filter 每次 200-400 ms，是换图慢的主因之一。
+function Find-LocalImageByDate {
+    param([string]$Date8)
+    if (-not $Date8 -or $Date8.Length -ne 8) { return $null }
+
+    # 收藏与缓存目录通常只有几十到几百个文件，直接扫
+    foreach ($d in @($FavDir, $CacheDir)) {
+        if (-not $d -or -not (Test-Path $d)) { continue }
+        $f = @(Get-ChildItem $d -Filter "${Date8}_*.jpg" -File -ErrorAction SilentlyContinue) | Select-Object -First 1
+        if ($f) { return $f }
+    }
+
+    # 归档：全量索引里有 imageId，拼出文件名直接 Test-Path，不用扫目录
+    try {
+        $arrF = @(Get-FullIndex)
+        if ($arrF.Count -gt 0) {
+            $recF = $arrF | Where-Object { [string]$_.d -eq $Date8 } | Select-Object -First 1
+            if ($recF -and $recF.i) {
+                $sidF = ([string]$recF.i) -replace '_[A-Za-z]{2}-[A-Za-z]{2}\d+$', ''
+                $pF = Join-Path $ArchiveImgDir "${Date8}_$sidF.jpg"
+                if (Test-Path -LiteralPath $pF) { return (Get-Item -LiteralPath $pF) }
+            }
+        }
+    } catch { }
+
+    # 兜底：索引里没有（历史遗留文件）才扫归档目录
+    if (Test-Path $ArchiveImgDir) {
+        $f = @(Get-ChildItem $ArchiveImgDir -Filter "${Date8}_*.jpg" -File -ErrorAction SilentlyContinue) | Select-Object -First 1
+        if ($f) { return $f }
+    }
+
+    # 老存档按月分目录，单个月份目录小，直接扫
+    $omDir = Join-Path $OldDir $Date8.Substring(0, 6)
+    if (Test-Path $omDir) {
+        $f = @(Get-ChildItem $omDir -Filter "${Date8}_*.jpg" -File -ErrorAction SilentlyContinue) | Select-Object -First 1
+        if ($f) { return $f }
+    }
+    return $null
+}
+
 function Clear-StoryCache {
     param([string]$Mode = 'recycle')
     $n = 0
@@ -2136,6 +2204,70 @@ if ($TestArchiveSweep -gt 0) {
     Write-Host ('清理返回：' + $sweepN)
     exit 0
 }
+# 按天清理照片墙缩略图：纯派生数据，删了下一次打开照片墙会按需重建。
+function Clear-OldCacheThumbs {
+    param([int]$Days)
+    $thumbDir = Join-Path $CacheDir 'thumbs'
+    if (-not (Test-Path $thumbDir)) { return 0 }
+    $cut = (Get-Date).AddDays(-$Days)
+    $n = 0
+    Get-ChildItem $thumbDir -Filter '*.jpg' -File -ErrorAction SilentlyContinue | ForEach-Object {
+        if ($_.LastWriteTime -lt $cut) {
+            if ($DryRun) { Write-Log ("[DryRun] 将删除缩略图 " + $_.Name); $n++ }
+            else { try { [System.IO.File]::Delete($_.FullName); $n++ } catch { Write-Log ('缩略图删除失败：' + $_.Name) 'WARN' } }
+        }
+    }
+    if ($n -gt 0) { Write-Log ("照片墙缩略图清理：删除 $n 张（保留 $Days 天）") }
+    return $n
+}
+
+# 按天清理照片墙临时原图（cache\wall）。默认不勾 —— 关窗时本来会问一句，勾了就不问。
+function Clear-OldCacheWall {
+    param([int]$Days)
+    if (-not (Test-Path $WallDir)) { return 0 }
+    $cur = (Get-ItemProperty 'HKCU:\Control Panel\Desktop' -Name Wallpaper -ErrorAction SilentlyContinue).Wallpaper
+    $cut = (Get-Date).AddDays(-$Days)
+    $n = 0
+    $kept = 0
+    Get-ChildItem $WallDir -Filter '*.jpg' -File -ErrorAction SilentlyContinue | ForEach-Object {
+        if ($cur -and $_.FullName -ieq $cur) { $kept++; return }
+        $keep = $true
+        $mW = [regex]::Match($_.BaseName, '^(\d{8})_')
+        if ($mW.Success) {
+            try { $dW = [datetime]::ParseExact($mW.Groups[1].Value, 'yyyyMMdd', $null); if ($dW -lt $cut) { $keep = $false } } catch { }
+        } elseif ($_.LastWriteTime -lt $cut) { $keep = $false }
+        if (-not $keep) {
+            if ($DryRun) { Write-Log ("[DryRun] 将删除墙内临时图 " + $_.Name); $n++ }
+            else { try { [System.IO.File]::Delete($_.FullName); $n++ } catch { Write-Log ('墙内临时图删除失败：' + $_.Name) 'WARN' } }
+        }
+    }
+    if ($n -gt 0) { Write-Log ("照片墙临时原图清理：删除 $n 张（保留 $Days 天，保护 $kept 张）") }
+    return $n
+}
+
+# 自动清理的统一入口：按 autoCleanItems 里勾选的项目逐项执行。
+# 项目名：cache / thumbs / wall / stories / archive，逗号分隔。
+function Clear-AutoCache {
+    param([int]$Days, [string]$Items)
+    $setA = @{}
+    foreach ($xA in (($Items -split ','))) {
+        $kA = $xA.Trim().ToLower()
+        if ($kA) { $setA[$kA] = $true }
+    }
+    if ($setA.Count -eq 0) { $setA['cache'] = $true; $setA['archive'] = $true }
+    $total = 0
+    if ($setA.ContainsKey('cache'))   { $total += [int](Clear-OldCache -Days $Days) }
+    if ($setA.ContainsKey('thumbs'))  { $total += [int](Clear-OldCacheThumbs -Days $Days) }
+    if ($setA.ContainsKey('wall'))    { $total += [int](Clear-OldCacheWall -Days $Days) }
+    if ($setA.ContainsKey('stories')) { $total += [int](Clear-StoryCache -Mode 'recycle') }
+    if ($setA.ContainsKey('archive')) {
+        $capA = 0
+        try { $capA = [int]$config['archiveMaxMB'] } catch { }
+        if ($capA -gt 0) { [void](Clear-ArchiveBySize -MaxMB $capA) }
+    }
+    return $total
+}
+
 function Clear-AllCache {
     param([string]$Mode = 'recycle')
     $cur = (Get-ItemProperty 'HKCU:\Control Panel\Desktop' -Name Wallpaper -ErrorAction SilentlyContinue).Wallpaper
@@ -2880,6 +3012,22 @@ if ($Status) {
     $cacheCount = @(Get-ChildItem $CacheDir -Filter '*.jpg' -File -ErrorAction SilentlyContinue).Count
     $archCount = @(Get-ChildItem $ArchiveImgDir -Filter '*.jpg' -File -ErrorAction SilentlyContinue).Count
 
+    # 图库新鲜度：最新一天距今几天。自动换图停摆时，这是唯一能一眼看出来的信号。
+    $archLatest = ''
+    $archStale = -1
+    try {
+        $archDates = @(Get-ChildItem $ArchiveImgDir -Filter '*.jpg' -File -ErrorAction SilentlyContinue |
+                       ForEach-Object { $nA = $_.Name; if ($nA.Length -ge 8) { $nA.Substring(0, 8) } } |
+                       Sort-Object -Unique)
+        if ($archDates.Count -gt 0) {
+            $archLatest = [string]$archDates[-1]
+            if ($archLatest -match '^\d{8}$') {
+                $dtA = [datetime]::ParseExact($archLatest, 'yyyyMMdd', $null)
+                $archStale = [int]((Get-Date).Date - $dtA).Days
+            }
+        }
+    } catch { }
+
     # 故事映射表新鲜度：静态打包的表会随时间过期，过期后新日子取不到故事
     $smNow = @{}
     $storyLast = ''
@@ -2903,6 +3051,10 @@ if ($Status) {
             cache     = $cacheCount
             favorites = $favCount
             archive   = $archCount
+        }
+        library = [ordered]@{
+            latest    = $archLatest
+            staleDays = $archStale
         }
         config = [ordered]@{
             locked     = [bool]$cfgNow['locked']
@@ -3271,7 +3423,14 @@ if ($ExportRange) {
         if ($MaxRes -eq 'hd') { $order = @('anerg', 'cdn') }
         elseif ($Source -eq 'cdn') { $order = @('cdn', 'cn4k', 'bimg', 'anerg') }
         elseif ($Source -eq 'anerg') { $order = @('anerg', 'bimg', 'cn4k', 'cdn') }
-        else { if ($cur -ge '20190101') { $order = @('cdn', 'cn4k', 'bimg', 'anerg') } else { $order = @('anerg', 'bimg', 'cdn') } }
+        # 区间→首选源（2026-11-24 实测矩阵）：
+        #   2019-06 起         cn4k 带 w/h 稳定 3840；cdn 的 _UHD 反而退回 1080p
+        #   2016-03 ~ 2019-05  Bing 两档全 404，cdn.bimg.cc 是唯一稳定来源（1080p）
+        #   2016-02 及更早     anerg 有原图（958px 起），其余全 404
+        # www 比 cn 稳定快 35-55%（实测 392-434 vs 255-275 KB/s，返回同样字节），所以 www4k 排第一
+        elseif ($cur -ge '20190601') { $order = @('www4k', 'cn4k', 'cdn', 'bimg', 'anerg') }
+        elseif ($cur -ge '20160301') { $order = @('bimg', 'cdn', 'cn4k', 'anerg') }
+        else { $order = @('anerg', 'bimg', 'cdn') }
 
         $destFile = Join-Path $DestDir "${cur}_$short.jpg"
         if ($upRange -and $had) { $destFile = $had.FullName }
@@ -3307,6 +3466,14 @@ if ($ExportRange) {
                     } catch { $lastMsg = ($_.Exception.Message) -replace '"', "'" }
                 }
                 if ($cdnLow) { continue }
+            } elseif ($src -eq 'www4k') {
+                if (-not $newRec -or -not ([string]$newRec.i)) { $lastMsg = '没有 imageId'; continue }
+                $u = "https://www.bing.com/th?id=$($newRec.i)_UHD.jpg&w=3840&h=2160&rs=1&c=4"
+                try {
+                    [void](Save-BingImage -Url $u -Dest $destFile -MinKB 60 -Retry 1)
+                    $saved = $true
+                    $resLog[$cur] = 'www4k_3840'
+                } catch { $lastMsg = ($_.Exception.Message) -replace '"', "'" }
             } elseif ($src -eq 'cn4k') {
                 if (-not $newRec -or -not ([string]$newRec.i)) { $lastMsg = '没有 imageId'; continue }
                 $u = "https://cn.bing.com/th?id=$($newRec.i)_UHD.jpg&w=3840&h=2160&rs=1&c=4"
@@ -3347,6 +3514,17 @@ if ($ExportRange) {
 
         if ($saved) {
             $okN++
+            # 覆盖的如果正好是当前桌面壁纸，重设一次：Windows 按路径缓存壁纸，
+            # 光替换文件内容桌面不会重绘，看起来还是旧的模糊图。
+            if ($upRange -and $had) {
+                try {
+                    $curWpN = [string](Get-ItemProperty 'HKCU:\Control Panel\Desktop' -Name Wallpaper -ErrorAction SilentlyContinue).Wallpaper
+                    if ($curWpN -and $curWpN -ieq $destFile) {
+                        [void](Set-DesktopWallpaper -Path $destFile)
+                        Write-Log '当前壁纸已升级为原图，桌面已刷新'
+                    }
+                } catch { }
+            }
             # 画质校验：_UHD 地址有可能返回 1080p 内容（实测 2023-02-04 就是），
             # 所以拿到文件之后必须量一下，不能拿「地址叫 UHD」当证据。
             if ($MaxRes -eq 'uhd' -and $cur -ge '20190101') {
@@ -3637,10 +3815,70 @@ try {
         }
     }
 
+    # ---- 后台补原图（快速换图的第二段）：只下 4K 覆盖指定文件，不设壁纸、不写索引、不登记名单。
+    # 单独一个入口是为了避开 -Date 的落点逻辑：补图时文件在哪由参数直接给定，
+    # 画廊 / 预取 / 照片墙这些模式都不参与，不会把文件写到别的目录去。
+    if ($UpgradeFile) {
+        $ufPath = $UpgradeFile
+        if (-not (Test-Path -LiteralPath $ufPath)) { Write-Log ("补图目标不存在：" + $ufPath) 'ERROR'; Exit-Run 5 }
+        $ufName = [System.IO.Path]::GetFileNameWithoutExtension($ufPath)
+        $mUF = [regex]::Match($ufName, '^(\d{8})')
+        if (-not $mUF.Success) { Write-Log '补图目标文件名里没有日期' 'ERROR'; Exit-Run 5 }
+        $ufDate = $mUF.Groups[1].Value
+
+        $ufId = ''
+        try {
+            $recUF = @(Get-FullIndex) | Where-Object { [string]$_.d -eq $ufDate } | Select-Object -First 1
+            if ($recUF) { $ufId = [string]$recUF.i }
+        } catch { }
+        if (-not $ufId) { Write-Log ("补图时找不到 " + $ufDate + " 的 imageId") 'WARN'; Exit-Run 5 }
+
+        # 补图是「原地覆盖同名文件」：Publish-ToLibrary 靠 UpgradeDest 判定能不能覆盖。
+        # 不设这一行，接管模式下刚下好的原图会被当成重复副本丢掉，日志还报成功。
+        $script:UpgradeDest = $ufPath
+        $ufLocked = Enter-RunLock -WaitSec 30
+        if (-not $ufLocked) { Write-Log '补图时运行锁被占用，放弃本次' 'WARN'; exit 2 }
+
+        $ufOk = $false
+        foreach ($uUF in @(
+                "https://www.bing.com/th?id=${ufId}_UHD.jpg&w=3840&h=2160&rs=1&c=4",
+                "https://cn.bing.com/th?id=${ufId}_UHD.jpg&w=3840&h=2160&rs=1&c=4")) {
+            try {
+                [void](Save-BingImageAtLeast -Url $uUF -Dest $ufPath -MinKB 60 -MinWidth 3000 -Retry 1)
+                $ufOk = $true
+                break
+            } catch { Write-Log ("补图失败：" + $_.Exception.Message) 'WARN' }
+        }
+
+        if ($ufOk) {
+            $ufKB = [int]((Get-Item -LiteralPath $ufPath).Length / 1KB)
+            Write-Log ("后台补原图完成：" + $ufName + "（" + $ufKB + " KB）")
+            try {
+                $curUF = [string](Get-ItemProperty 'HKCU:\Control Panel\Desktop' -Name Wallpaper -ErrorAction SilentlyContinue).Wallpaper
+                if ($curUF -and $curUF -ieq $ufPath) {
+                    [void](Set-DesktopWallpaper -Path $ufPath)
+                    Write-Log '当前壁纸正是这张，已刷新桌面'
+                }
+            } catch { }
+            Exit-RunLock
+            Exit-Run 0
+        }
+        Exit-RunLock
+        Exit-Run 7
+    }
+
     if ($Clean) {
         $keepArg = if ($Keep -gt 0) { $Keep } else { $keepDays }
-        Write-Log "--- 仅执行缓存清理（保留 $keepArg 天）---"
-        $cleanN = [int](Clear-OldCache -Days $keepArg)
+        # 只认按天数清的四项；archive / old 由 -CleanArchive 负责（那是整目录清空，语义不同）
+        $pick = @()
+        foreach ($xI in (([string]$CleanItems) -split ',')) {
+            $kI = $xI.Trim().ToLower()
+            if ($kI -in @('cache', 'thumbs', 'wall', 'stories')) { $pick += $kI }
+        }
+        if ($pick.Count -eq 0) { $pick = @('cache') }
+        $itemsArg = ($pick -join ',')
+        Write-Log "--- 仅执行清理（保留 $keepArg 天，项目 $itemsArg）---"
+        $cleanN = [int](Clear-AutoCache -Days $keepArg -Items $itemsArg)
         Write-Output ('{"removed":' + $cleanN + ',"protected":' + [int]$script:PinProtected + '}')
         Exit-Run 0
     }
@@ -3858,8 +4096,8 @@ if ($FillLibrary) {
         $lowKeptF = $false
         $minWF = if ($MaxRes -ne 'hd') { 3000 } else { 0 }
         $candsF = @(
-            ('https://www.bing.com/th?id=' + $imgId + '_UHD.jpg'),
             ('https://cn.bing.com/th?id=' + $imgId + '_UHD.jpg&w=3840&h=2160&rs=1&c=4'),
+            ('https://www.bing.com/th?id=' + $imgId + '_UHD.jpg&w=3840&h=2160&rs=1&c=4'),
             ('https://www.bing.com/th?id=' + $imgId + '_1920x1080.jpg')
         )
         foreach ($uF in $candsF) {
@@ -3877,6 +4115,13 @@ if ($FillLibrary) {
         if (-not $doneF -and $lowKeptF) { $doneF = $true }
         if ($doneF) {
             $okF++
+            try {
+                $curWpF = [string](Get-ItemProperty 'HKCU:\Control Panel\Desktop' -Name Wallpaper -ErrorAction SilentlyContinue).Wallpaper
+                if ($curWpF -and $curWpF -ieq $destF) {
+                    [void](Set-DesktopWallpaper -Path $destF)
+                    Write-Log '  当前壁纸已升级，桌面已刷新'
+                }
+            } catch { }
             $libIdxF[$dd] = @{ file = $nameF; b = $szF; at = (Get-Date).ToString('s') }
             Write-LibraryIndex -Dir $tgtDir -Days $libIdxF
             Write-Log ("  补进 $dd（" + [math]::Round($szF / 1KB, 0) + " KB）")
@@ -4134,9 +4379,7 @@ if ($FillLibrary) {
         Write-State -Date $pickDate -File $pick.file.FullName -Title $ttl -ImageId $iid -AppliedDate $pickDate
         Write-Log '--- 完成 ---'
         if ([bool]$config['autoClean']) {
-            $capMB2 = 0
-            try { $capMB2 = [int]$config['archiveMaxMB'] } catch { }
-            if ($capMB2 -gt 0) { [void](Clear-ArchiveBySize -MaxMB $capMB2) }
+            [void](Clear-AutoCache -Days $keepDays -Items $autoCleanItems)
         }
         Exit-Run 0
         }
@@ -4188,20 +4431,8 @@ if ($FillLibrary) {
 
         Write-Log "--- 指定日期：$Date ---\"
 
-        # 1) 本地已有（收藏优先）
-        $hit = Get-ChildItem $FavDir -Filter "${Date}_*.jpg" -File -ErrorAction SilentlyContinue | Select-Object -First 1
-        if (-not $hit) {
-            $hit = Get-ChildItem $CacheDir -Filter "${Date}_*.jpg" -File -ErrorAction SilentlyContinue | Select-Object -First 1
-        }
-        if (-not $hit -and (Test-Path $ArchiveImgDir)) {
-            $hit = Get-ChildItem $ArchiveImgDir -Filter "${Date}_*.jpg" -File -ErrorAction SilentlyContinue | Select-Object -First 1
-        }
-        if (-not $hit) {
-            $omDir = Join-Path $OldDir $Date.Substring(0, 6)
-            if (Test-Path $omDir) {
-                $hit = Get-ChildItem $omDir -Filter "${Date}_*.jpg" -File -ErrorAction SilentlyContinue | Select-Object -First 1
-            }
-        }
+        # 1) 本地已有（收藏优先）：走索引查找，不扫大目录
+        $hit = Find-LocalImageByDate -Date8 $Date
         # 预取目录：命中就转正到 cache 根目录，否则退出清理时壁纸文件会消失
         if (-not $hit -and (Test-Path $PrefetchDir)) {
             $pfHit = Get-ChildItem $PrefetchDir -Filter "${Date}_*.jpg" -File -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -4269,9 +4500,7 @@ if ($FillLibrary) {
             Write-State -Date $Date -File $hit.FullName -Title $tTitle -Copyright $tCpr -SearchUrl $tSearch -ImageId $tId -AppliedDate $Date
             Write-Log "命中本地：$($hit.Name)"
             if ([bool]$config['autoClean']) {
-                $capMB1 = 0
-                try { $capMB1 = [int]$config['archiveMaxMB'] } catch { }
-                if ($capMB1 -gt 0) { [void](Clear-ArchiveBySize -MaxMB $capMB1) }
+                [void](Clear-AutoCache -Days $keepDays -Items $autoCleanItems)
             }
             Exit-Run 0
         }
@@ -4371,10 +4600,12 @@ if ($FillLibrary) {
                         $cand += @{ url = "https://www.bing.com/th?id=${archId}_1920x1080.jpg"; tag = '照片墙预览 1080p'; minKb = 60 }
                         $cand += @{ url = "https://www.bing.com/th?id=${archId}_UHD.jpg"; tag = '归档原图 UHD'; minKb = 300 }
                     } else {
-                        $cand += @{ url = "https://www.bing.com/th?id=${archId}_UHD.jpg"; tag = '归档原图 UHD'; minKb = 300 }
-                        # 2019 起 Bing 把部分日期的 _UHD 退回 1080p；cn 带 w/h 仍给 3840x2160。
-                        # 必须排在 1080p 之前 —— 否则一律落到 1080p，4K 永远轮不到。
+                        # cn 带 w/h 是唯一稳定给 3840 的形态（实测 2019-06 起可用），放首位。
+                        # 裸 _UHD.jpg 由 Bing 按原始比例缩放，实测给 1920/2822/2937，
+                        # 白下 1.8-2.5 MB 才被宽度校验拒掉 —— 降为备份位。
+                        $cand += @{ url = "https://www.bing.com/th?id=${archId}_UHD.jpg&w=3840&h=2160&rs=1&c=4"; tag = 'www4k 3840'; minKb = 200 }
                         $cand += @{ url = "https://cn.bing.com/th?id=${archId}_UHD.jpg&w=3840&h=2160&rs=1&c=4"; tag = 'cn4k 3840'; minKb = 200 }
+                        $cand += @{ url = "https://www.bing.com/th?id=${archId}_UHD.jpg"; tag = '归档原图 UHD'; minKb = 300 }
                         # 2016-2018 的图 Bing 只留了 1080p，UHD 会 404
                         $cand += @{ url = "https://www.bing.com/th?id=${archId}_1920x1080.jpg"; tag = '归档原图 1080p'; minKb = 60 }
                     }
@@ -4402,6 +4633,19 @@ if ($FillLibrary) {
                     $lowKept = $false
                     $wantUhd = (-not $previewOnly) -and ([string]$config['resolution'] -ne '1920x1080')
                     $minW = if ($wantUhd) { 3000 } else { 0 }
+                    # 快速换图（-Date 这条路径）：先用 1080p 秒开，原图交给后台进程补。
+                    # 只在「要原图 + 不在画廊/预取/照片墙/接管 + 不是照片墙预览」时启用。
+                    $fastHit = $false
+                    if ($wantUhd -and [bool]$config['fastSwitch'] -and -not $previewOnly -and
+                        -not $Gallery -and -not $script:NoApply -and -not $script:WallMode -and -not $script:Takeover) {
+                        try {
+                            $szFast = Save-BingImage -Url "https://www.bing.com/th?id=${archId}_1920x1080.jpg" -Dest $dest -MinKB 60 -Retry 1
+                            $got = '1080p 秒开'
+                            $fastHit = $true
+                            Write-Log ("快速换图：先取 1080p（" + [math]::Round($szFast / 1KB) + " KB）立刻换上，原图后台补")
+                        } catch { Write-Log ("快速换图取 1080p 失败，走完整候选链：" + $_.Exception.Message) 'WARN' }
+                    }
+                    if (-not $fastHit) {
                     foreach ($c in $cand) {
                         try {
                             $sz = Save-BingImageAtLeast -Url $c.url -Dest $dest -MinKB $c.minKb -MinWidth $minW
@@ -4416,6 +4660,7 @@ if ($FillLibrary) {
                             }
                         }
                     }
+                    }
                     if (-not $got -and $lowKept) {
                         $got = '低画质回退'
                         Write-Log '所有候选都只有低画质，采用当前这份' 'WARN'
@@ -4427,6 +4672,14 @@ if ($FillLibrary) {
                         if ($archTtl.Length -gt 60) { $archTtl = $archTtl.Substring(0, 60) }
                         Add-Pinned -Date $Date
                         Write-State -Date $Date -File $dest -Title $archTtl -Copyright $archCpr -SearchUrl ([string]$rec.searchUrl) -ImageId $archId -AppliedDate $Date
+                        if ($fastHit) {
+                            try {
+                                $argL = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden',
+                                          '-File', $PSCommandPath, '-UpgradeFile', $dest)
+                                Start-Process -FilePath 'powershell.exe' -ArgumentList $argL -WindowStyle Hidden | Out-Null
+                                Write-Log '原图已交给后台补，补完会自动刷新桌面'
+                            } catch { Write-Log ("启动后台补图失败：" + $_.Exception.Message) 'WARN' }
+                        }
                         if ($script:UpgradeDest) {
                             $wNew = Get-ImagePixelWidth -Path $dest
                             if ($wNew -gt 0 -and $wNew -lt 3000) {
@@ -4436,9 +4689,7 @@ if ($FillLibrary) {
                         }
                         Write-Log '--- 完成 ---'
         if ([bool]$config['autoClean']) {
-            $capMB2 = 0
-            try { $capMB2 = [int]$config['archiveMaxMB'] } catch { }
-            if ($capMB2 -gt 0) { [void](Clear-ArchiveBySize -MaxMB $capMB2) }
+            [void](Clear-AutoCache -Days $keepDays -Items $autoCleanItems)
         }
                         Exit-Run 0
                     }
@@ -4600,9 +4851,7 @@ if ($FillLibrary) {
         Write-State -Date $dateStr -File $file -Title $uTtl -Copyright $uCpr -ImageId $uId
         Write-Log '--- 完成 ---'
         if ([bool]$config['autoClean']) {
-            $capMB2 = 0
-            try { $capMB2 = [int]$config['archiveMaxMB'] } catch { }
-            if ($capMB2 -gt 0) { [void](Clear-ArchiveBySize -MaxMB $capMB2) }
+            [void](Clear-AutoCache -Days $keepDays -Items $autoCleanItems)
         }
         Exit-Run 0
     }
@@ -4719,10 +4968,7 @@ if ($FillLibrary) {
     if ($isAuto -and -not $Force -and $state -and $state.date -eq $dateStr -and (Test-Path $dest) -and $curWp -eq $dest) {
         Write-Log ("当天壁纸已就位（" + $dateStr + "），无需重复设置")
         if ([bool]$config['autoClean']) {
-            [void](Clear-OldCache -Days $keepDays)
-            $capMB = 0
-            try { $capMB = [int]$config['archiveMaxMB'] } catch { }
-            if ($capMB -gt 0) { [void](Clear-ArchiveBySize -MaxMB $capMB) }
+            [void](Clear-AutoCache -Days $keepDays -Items $autoCleanItems)
         }
         Exit-Run 0
     }
@@ -4733,10 +4979,7 @@ if ($FillLibrary) {
         }
         Write-Log '已是最新且壁纸已就位，跳过'
         if ([bool]$config['autoClean']) {
-            [void](Clear-OldCache -Days $keepDays)
-            $capMB = 0
-            try { $capMB = [int]$config['archiveMaxMB'] } catch { }
-            if ($capMB -gt 0) { [void](Clear-ArchiveBySize -MaxMB $capMB) }
+            [void](Clear-AutoCache -Days $keepDays -Items $autoCleanItems)
         }
         Exit-Run 0
     }
@@ -4758,7 +5001,10 @@ if ($FillLibrary) {
     } elseif ($res -eq '1920x1080') {
         $candidates = @($bing1080, $bingWh, $bingUhd, $msUrl2, $msUrl)
     } else {
-        $candidates = @($bingUhd, $bingWh, $bingCn4k, $msUrl2, $msUrl, $bing1080)
+        # 4K 带 w/h 的排前面：裸 _UHD.jpg 由 Bing 按原始比例缩放，实测只给
+        # 1920/2822/2937，白下 1.8-2.5 MB 才被宽度校验拒掉。裸链降为备份位。
+        # www 比 cn 稳定快 35-55%，同字节优先取 www
+        $candidates = @($bingWh, $bingCn4k, $bingUhd, $msUrl2, $msUrl, $bing1080)
     }
     $candidates = @($candidates) + @(Get-WiliiCandidates -Date $dateStr)
     $candidates = $candidates | Where-Object { $_ } | Select-Object -Unique
@@ -4791,6 +5037,66 @@ if ($FillLibrary) {
         }
     }
     if ($Force) { $needDownload = $true }
+
+    # ---- 快速换图：先用 1080p 秒开，原图交给后台进程补。
+    # 只在「真要下载 + 要原图 + 不在画廊/预取/照片墙/接管」时启用 —— 那四种场景要么不设壁纸，
+    # 要么本来就该等原图，秒开没有意义。
+    $fastMode = ($needDownload -and [bool]$config['fastSwitch'] -and $res -ne '1920x1080' -and
+                 -not $Gallery -and -not $script:NoApply -and -not $script:WallMode -and -not $script:Takeover)
+    if ($fastMode) {
+        $uFast = "https://www.bing.com/th?id=${fullId}_1920x1080.jpg"
+        $fastSize = 0
+        $fastOk = $false
+        try {
+            $fastSize = Save-BingImage -Url $uFast -Dest $dest -MinKB 60 -Retry 1
+            $fastOk = $true
+        } catch { Write-Log ("快速换图取 1080p 失败，改走完整下载：" + $_.Exception.Message) 'WARN' }
+
+        if ($fastOk) {
+            Write-Log ("快速换图：先取 1080p（" + [math]::Round($fastSize / 1KB) + " KB）立刻换上，原图后台补")
+            if ($autoMode -and $lockedNow) {
+                Write-Log '锁定中：只下载不切换壁纸'
+                Write-State -Date $dateStr -File $dest -Title $title -Copyright $copy -SearchUrl ([string]$img.copyrightlink) -ImageId $fullId -AppliedDate $dateStr
+            } else {
+                Set-WallpaperStyle -Name $styleName
+                if (Set-DesktopWallpaper -Path $dest) { Write-Log "壁纸已设置: $dest" }
+                else { Write-Log '壁纸设置后注册表未更新' 'WARN'; Exit-Run 11 }
+                Write-State -Date $dateStr -File $dest -Title $title -Copyright $copy -SearchUrl ([string]$img.copyrightlink) -ImageId $fullId -AppliedDate $dateStr
+            }
+            # 索引先按 1080p 记一笔，后台补完不重写（文件名不变，大小差异不影响任何逻辑）
+            if (-not $Gallery -and -not $script:NoApply) {
+                try {
+                    $catF = @{}
+                    if (Test-Path $IndexPath) {
+                        $oldF = Get-Content $IndexPath -Raw -Encoding UTF8 | ConvertFrom-Json
+                        foreach ($ppF in $oldF.PSObject.Properties) { $catF[$ppF.Name] = $ppF.Value }
+                    }
+                    $catF[$dateStr] = [ordered]@{
+                        title     = $title
+                        titleEn   = $titleEn
+                        copyright = $copy
+                        file      = $fileName
+                        imageId   = $fullId
+                        sizeBytes = $fastSize
+                    }
+                    [System.IO.File]::WriteAllText($IndexPath, ($catF | ConvertTo-Json -Depth 6), (New-Object System.Text.UTF8Encoding($false)))
+                } catch { }
+            }
+            # 后台补图：独立进程，跑完覆盖同名文件并在必要时重设壁纸
+            try {
+                $argList = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden',
+                             '-File', $PSCommandPath, '-UpgradeFile', $dest)
+                Start-Process -FilePath 'powershell.exe' -ArgumentList $argList -WindowStyle Hidden | Out-Null
+                Write-Log '原图已交给后台补，补完会自动刷新桌面'
+            } catch { Write-Log ("启动后台补图失败：" + $_.Exception.Message) 'WARN' }
+
+            if ([bool]$config['autoClean']) {
+                [void](Clear-AutoCache -Days $keepDays -Items $autoCleanItems)
+            }
+            Write-Log '--- 完成（快速换图，原图后台补）---'
+            Exit-Run 0
+        }
+    }
 
     if ($needDownload) {
         $ok = $false
@@ -4856,10 +5162,7 @@ if ($FillLibrary) {
     }
 
     if ([bool]$config['autoClean']) {
-        $capMB = 0
-        try { $capMB = [int]$config['archiveMaxMB'] } catch { }
-        if ($capMB -gt 0) { [void](Clear-ArchiveBySize -MaxMB $capMB) }
-        [void](Clear-OldCache -Days $keepDays)
+        [void](Clear-AutoCache -Days $keepDays -Items $autoCleanItems)
     } else {
         Write-Log '自动清理已关闭，跳过缓存清理'
     }

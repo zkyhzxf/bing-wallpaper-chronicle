@@ -82,9 +82,10 @@ def text_layer(s, f, fill=WHITE, shadow=True, pad=8):
     return im
 
 
-def place(canvas, layer, cx, cy, scale=1.0, alpha=1.0, rot=0.0, anchor="mm"):
+def place(canvas, layer, cx, cy, scale=1.0, alpha=1.0, rot=0.0, anchor="mm", dy=0.0):
     if alpha <= 0.004 or scale <= 0.01:
         return
+    cy = cy + dy
     im = layer
     if abs(scale - 1.0) > 0.002:
         nw, nh = max(1, int(im.width * scale)), max(1, int(im.height * scale))

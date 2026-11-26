@@ -1,4 +1,4 @@
-﻿using System;
+﻿﻿using System;
 using System.Drawing;
 using System.IO;
 using System.Windows.Forms;
@@ -17,6 +17,7 @@ namespace BingWallpaperLite
         private readonly Button btnPick;
         private readonly Button btnExit;
         private Button btnFill;
+        private Button btnRefresh;
 
         public TakeoverForm()
         {
@@ -30,10 +31,17 @@ namespace BingWallpaperLite
             try { Font = new Font("Microsoft YaHei UI", 9F); } catch { }
 
             lblTitle = new Label();
-            lblTitle.SetBounds(18, 16, 580, 22);
+            lblTitle.SetBounds(18, 16, 460, 22);
             lblTitle.Font = new Font("Microsoft YaHei UI", 10F, FontStyle.Bold);
             lblTitle.Text = S.TkHeader;
             Controls.Add(lblTitle);
+
+            // 图库可能在窗口开着时变化（补齐 / 手动丢图），给个重扫入口
+            btnRefresh = new Button();
+            btnRefresh.Text = S.TkRefresh;
+            btnRefresh.SetBounds(486, 13, 108, 26);
+            btnRefresh.Click += delegate { RefreshState(); };
+            Controls.Add(btnRefresh);
 
             lblState = new Label();
             lblState.SetBounds(18, 46, 580, 22);
@@ -120,6 +128,8 @@ namespace BingWallpaperLite
                 {
                     int n = 0;
                     int days = 0;
+                    string latest = "";
+                    int stale = -1;
                     try
                     {
                         string[] fs = Directory.GetFiles(root, "*.jpg", SearchOption.AllDirectories);
@@ -131,10 +141,23 @@ namespace BingWallpaperLite
                             if (fn.Length >= 8) { ds.Add(fn.Substring(0, 8)); }
                         }
                         days = ds.Count;
+                        if (days > 0)
+                        {
+                            System.Collections.Generic.List<string> ls =
+                                new System.Collections.Generic.List<string>(ds);
+                            ls.Sort();
+                            latest = ls[ls.Count - 1];
+                            DateTime dtL;
+                            if (DateTime.TryParseExact(latest, "yyyyMMdd", null,
+                                    System.Globalization.DateTimeStyles.None, out dtL))
+                            {
+                                stale = (int)(DateTime.Today - dtL.Date).TotalDays;
+                            }
+                        }
                     }
                     catch { }
-                    lblState.Text = S.TkOn;
-                    lblPath.Text = S.TkOnBody(root, n, days);
+                    lblState.Text = S.TkOn + "  ·  " + S.TkStatAt(DateTime.Now.ToString("HH:mm:ss"));
+                    lblPath.Text = S.TkOnBody(root, n, days, latest, stale);
                     btnPick.Text = S.TkChange;
                     btnExit.Enabled = true;
                     if (btnFill != null) { btnFill.Enabled = true; }
@@ -245,15 +268,10 @@ namespace BingWallpaperLite
             }
         }
 
+        /// <summary>打开图库目录；与托盘菜单那个标牌共用同一份实现。</summary>
         private void OpenRoot()
         {
-            try
-            {
-                string root = Program.CurrentTakeoverRoot();
-                if (string.IsNullOrEmpty(root)) { root = Program.TakeoverDirPath; }
-                if (Directory.Exists(root)) { System.Diagnostics.Process.Start("explorer.exe", "\"" + root + "\""); }
-            }
-            catch { }
+            Program.OpenTakeoverRoot();
         }
     }
 }

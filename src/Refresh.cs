@@ -142,11 +142,11 @@ namespace BingWallpaperLite
             try
             {
                 EnsureTakeoverValid();
-                bool running = File.Exists(lockPath);
+                bool running = File.Exists(LockPathNow);
                 SetBusy(running);
 
                 Dictionary<string, object> cfg = ReadConfig();
-                Dictionary<string, object> state = ReadJson(statePath);
+                Dictionary<string, object> state = ReadJson(StatePathNow);
                 bool isLocked = GetCfgBool(cfg, "locked", false);
 
                 string showDate;
@@ -402,7 +402,7 @@ namespace BingWallpaperLite
         private static string LookupTitle(string date)
         {
             if (string.IsNullOrEmpty(date)) { return ""; }
-            Dictionary<string, object> index = ReadJson(indexPath);
+            Dictionary<string, object> index = ReadJson(CacheIndexPathNow);
             if (index != null && index.ContainsKey(date))
             {
                 Dictionary<string, object> e = index[date] as Dictionary<string, object>;
@@ -488,8 +488,36 @@ namespace BingWallpaperLite
             string[] favFiles = SafeGetFiles(favDir);
             string[] recentFiles = SafeGetFiles(cacheDir);
             string[] archFiles = SafeGetFiles(archiveImgDir);
-            Dictionary<string, object> favIdx = ReadJson(favIndexPath);
-            Dictionary<string, object> cacheIdx = ReadJson(indexPath);
+            Dictionary<string, object> favIdx = ReadJson(FavIndexPathNow);
+
+            // 接管时图库在别处；不管哪种模式，停摆都得让人一眼看见
+            try
+            {
+                string[] staleSrc = SafeGetFiles(ActiveArchiveImgPath);
+                if (staleSrc.Length > 0)
+                {
+                    string nmS = Path.GetFileName(staleSrc[0]);
+                    if (nmS.Length >= 8)
+                    {
+                        DateTime dtS;
+                        if (DateTime.TryParseExact(nmS.Substring(0, 8), "yyyyMMdd", null,
+                                System.Globalization.DateTimeStyles.None, out dtS))
+                        {
+                            int gapS = (int)(DateTime.Today - dtS.Date).TotalDays;
+                            if (gapS > 2)
+                            {
+                                ToolStripMenuItem warnS = new ToolStripMenuItem(S.LibStaleN(gapS));
+                                warnS.Enabled = false;
+                                try { warnS.ForeColor = Color.FromArgb(200, 80, 40); } catch { }
+                                lib.DropDownItems.Add(warnS);
+                                lib.DropDownItems.Add(new ToolStripSeparator());
+                            }
+                        }
+                    }
+                }
+            }
+            catch { }
+            Dictionary<string, object> cacheIdx = ReadJson(CacheIndexPathNow);
 
             // ---- 收藏
             ToolStripMenuItem favHead = new ToolStripMenuItem(S.FavHeaderN(favFiles.Length));
@@ -555,7 +583,7 @@ namespace BingWallpaperLite
         {
             try
             {
-                Dictionary<string, object> st = ReadJson(statePath);
+                Dictionary<string, object> st = ReadJson(StatePathNow);
                 string d = GetStr(st, "date");
                 return d.Length == 8 ? d : "";
             }
@@ -1149,8 +1177,24 @@ namespace BingWallpaperLite
         /// 重注册计划任务。改时间必须重建 —— EnsureRegistered 只在「指向不对」时才动，
         /// 光改 config 它不会刷新触发时刻（旧版点「更新时间」看着成功、实际没生效就栽在这）。
         /// </summary>
-        private static bool ReregisterTask()
+        private static bool ReregisterTask(bool force)
         {
+            // force=false 时幂等：已经指向当前 exe、且下次运行时间可读，就不重建。
+            // 重建 = delete + create，会把运行历史清零，「上次运行」永远停在 1999，
+            // 出了问题就永远查不出到底跑没跑。改时间才需要真重建（force=true）。
+            if (!force)
+            {
+                try
+                {
+                    if (IsTaskPointingHere() && !string.IsNullOrEmpty(NextRunTimeText()))
+                    {
+                        TaskAudit("skip", "任务已指向当前 exe，跳过重建");
+                        return true;
+                    }
+                }
+                catch { }
+            }
+            TaskAudit("task", "重建计划任务（force=" + (force ? "true" : "false") + "）");
             try { RunSchtasks("/delete /tn \"" + TaskName + "\" /f"); } catch { }
             try { RegisterTask(); } catch { return false; }
             try { return IsTaskPointingHere(); } catch { return false; }
@@ -1208,7 +1252,8 @@ namespace BingWallpaperLite
             }
             catch { }
 
-            bool ok = ReregisterTask();
+            // 改时间必须真重建，否则触发时刻不会变
+            bool ok = ReregisterTask(true);
             try { RefreshAll(); } catch { }
 
             if (!ok)
@@ -1226,7 +1271,8 @@ namespace BingWallpaperLite
             SetBusy(true);
             try
             {
-                bool ok = ReregisterTask();
+                // 修复走幂等：没坏就别重建，免得把运行历史清成 1999
+                bool ok = ReregisterTask(false);
                 bool locked = false;
                 try { locked = GetCfgBool(ReadConfig(), "locked", false); } catch { }
 
@@ -1307,6 +1353,23 @@ namespace BingWallpaperLite
         {
             ToolStripMenuItem startup = menu.Items["startup"] as ToolStripMenuItem;
             if (startup == null) { return; }
+            ToolStripMenuItem fastIt = menu.Items["fastswitch"] as ToolStripMenuItem;
+            if (fastIt != null)
+            {
+                if (TakeoverActive())
+                {
+                    // 接管下快速换图不生效：如实告诉用户，不留一个勾着的假象
+                    fastIt.Text = S.FastSwitchTkOff;
+                    fastIt.ToolTipText = S.FastSwitchTkTip;
+                }
+                else
+                {
+                    bool fastOn = GetCfgBool(ReadConfig(), "fastSwitch", true);
+                    fastIt.Text = fastOn ? S.FastSwitchOn : S.FastSwitchOff;
+                    fastIt.ToolTipText = S.FastSwitchTip;
+                }
+            }
+
             startup.Text = IsStartupEnabled() ? S.StartupOn : S.StartupOff;
         }
 
@@ -1460,7 +1523,8 @@ namespace BingWallpaperLite
             Dictionary<string, object> c = ReadConfig();
             bool on = GetCfgBool(c, "autoClean", true);
             int days = GetCfgInt(c, "keepDays", 30);
-            it.Text = (on ? S.AutoCleanOn : S.AutoCleanOff) + S.DaysPrefix + days + S.DaysSuffix;
+            // 天数已经在「清理设置」里看得到，菜单上再挂一遍太长
+            it.Text = on ? S.AutoCleanOn : S.AutoCleanOff;
 
             ToolStripMenuItem ca = null;
             foreach (ToolStripItem x in cm.DropDownItems)
@@ -1506,8 +1570,8 @@ namespace BingWallpaperLite
             ym.Visible = true;
 
             bool archiveOn = GetCfgBool(ReadConfig(), "archive", true);
-            Dictionary<string, object> favIdx = ReadJson(favIndexPath);
-            Dictionary<string, object> cacheIdx = ReadJson(indexPath);
+            Dictionary<string, object> favIdx = ReadJson(FavIndexPathNow);
+            Dictionary<string, object> cacheIdx = ReadJson(CacheIndexPathNow);
             Dictionary<string, object> archiveIdx = null;
             try { archiveIdx = LoadArchiveIndex(); } catch { }
 

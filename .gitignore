@@ -59,3 +59,14 @@ promo/out/
 promo/_build/
 promo/_sheet/
 __pycache__/
+
+# 接管沙盒（运行时产物，退出接管即删）
+takeover/
+
+# 宣传物料：只留脚本与文档，媒体素材体积太大不入库
+promo/_*
+promo/assets/
+promo/assets_src/
+promo/bgm/
+promo/evidence/
+promo/evidence_scenes.py

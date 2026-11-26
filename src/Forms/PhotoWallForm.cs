@@ -37,6 +37,17 @@ namespace BingWallpaperLite
         private readonly Button btnFav;
         private readonly Button btnOpen;
         private readonly CheckBox chkLocal;
+        private readonly Button btnPrev;
+        private readonly Button btnNext;
+        private readonly Label lblPage;
+
+        // 接管下图库可能有几千张：一次全铺进 AutoScroll 面板会卡死，必须分页
+        private const int PageSize = 120;
+        private readonly bool takeoverWall = Program.TakeoverActive();
+        private readonly List<string> defaultDates = new List<string>();
+        private bool showAll = false;
+        private int pageIndex = 0;
+        private int pageCount = 1;
 
         private readonly System.Windows.Forms.Timer ticker;
         private string selected = "";
@@ -101,6 +112,8 @@ namespace BingWallpaperLite
                     dates.Add(dt.ToString("yyyyMMdd"));
                 }
             }
+
+            defaultDates.AddRange(dates);
 
             // ---------------------------------------------------------------- 顶部工具条
             Panel top = new Panel();
@@ -175,11 +188,38 @@ namespace BingWallpaperLite
             bar.Controls.Add(btnOpen);
 
             btnFetch = new Button();
-            btnFetch.Text = S.WallFetchMissing;
-            btnFetch.Size = new Size(112, 30);
+            // 接管下图库就是全部：“把缺的取回”在这里没意义，改成“显示全部图片”
+            btnFetch.Text = takeoverWall ? S.WallShowAll : S.WallFetchMissing;
+            btnFetch.Size = new Size(takeoverWall ? 128 : 112, 30);
             btnFetch.Margin = new Padding(4, 0, 4, 0);
-            btnFetch.Click += delegate { FetchAll(); };
+            if (takeoverWall) { btnFetch.Click += delegate { ToggleShowAll(); }; }
+            else { btnFetch.Click += delegate { FetchAll(); }; }
             bar.Controls.Add(btnFetch);
+
+            btnPrev = new Button();
+            btnPrev.Text = "◀";
+            btnPrev.Size = new Size(34, 30);
+            btnPrev.Margin = new Padding(8, 0, 0, 0);
+            btnPrev.Visible = false;
+            btnPrev.Click += delegate { if (pageIndex > 0) { pageIndex--; LoadData(); } };
+            bar.Controls.Add(btnPrev);
+
+            lblPage = new Label();
+            lblPage.AutoSize = false;
+            lblPage.Size = new Size(80, 30);
+            lblPage.Margin = new Padding(0);
+            lblPage.TextAlign = ContentAlignment.MiddleCenter;
+            lblPage.ForeColor = WallTheme.TextDim;
+            lblPage.Visible = false;
+            bar.Controls.Add(lblPage);
+
+            btnNext = new Button();
+            btnNext.Text = "▶";
+            btnNext.Size = new Size(34, 30);
+            btnNext.Margin = new Padding(0);
+            btnNext.Visible = false;
+            btnNext.Click += delegate { if (pageIndex < pageCount - 1) { pageIndex++; LoadData(); } };
+            bar.Controls.Add(btnNext);
 
             Button btnClose = new Button();
             btnClose.Text = S.BtnClose;
@@ -227,7 +267,9 @@ namespace BingWallpaperLite
         {
             try
             {
-                string[] dirs = new string[] { Program.FavDirPath, Program.CacheDirPath, Program.ArchiveImgPath, Program.WallDirPath };
+                // 必须用 Active* 版本：静态的 ArchiveImgPath 恒等于安装目录归档，
+                // 接管下它看不见用户图库，卡片会全部判成「缺图」。
+                string[] dirs = new string[] { Program.ActiveFavDirPath, Program.ActiveCacheDir, Program.ActiveArchiveImgPath, Program.WallDirPath };
                 foreach (string dir in dirs)
                 {
                     if (!Directory.Exists(dir)) { continue; }
@@ -274,6 +316,16 @@ namespace BingWallpaperLite
 
             List<string> order = new List<string>(dates);
             if (cmbSort.SelectedIndex == 1) { order.Reverse(); }
+
+            // 分页：只把当前页切进去渲染，总数仍由 dates.Count 对外报
+            pageCount = Math.Max(1, (order.Count + PageSize - 1) / PageSize);
+            if (pageIndex >= pageCount) { pageIndex = pageCount - 1; }
+            if (pageIndex < 0) { pageIndex = 0; }
+            if (order.Count > PageSize)
+            {
+                int skip = pageIndex * PageSize;
+                order = order.GetRange(skip, Math.Min(PageSize, order.Count - skip));
+            }
 
             // 官方索引里没有这一天（2010-04-16 这类）：不是"本地缺图"，是 Bing 那天没发。
             // 单独标记、不进 missing —— 否则状态栏永远显示缺 N 张，每次「拉图」都白跑一趟。
@@ -537,7 +589,7 @@ namespace BingWallpaperLite
                 }
                 if (gapCount > 0) { txt = txt + "  " + S.WallGapHint(gapCount); }
                 lblStatus.Text = txt;
-                btnFetch.Enabled = (missing.Count > 0) && !working;
+                btnFetch.Enabled = takeoverWall ? !working : ((missing.Count > 0) && !working);
                 bool hasSel = false;
                 if (selected.Length > 0)
                 {
@@ -555,6 +607,16 @@ namespace BingWallpaperLite
                     btnFav.Text = fav ? S.WallBtnUnfav : S.WallBtnFav;
                 }
                 if (btnOpen != null) { btnOpen.Enabled = hasSel && !working; }
+                if (btnPrev != null)
+                {
+                    bool showPager = showAll && pageCount > 1;
+                    btnPrev.Visible = showPager;
+                    lblPage.Visible = showPager;
+                    btnNext.Visible = showPager;
+                    if (showPager) { lblPage.Text = S.WallPageFmt(pageIndex + 1, pageCount); }
+                    btnPrev.Enabled = showPager && pageIndex > 0 && !working;
+                    btnNext.Enabled = showPager && (pageIndex < pageCount - 1) && !working;
+                }
             }
             catch { }
         }
@@ -708,6 +770,55 @@ namespace BingWallpaperLite
         private static void ShowInFolder(string path)
         {
             try { System.Diagnostics.Process.Start("explorer.exe", "/select,\"" + path + "\""); } catch { }
+        }
+
+        /// <summary>接管下切换「显示全部图片」与「往年今天」。</summary>
+        private void ToggleShowAll()
+        {
+            if (working) { return; }
+            selected = "";
+            if (showAll)
+            {
+                showAll = false;
+                dates.Clear();
+                dates.AddRange(defaultDates);
+                pageIndex = 0;
+            }
+            else
+            {
+                List<string> all = ScanLibraryDates();
+                if (all.Count == 0) { lblStatus.Text = S.WallShowAllEmpty; return; }
+                showAll = true;
+                dates.Clear();
+                dates.AddRange(all);
+                pageIndex = 0;
+            }
+            btnFetch.Text = showAll ? S.WallShowDefault : S.WallShowAll;
+            LoadData();
+            try { host.AutoScrollPosition = new Point(0, 0); } catch { }
+        }
+
+        /// <summary>扫当前生效图库的全部日期（接管时就是用户图库），新的在前。</summary>
+        private static List<string> ScanLibraryDates()
+        {
+            List<string> r = new List<string>();
+            try
+            {
+                string dir = Program.ActiveArchiveImgPath;
+                if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) { return r; }
+                System.Collections.Generic.HashSet<string> hs =
+                    new System.Collections.Generic.HashSet<string>();
+                foreach (string f in Directory.GetFiles(dir, "*.jpg", SearchOption.AllDirectories))
+                {
+                    string n = Path.GetFileName(f);
+                    if (n.Length >= 8) { hs.Add(n.Substring(0, 8)); }
+                }
+                r.AddRange(hs);
+            }
+            catch { }
+            r.Sort();
+            r.Reverse();
+            return r;
         }
 
         private void FetchOne(WallCard card)
@@ -881,13 +992,14 @@ namespace BingWallpaperLite
                     int nKeep = nWall;
                     ThreadPool.QueueUserWorkItem(delegate
                     {
-                        Program.RunScriptExit("-WallKeep");
+                        int rcKeep = Program.RunScriptExit("-WallKeep");
+                        bool okKeep = (rcKeep == 0);
                         try
                         {
                             BeginInvoke((MethodInvoker)delegate
                             {
-                                MessageBox.Show(S.WallResultKeep(nKeep), Program.AppName,
-                                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                                MessageBox.Show(okKeep ? S.WallResultKeep(nKeep) : S.WallKeepBlocked(nKeep), Program.AppName,
+                                    MessageBoxButtons.OK, okKeep ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
                                 Close();
                             });
                         }

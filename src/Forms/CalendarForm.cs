@@ -103,7 +103,7 @@ namespace BingWallpaperLite
             hint.ForeColor = SystemColors.GrayText;
             hint.Text = S.IsEn
                 ? "Last 8 days: official original\r\nSince Mar 2016: archive original (online)\r\n" + S.CalBoldHint
-                : "最近 8 天：官方原图\r\n2016-03 起：归档原图（需联网）\r\n" + S.CalBoldHint;
+                : "最近 8 天：官方原图\r\n2016-03 起：联网取原图\r\n" + S.CalBoldHint;
             Controls.Add(hint);
 
             btnToday = new Button();

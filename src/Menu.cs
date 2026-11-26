@@ -87,11 +87,15 @@ namespace BingWallpaperLite
 
             m.Items.Add(taskState);
 
-            // 模式标牌：只有接管时出现，直接告诉用户图片是从哪个目录读的
+            // 模式标牌：只有接管时出现。它不只是一行字——点一下直接打开那个图库目录
             ToolStripMenuItem modeState = new ToolStripMenuItem(S.ModeBadge(""));
             modeState.Name = "modestate";
-            modeState.Enabled = false;
             modeState.Visible = false;
+            modeState.Click += delegate
+            {
+                keepMenuOpenAfterClick = false;
+                Program.OpenTakeoverRoot();
+            };
             m.Items.Add(modeState);
 
             // 顺序：状态 -> 模式 -> 查看 -> 移动
@@ -272,6 +276,19 @@ namespace BingWallpaperLite
             m.Items.Add(notifyItem);
 
 
+            ToolStripMenuItem fastItem = new ToolStripMenuItem(S.FastSwitchOff);
+            fastItem.Name = "fastswitch";
+            fastItem.CheckOnClick = false;
+            fastItem.ToolTipText = S.FastSwitchTip;
+            fastItem.Click += delegate
+            {
+                keepMenuOpenAfterClick = true;
+                Dictionary<string, object> c = ReadConfig();
+                SetCfg(c, "fastSwitch", !GetCfgBool(c, "fastSwitch", true));
+                WriteConfig(c);
+            };
+            m.Items.Add(fastItem);
+
             ToolStripMenuItem startup = new ToolStripMenuItem(S.StartupOff);
             startup.Name = "startup";
             startup.CheckOnClick = false;
@@ -299,26 +316,111 @@ namespace BingWallpaperLite
                 WriteConfig(c);
             };
             cleanMenu.DropDownItems.Add(autoCleanItem);
-            cleanMenu.DropDownItems.Add(new ToolStripSeparator());
 
-            // 缓存
-            cleanMenu.DropDownItems.Add(MakeItem(S.Clean7, delegate { RunScriptEx("-Clean -Keep 7", "clean"); }));
-            cleanMenu.DropDownItems.Add(MakeItem(S.Clean30, delegate { RunScriptEx("-Clean -Keep 30", "clean"); }));
-            cleanMenu.DropDownItems.Add(MakeItem(S.CleanAll, delegate { ConfirmCleanAll(); }));
-
-            // 归档
-            cleanMenu.DropDownItems.Add(new ToolStripSeparator());
-            ToolStripMenuItem cleanArch = new ToolStripMenuItem(S.CleanArchive);
-            cleanArch.Name = "cleanarch";
-            cleanArch.Click += delegate
+            ToolStripMenuItem acSet = new ToolStripMenuItem(S.AutoCleanSetMenu);
+            acSet.Name = "autocleanset";
+            acSet.Click += delegate
             {
                 keepMenuOpenAfterClick = true;
-                anchor.BeginInvoke((MethodInvoker)delegate { ConfirmCleanArchive(); });
+                int curDays = GetCfgInt(ReadConfig(), "keepDays", 30);
+                string curItems = Program.CfgString("autoCleanItems", "cache,archive");
+                string acInfo = "";
+                try
+                {
+                    string[] af2 = SafeGetFiles(archiveImgDir);
+                    long ab2 = 0;
+                    foreach (string one in af2) { try { ab2 += new FileInfo(one).Length; } catch { } }
+                    acInfo = af2.Length + " 张 · " + (ab2 / 1024.0 / 1024.0).ToString("0.0") + " MB";
+                }
+                catch { }
+                int curCap = GetCfgInt(ReadConfig(), "archiveMaxMB", 500);
+                using (AutoCleanForm f = new AutoCleanForm(curDays, curItems, acInfo, curCap))
+                {
+                    if (f.ShowDialog(anchor) != DialogResult.OK) { return; }
+                    Dictionary<string, object> c2 = ReadConfig();
+                    SetCfg(c2, "keepDays", f.KeepDays);
+                    SetCfg(c2, "autoCleanItems", f.Items);
+                    SetCfg(c2, "archiveMaxMB", f.CapMB);
+                    WriteConfig(c2);
+                }
             };
-            cleanMenu.DropDownItems.Add(cleanArch);
+            cleanMenu.DropDownItems.Add(acSet);
 
             cleanMenu.DropDownItems.Add(new ToolStripSeparator());
-            cleanMenu.DropDownItems.Add(MakeItem(S.CleanFavMenu, delegate { ConfirmCleanFavorites(); }));
+
+            // 缓存：原来「保留 7 天 / 保留 30 天 / 清空」三项合成一个，点了弹窗自己填天数
+            ToolStripMenuItem cleanNow = new ToolStripMenuItem(S.CleanNow);
+            cleanNow.Name = "cleannow";
+            cleanNow.Click += delegate
+            {
+                keepMenuOpenAfterClick = true;
+                int curKeep = GetCfgInt(ReadConfig(), "keepDays", 30);
+                string keepArchInfo = "";
+                string keepOldInfo = "";
+                try
+                {
+                    string[] af = SafeGetFiles(archiveImgDir);
+                    long ab = 0;
+                    foreach (string one in af) { try { ab += new FileInfo(one).Length; } catch { } }
+                    keepArchInfo = af.Length + " 张 · " + (ab / 1024.0 / 1024.0).ToString("0.0") + " MB";
+
+                    int on = 0;
+                    long ob = 0;
+                    string oldR = OldDirPath;
+                    if (!string.IsNullOrEmpty(oldR) && Directory.Exists(oldR))
+                    {
+                        foreach (string om in Directory.GetDirectories(oldR))
+                        {
+                            string[] of = SafeGetFiles(om);
+                            on += of.Length;
+                            foreach (string one in of) { try { ob += new FileInfo(one).Length; } catch { } }
+                        }
+                    }
+                    keepOldInfo = on + " 张 · " + (ob / 1024.0 / 1024.0).ToString("0.0") + " MB";
+                }
+                catch { }
+                int favCount = 0;
+                try { favCount = SafeGetFiles(favDir).Length; } catch { }
+                using (CleanCacheForm cf = new CleanCacheForm(curKeep, keepArchInfo, keepOldInfo, favCount))
+                {
+                    if (cf.ShowDialog(anchor) != DialogResult.OK) { return; }
+
+                    // 前四项按天数清，交给 -Clean；后两项是整目录清空，交给 -CleanArchive
+                    string picked = cf.Items == null ? "" : cf.Items;
+                    string dayItems = "";
+                    foreach (string one in picked.Split(','))
+                    {
+                        string k = one.Trim();
+                        if (k == "cache" || k == "thumbs" || k == "wall" || k == "stories")
+                        {
+                            if (dayItems.Length > 0) { dayItems += ","; }
+                            dayItems += k;
+                        }
+                    }
+                    if (dayItems.Length > 0)
+                    {
+                        RunScriptEx("-Clean -Keep " + cf.KeepDays + " -CleanItems " + dayItems, "clean");
+                    }
+                    bool wantArch = picked.IndexOf("archive", StringComparison.Ordinal) >= 0;
+                    bool wantOld = picked.IndexOf("old", StringComparison.Ordinal) >= 0;
+                    if (wantArch || wantOld)
+                    {
+                        string extra = wantOld ? " -IncludeOld" : "";
+                        RunScriptEx("-CleanArchive -CleanMode recycle" + extra, "cleanarch");
+                    }
+                    // 收藏是用户特意留的图，单独一次确认，确认了才动
+                    if (picked.IndexOf("fav", StringComparison.Ordinal) >= 0 && favCount > 0)
+                    {
+                        DialogResult dr = MessageBox.Show(S.CnFavConfirm(favCount), AppName,
+                            MessageBoxButtons.OKCancel, MessageBoxIcon.Warning);
+                        if (dr == DialogResult.OK)
+                        {
+                            RunScriptEx("-CleanFavorites -CleanMode recycle", "cleanfav");
+                        }
+                    }
+                }
+            };
+            cleanMenu.DropDownItems.Add(cleanNow);
 
             m.Items.Add(cleanMenu);
 

@@ -1,4 +1,4 @@
-﻿# 必应壁纸编年史 · 回归测试
+﻿﻿﻿﻿﻿# 必应壁纸编年史 · 回归测试
 # 用法：pwsh -File test.ps1
 # 设计原则：幂等、不碰桌面壁纸、不依赖网络（用本地索引与缓存）
 
@@ -11,6 +11,12 @@ $Root = Split-Path -Parent $PSCommandPath
 $Script = Join-Path $Root 'bing-wallpaper.ps1'
 $Pwsh = 'C:\Program Files\PowerShell\7\pwsh.exe'
 if (-not (Test-Path $Pwsh)) { $Pwsh = 'powershell.exe' }
+
+# 接管时“当前生效的缓存目录”不在安装目录：锁与照片墙暂存都落在 takeover\ 沙盒里。
+# 测试必须跟着实际生效目录走，否则开着接管跑会假失败。
+$TkActive = Test-Path (Join-Path $Root 'takeover\config.json')
+$ActiveCache = $(if ($TkActive) { Join-Path $Root 'takeover\cache' } else { Join-Path $Root 'cache' })
+$ActiveCacheIndex = $(if ($TkActive) { Join-Path $Root 'takeover\cache-index.json' } else { Join-Path $Root 'cache\index.json' })
 
 $pass = 0
 $fail = 0
@@ -194,9 +200,12 @@ Check '-KwFile 从文件读关键词' {
 Write-Host ''
 Write-Host '[4] 换图与翻页' -ForegroundColor Yellow
 
-Check '-Date 有效日期（用归档里已有的那天）' {
-    $st = Get-Content (Join-Path $Root 'state.json') -Raw -Encoding UTF8 | ConvertFrom-Json
-    $r = Run-Script @('-Date', $st.date)
+Check '-Date 有效日期（用归档里已有的那天，DryRun）' {
+    # 必须带 -DryRun：不带的话这条测试会真的换掉桌面壁纸并改写 state
+    $stFile = $(if ($TkActive) { Join-Path $Root 'takeover\state.json' } else { Join-Path $Root 'state.json' })
+    if (-not (Test-Path $stFile)) { return '找不到 state.json' }
+    $st = Get-Content $stFile -Raw -Encoding UTF8 | ConvertFrom-Json
+    $r = Run-Script @('-Date', $st.date, '-DryRun')
     if ($r.Code -ne 0 -and $r.Code -ne 4) { return ('退出码 ' + $r.Code) }
     return $true
 }
@@ -208,10 +217,11 @@ Check '-Date 无效日期退出码 5/7' {
 }
 
 Check '-Date 下界前一天应被拒绝' {
-    $st = Get-Content (Join-Path $Root 'state.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    $stFileB = $(if ($TkActive) { Join-Path $Root 'takeover\state.json' } else { Join-Path $Root 'state.json' })
+    $st = Get-Content $stFileB -Raw -Encoding UTF8 | ConvertFrom-Json
     $before = $st.date
     $r = Run-Script @('-Date', '20090712')
-    $after = (Get-Content (Join-Path $Root 'state.json') -Raw -Encoding UTF8 | ConvertFrom-Json).date
+    $after = (Get-Content $stFileB -Raw -Encoding UTF8 | ConvertFrom-Json).date
     if ($r.Code -eq 0 -or $r.Code -eq 4) { return ('退出码 ' + $r.Code + '，越界不该成功') }
     if ($before -ne $after) { return ('state 从 ' + $before + ' 变成 ' + $after) }
     return $true
@@ -228,22 +238,24 @@ Check '-Status -Json 的 index.minDate 与代码下界一致' {
 }
 
 Check '-Date 位数不足应被拒绝' {
-    $st = Get-Content (Join-Path $Root 'state.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    $stFileC = $(if ($TkActive) { Join-Path $Root 'takeover\state.json' } else { Join-Path $Root 'state.json' })
+    $st = Get-Content $stFileC -Raw -Encoding UTF8 | ConvertFrom-Json
     $before = $st.date
     $r = Run-Script @('-Date', '2016030')
-    $after = (Get-Content (Join-Path $Root 'state.json') -Raw -Encoding UTF8 | ConvertFrom-Json).date
+    $after = (Get-Content $stFileC -Raw -Encoding UTF8 | ConvertFrom-Json).date
     if ($r.Code -eq 0 -or $r.Code -eq 4) { return ('退出码 ' + $r.Code + '，位数不足不该成功') }
     if ($before -ne $after) { return ('state 从 ' + $before + ' 变成 ' + $after) }
     return $true
 }
-Check '-Step -1 执行成功' {
-    $r = Run-Script @('-Step', '-1')
+Check '-Step -1 执行成功（DryRun）' {
+    # 加 -DryRun：翻页会真的换掉桌面壁纸
+    $r = Run-Script @('-Step', '-1', '-DryRun')
     if ($r.Code -ne 0 -and $r.Code -ne 4) { return ('退出码 ' + $r.Code) }
     return $true
 }
 
-Check '-Step 1 执行成功' {
-    $r = Run-Script @('-Step', '1')
+Check '-Step 1 执行成功（DryRun）' {
+    $r = Run-Script @('-Step', '1', '-DryRun')
     if ($r.Code -ne 0 -and $r.Code -ne 4) { return ('退出码 ' + $r.Code) }
     return $true
 }
@@ -263,7 +275,7 @@ Check '-ProbeLockWait 空闲时立刻拿到锁' {
 }
 
 Check '锁被占时 -ProbeLockWait 会等到超时才放弃' {
-    $lock = Join-Path $Root 'cache\.running'
+    $lock = Join-Path $ActiveCache '.running'
     $holder = Get-Process -Id $PID -ErrorAction SilentlyContinue
     if (-not $holder) { return '拿不到自身进程，无法造锁' }
     $stamp = (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
@@ -323,14 +335,35 @@ Check '往年的今天不再拼后缀字，且用（无标题）兜底' {
     return $true
 }
 
-Check '照片墙取图落 cache\wall 且不写索引' {
-    $wall = Join-Path $Root 'cache\wall'
-    $idx = Join-Path $Root 'cache\index.json'
+Check '照片墙取图落当前 cache\wall 且不写索引' {
+    $wall = Join-Path $ActiveCache 'wall'
+    $idx = $ActiveCacheIndex
     $before = if (Test-Path $idx) { Get-Content $idx -Raw -Encoding UTF8 } else { '' }
-    $r = Run-Script @('-WallDate', '20180315')
+    $probe = '20180315'
+    $r = Run-Script @('-WallDate', $probe)
     if ($r.Code -ne 0 -and $r.Code -ne 4 -and $r.Code -ne 8) { return ('退出码 ' + $r.Code) }
-    $hit = @(Get-ChildItem $wall -Filter '20180315_*.jpg' -ErrorAction SilentlyContinue)
-    if ($hit.Count -eq 0) { return 'wall 目录里没落这张图' }
+    $hit = @(Get-ChildItem $wall -Filter ($probe + '_*.jpg') -ErrorAction SilentlyContinue)
+    if ($hit.Count -eq 0)
+    {
+        # 本地已有这一天时不会下载，落点断言不适用；
+        # 接管图库动辖几千天，2018 年的日子很可能已经在库里。
+        $probeDirs = @((Join-Path $Root 'archive\images'), (Join-Path $Root 'favorites'), $ActiveCache)
+        if ($TkActive)
+        {
+            try
+            {
+                $tr = [string]((Get-Content (Join-Path $Root 'takeover\config.json') -Raw | ConvertFrom-Json).root)
+                if ($tr -and (Test-Path $tr)) { $probeDirs += $tr }
+            }
+            catch { }
+        }
+        $localHit = 0
+        foreach ($pd in $probeDirs)
+        {
+            if (Test-Path $pd) { $localHit += @(Get-ChildItem $pd -Filter ($probe + '_*.jpg') -File -ErrorAction SilentlyContinue).Count }
+        }
+        if ($localHit -eq 0) { return 'wall 目录里没落这张图，本地也没有' }
+    }
     $after = if (Test-Path $idx) { Get-Content $idx -Raw -Encoding UTF8 } else { '' }
     if ($before -ne $after) { return '照片墙取图把 cache 索引写了' }
     Run-Script @('-WallDrop') | Out-Null
@@ -666,7 +699,7 @@ Check '-WallFull 把 UHD 放回首位' {
         return $true
     }
     $order = $Matches[1]
-    if ($order -notmatch '^归档原图 UHD') { return ('首项不是 UHD：' + $order) }
+    if ($order -notmatch '^(cn4k 3840|归档原图 UHD)') { return ('首项不是 UHD：' + $order) }
     return $true
 }
 
@@ -914,10 +947,10 @@ Check '浏览更多壁纸改成打开本机照片墙' {
     return $true
 }
 
-Check '换过的图：改名、挪位置、加位置列、双击换图' {
+Check '换图记录：改名、挪位置、加类别列、双击换图' {
     $s = Get-Content (Join-Path $Root 'src\Strings.cs') -Raw
     if ($s -match '自动清理保留') { return 'Strings.cs 里还留着「自动清理保留」' }
-    if ($s -notmatch 'PinMenu\s+\{ get \{ return T\("换过的图…"') { return '菜单项没改成「换过的图」' }
+    if ($s -notmatch 'PinMenu\s+\{ get \{ return T\("换图记录…"') { return '菜单项没改成「换图记录」' }
     if ($s -notmatch 'PinColWhere') { return '没有位置列文案' }
     if ($s -notmatch 'PinLocArch') { return '没有「归档」位置文案' }
     if ($s -match '随机一张收藏') { return '「随机一张收藏」没改' }
@@ -937,11 +970,11 @@ Check '换过的图：改名、挪位置、加位置列、双击换图' {
     return $true
 }
 
-Check '帮助与 README 说明老存档不受自动清理' {
+Check '帮助与 README 说明 2016 年前的老图不受自动清理' {
     $s = Get-Content (Join-Path $Root 'src\Strings.cs') -Raw
-    if ($s -notmatch '老存档（2016 年 3 月之前的镜像图）在归档额度之外单独保管') { return '帮助第四节没提老存档不受自动清理' }
+    if ($s -notmatch '2016 年前的老图（那时只有 1366×768）在以前换过的壁纸的额度之外单独保管') { return '帮助第四节没提老图不受自动清理' }
     $r = Get-Content (Join-Path $Root 'README.md') -Raw
-    if ($r -notmatch '老存档不受任何自动清理') { return 'README 没写老存档不受自动清理' }
+    if ($r -notmatch '2016 年前的老图不受任何自动清理') { return 'README 没写老图不受自动清理' }
     return $true
 }
 
@@ -979,10 +1012,10 @@ Check '菜单入口带规模：换过的图与收藏管理都显示张数和体�
     return $true
 }
 
-Check '老存档要删的去处写进了两个提示' {
+Check '2016 年前的老图要删的去处写进了两个提示' {
     $s = Get-Content (Join-Path $Root 'src\Strings.cs') -Raw
-    if ($s -notmatch '要删请走 清理 → 清理归档') { return '移出名单确认框没写去哪删老存档' }
-    if ($s -notmatch '老存档要删：清理 → 清理归档') { return '移出无效弹窗没写去哪删老存档' }
+    if ($s -notmatch '要删请走 清理 → 立即清理') { return '移出名单确认框没写去哪删老图' }
+    if ($s -notmatch '2016 年前的老图要删：清理 → 立即清理') { return '移出无效弹窗没写去哪删老图' }
     return $true
 }
 
@@ -1089,11 +1122,11 @@ Check '按日期取不到时窗口说得清是哪一种失败' {
 Check '接管窗口统计递归、带覆盖天数、有补齐入口' {
     $t = Get-Content (Join-Path $Root 'src\Forms\TakeoverForm.cs') -Raw
     if ($t -notmatch 'SearchOption\.AllDirectories') { return '接管窗口统计仍是非递归' }
-    if ($t -notmatch 'TkOnBody\(root, n, days\)') { return '没显示覆盖天数' }
+    if ($t -notmatch 'TkOnBody\(root, n, days') { return '没显示覆盖天数' }
     if ($t -notmatch 'DoFill') { return '缺补齐入口' }
     if ($t -notmatch '-FillLibrary -RangeFrom') { return '补齐没调 -FillLibrary' }
     $st = Get-Content (Join-Path $Root 'src\Strings.cs') -Raw
-    if ($st -notmatch 'TkOnBody\(string root, int n, int days\)') { return 'TkOnBody 签名没改' }
+    if ($st -notmatch 'TkOnBody\(string root, int n, int days') { return 'TkOnBody 签名没改' }
     return $true
 }
 
@@ -1441,7 +1474,7 @@ Check '改时间会强制重注册' {
     $t = Get-Content (Join-Path $Root 'src\Refresh.cs') -Raw
     $m = [regex]::Match($t, '(?s)internal static void ApplyUpdateTime\(string hm\).*?\n        \}')
     if (-not $m.Success) { return 'Refresh.cs 里找不到 ApplyUpdateTime' }
-    if ($m.Value -notmatch 'ReregisterTask\(\)') { return '改时间没重建任务（旧 bug：EnsureRegistered 不会刷新触发时刻）' }
+    if ($m.Value -notmatch 'ReregisterTask\(true\)') { return '改时间没强制重建任务（幂等分支会让触发时刻不变）' }
     return $true
 }
 
@@ -1778,7 +1811,7 @@ Check 'bingWh 候选不再是死链' {
 Check '日常候选链含跨域名 4K 备份' {
     $t = Get-Content (Join-Path $Root 'bing-wallpaper.ps1') -Raw
     if ($t -notmatch '\$bingCn4k') { return '没有 cn.bing.com 的 4K 备份候选' }
-    if ($t -notmatch '\$candidates = @\(\$bingUhd, \$bingWh, \$bingCn4k') { return '默认候选链没插入 cn 备份' }
+    if ($t -notmatch '\$candidates = @\(\$bingWh, \$bingCn4k, \$bingUhd') { return '默认候选链没把 www 的 4K 排到最前' }
     return $true
 }
 
@@ -1825,6 +1858,413 @@ Check '图库补齐也验画质且带 4K 候选' {
     if (-not $m.Success) { return '找不到补齐候选段' }
     if ($m.Value -notmatch 'cn\.bing\.com') { return '补齐没有 cn 的 4K 候选' }
     if ($m.Value -notmatch 'Save-BingImageAtLeast') { return '补齐没用验收函数' }
+    return $true
+}
+Check '英文版已停用（界面只走中文）' {
+    $s = Get-Content (Join-Path $Root 'src\Strings.cs') -Raw
+    if ($s -notmatch 'Init\(bool en\) \{ _en = false; \}') { return 'Init 没把 _en 钉成 false' }
+    $p = Get-Content (Join-Path $Root 'src\Program.cs') -Raw
+    if ($p -notmatch 'S\.Init\(false\)') { return 'Program 没直接传 false' }
+    if ($p -match 'c0\["uiLanguage"\]') { return 'Program 仍在读 uiLanguage 决定语言' }
+    return $true
+}
+
+Check '自动清理文案不再写死 30 天' {
+    $s = Get-Content (Join-Path $Root 'src\Strings.cs') -Raw
+    if ($s -notmatch 'KeepDaysN') { return '没有 KeepDaysN 动态天数' }
+    foreach ($k in @('PinNote', 'FavIntro', 'FavConfirm', 'AboutFeat3')) {
+        $m = [regex]::Match($s, 'public static string ' + $k + '[^\r\n]*')
+        if (-not $m.Success) { return ('找不到 ' + $k) }
+        if ($m.Value -match '30 天') { return ($k + ' 仍写着 30 天') }
+        if ($m.Value -notmatch 'KeepDaysN') { return ($k + ' 没用动态天数') }
+    }
+    return $true
+}
+
+Check '清理缓存三项合并为「立即清理缓存…」' {
+    $m = Get-Content (Join-Path $Root 'src\Menu.cs') -Raw
+    if ($m -match 'S\.Clean7') { return '菜单还在用「保留 7 天」' }
+    if ($m -match 'S\.Clean30') { return '菜单还在用「保留 30 天」' }
+    if ($m -match 'S\.CleanAll') { return '菜单还在用「清空缓存」' }
+    if ($m -notmatch 'S\.CleanNow') { return '菜单没挂「立即清理缓存」' }
+    if ($m -notmatch '"-Clean -Keep " \+ cf\.KeepDays') { return '天数没传给 -Keep' }
+    return $true
+}
+
+Check '术语里不再有归档/老存档/保护名单这类说法' {
+    $s = Get-Content (Join-Path $Root 'src\Strings.cs') -Raw
+    foreach ($k in @('历史归档', '老存档', '增强数据源', '换过的图', '第三方归档', '保护名单', '长期保留', '我存下的图', '我手动换过的', '最近下载的图', '我选的壁纸')) {
+        if ($s -match $k) { return ('Strings.cs 里还有旧说法：' + $k) }
+    }
+    if ($s -notmatch '以前换过的壁纸') { return '没有「以前换过的壁纸」这个新说法' }
+    if ($s -notmatch '2016 年前的老图') { return '没有「2016 年前的老图」这个新说法' }
+    if ($s -notmatch '自动换的壁纸') { return '没有「自动换的壁纸」这个新说法' }
+    if ($s -notmatch '换图记录') { return '没有「换图记录」这个新说法' }
+    return $true
+}
+
+Check '清理菜单合并成三项' {
+    $m = Get-Content (Join-Path $Root 'src\Menu.cs') -Raw
+    if ($m -notmatch 'S\.CleanNow') { return '没有「立即清理」' }
+    if ($m -match 'S\.CleanArchive\b') { return '「清理长期保留」还单独挂着，应该并进立即清理' }
+    if ($m -match 'S\.CleanFavMenu') { return '清理收藏还单独挂着，已并入立即清理' }
+    if ($m -notmatch '"cleannow"') { return '立即清理项没有 Name' }
+    return $true
+}
+
+Check '立即清理弹窗有六项勾选' {
+    $f = Get-Content (Join-Path $Root 'src\Forms\CleanCacheForm.cs') -Raw
+    foreach ($k in @('cache', 'thumbs', 'wall', 'stories', 'archive', 'old')) {
+        if ($f -notmatch ('"' + $k + '"')) { return ('缺勾选项 ' + $k) }
+    }
+    if ($f -notmatch 'public string Items') { return '没有 Items 结果属性' }
+    if ($f -notmatch 'archInfo') { return '没把长期保留的张数带进来' }
+    return $true
+}
+
+Check '脚本 -Clean 认 -CleanItems 且不接整目录项' {
+    $t = Get-Content (Join-Path $Root 'bing-wallpaper.ps1') -Raw
+    if ($t -notmatch '\[string\]\$CleanItems') { return '没有 -CleanItems 参数' }
+    if ($t -notmatch "'cache', 'thumbs', 'wall', 'stories'") { return '没把整目录清空的两项排除掉' }
+    if ($t -notmatch 'Clear-AutoCache -Days \$keepArg -Items \$itemsArg') { return '-Clean 没走统一入口' }
+    return $true
+}
+
+Check '任务指向判定认 exe --run 形态' {
+    $t = Get-Content (Join-Path $Root 'src\Install.cs') -Raw
+    $m = [regex]::Match($t, '(?s)private static bool IsTaskPointingHere\(\).*?catch \{ return false; \}')
+    if (-not $m.Success) { return '找不到 IsTaskPointingHere' }
+    if ($m.Value -notmatch 'Application\.ExecutablePath') { return '只认 ps1，任务实际是 exe --run，会误报修复失败' }
+    if ($m.Value -notmatch 'scriptPath') { return '不认老版本的 ps1 形态了' }
+    return $true
+}
+
+Check '清理缓存弹窗只收天数且夹工作区' {
+    $f = Get-Content (Join-Path $Root 'src\Forms\CleanCacheForm.cs') -Raw
+    if ($f -notmatch 'NumericUpDown') { return '没有天数输入框' }
+    if ($f -notmatch 'public int KeepDays') { return '没有 KeepDays 结果属性' }
+    if ($f -notmatch 'Minimum = 1') { return '天数下限不是 1' }
+    if ($f -notmatch 'WorkingArea') { return '没夹工作区，会贴到屏幕角落' }
+    return $true
+}
+
+Check '自动清理已改名（不再叫自动清理缓存）' {
+    $s = Get-Content (Join-Path $Root 'src\Strings.cs') -Raw
+    if ($s -notmatch '☑ 自动清理"') { return '菜单项没改成「自动清理」' }
+    if ($s -match '自动清理缓存"') { return '旧文案「自动清理缓存」还在' }
+    return $true
+}
+
+Check '清理菜单有自动清理设置入口' {
+    $m = Get-Content (Join-Path $Root 'src\Menu.cs') -Raw
+    if ($m -notmatch 'S\.AutoCleanSetMenu') { return '菜单没挂设置项' }
+    if ($m -notmatch '"autocleanset"') { return '设置项没有 Name' }
+    if ($m -notmatch 'AutoCleanForm') { return '没有打开设置窗口' }
+    if ($m -notmatch '"autoCleanItems"') { return '窗口结果没写回 autoCleanItems' }
+    return $true
+}
+
+Check '快速换图开关在开机启动上方且默认开' {
+    $m = Get-Content (Join-Path $Root 'src\Menu.cs') -Raw
+    $iFast = $m.IndexOf('"fastswitch"')
+    $iStart = $m.IndexOf('"startup"')
+    if ($iFast -lt 0) { return '没有 fastswitch 菜单项' }
+    if ($iStart -lt 0) { return '没有 startup 菜单项' }
+    if ($iFast -gt $iStart) { return '快速换图没排在开机启动之前' }
+    $ps = Get-Content (Join-Path $Root 'bing-wallpaper.ps1') -Raw
+    if ($ps -notmatch 'fastSwitch\s*=\s*\$true') { return '默认值不是 true' }
+    if ($m -notmatch 'GetCfgBool\(c, "fastSwitch", true\)') { return '点击时没用默认 true' }
+    return $true
+}
+
+Check '后台补图走专用入口，不碰落点逻辑' {
+    $t = Get-Content (Join-Path $Root 'bing-wallpaper.ps1') -Raw
+    if ($t -notmatch '\[string\]\$UpgradeFile') { return '没有 -UpgradeFile 参数' }
+    $m = [regex]::Match($t, '(?s)if \(\$UpgradeFile\) \{.*?Exit-Run 7')
+    if (-not $m.Success) { return '找不到补图分支' }
+    if ($m.Value -match 'Get-DownloadDir|Add-Pinned|Write-State') { return '补图分支碰了落点或登记，画廊模式下会出错' }
+    if ($m.Value -notmatch 'Set-DesktopWallpaper') { return '补完没重设壁纸，桌面不会变清晰' }
+    return $true
+}
+
+Check '日期切换有快速分支且排除了画廊/预取/照片墙' {
+    $t = Get-Content (Join-Path $Root 'bing-wallpaper.ps1') -Raw
+    if ($t -notmatch '\$fastHit = \$true') { return '没有快速换图分支' }
+    $m = [regex]::Match($t, '(?s)\$fastHit = \$false.*?\$fastHit = \$true')
+    if (-not $m.Success) { return '找不到快速分支' }
+    foreach ($k in @('-not $Gallery', '-not $script:NoApply', '-not $script:WallMode', '-not $script:Takeover')) {
+        if ($m.Value -notmatch [regex]::Escape($k)) { return ('快速分支没排除 ' + $k) }
+    }
+    if ($m.Value -notmatch '_1920x1080') { return '快速分支没先取 1080p' }
+    return $true
+}
+
+Check '容量上限可调且文案动态' {
+    $s = Get-Content (Join-Path $Root 'src\Strings.cs') -Raw
+    if ($s -notmatch 'private static int ArchCapMB') { return '没有 ArchCapMB' }
+    if ($s -notmatch 'private static string CapText') { return '没有 CapText' }
+    if ($s -match '上限 500 MB') { return '还有写死的「上限 500 MB」' }
+    $f = Get-Content (Join-Path $Root 'src\Forms\AutoCleanForm.cs') -Raw
+    if ($f -notmatch 'public int CapMB') { return '弹窗没有 CapMB' }
+    if ($f -notmatch 'cap\.Minimum = 100') { return '容量上限控件缺失' }
+    $m = Get-Content (Join-Path $Root 'src\Menu.cs') -Raw
+    if ($m -notmatch 'SetCfg\(c2, "archiveMaxMB", f\.CapMB\)') { return '弹窗结果没写回 archiveMaxMB' }
+    return $true
+}
+
+Check '自动清理设置窗口含天数与五个清理项目' {
+    $f = Get-Content (Join-Path $Root 'src\Forms\AutoCleanForm.cs') -Raw
+    if ($f -notmatch 'NumericUpDown') { return '没有天数输入框' }
+    if ($f -notmatch 'KeepDays') { return '没有 KeepDays 结果属性' }
+    if ($f -notmatch 'public string Items') { return '没有 Items 结果属性' }
+    foreach ($k in @('cache', 'thumbs', 'wall', 'stories', 'archive')) {
+        if ($f -notmatch ('"' + $k + '"')) { return ('缺少清理项目 ' + $k) }
+    }
+    if ($f -notmatch 'WorkingArea') { return '没夹工作区，会贴到屏幕角落' }
+    return $true
+}
+
+Check '脚本有自动清理统一入口与按天清理函数' {
+    $t = Get-Content (Join-Path $Root 'bing-wallpaper.ps1') -Raw
+    foreach ($fn in @('Clear-AutoCache', 'Clear-OldCacheThumbs', 'Clear-OldCacheWall')) {
+        if ($t -notmatch ('function ' + $fn)) { return ('缺少函数 ' + $fn) }
+    }
+    if ($t.IndexOf("Clear-StoryCache -Mode 'recycle'") -lt 0) { return '故事缓存没走回收站' }
+    return $true
+}
+
+Check '自动清理调用点全部走 Clear-AutoCache' {
+    $t = Get-Content (Join-Path $Root 'bing-wallpaper.ps1') -Raw
+    $d = [char]36
+    $newN = ([regex]::Matches($t, 'Clear-AutoCache -Days \$keepDays')).Count
+    $oldN = ([regex]::Matches($t, 'Clear-OldCache -Days \$keepDays')).Count
+    if ($newN -lt 6) { return ('只有 ' + $newN + ' 处走新入口，应为 7 处') }
+    if ($oldN -ne 0) { return ('还有 ' + $oldN + ' 处绕过新入口直接调 Clear-OldCache') }
+    return $true
+}
+
+Check 'autoCleanItems 有默认值且缺配置时兜底' {
+    $t = Get-Content (Join-Path $Root 'bing-wallpaper.ps1') -Raw
+    if ($t.IndexOf("autoCleanItems = 'cache,archive'") -lt 0) { return '配置默认值没加 autoCleanItems' }
+    if ($t.IndexOf('if (-not $autoCleanItems)') -lt 0) { return '没有缺省兜底' }
+    return $true
+}
+
+Check '选源按日期区间分段（实测矩阵）' {
+    $t = Get-Content (Join-Path $Root 'bing-wallpaper.ps1') -Raw
+    $d = [char]36
+    if ($t.IndexOf("elseif (" + $d + "cur -ge '20190601') { " + $d + "order = @('www4k', 'cn4k'") -lt 0) { return '2019-06 起没把 www4k 放首选' }
+    if ($t.IndexOf("elseif (" + $d + "cur -ge '20160301') { " + $d + "order = @('bimg'") -lt 0) { return '2016-03 起没把 bimg 放首选' }
+    return $true
+}
+
+Check '日常取图 4K 带参数的排在裸链前' {
+    $t = Get-Content (Join-Path $Root 'bing-wallpaper.ps1') -Raw
+    $ms = [regex]::Matches($t, 'candidates = @\(([^)]*bingCn4k[^)]*)\)')
+    if ($ms.Count -eq 0) { return '默认候选链没插入 cn 4K' }
+    $lst = $ms[0].Groups[1].Value
+    $d = [char]36
+    $iCn = $lst.IndexOf($d + 'bingCn4k')
+    $iBare = $lst.IndexOf($d + 'bingUhd')
+    if ($iCn -lt 0 -or $iBare -lt 0) { return ('默认候选链缺 4K 或裸链：' + $lst) }
+    if ($iCn -gt $iBare) { return '裸 _UHD.jpg 仍排在带参数的 4K 之前' }
+    return $true
+}
+
+Check '接管下快速开关置灰并如实换文案' {
+    $r = Get-Content (Join-Path $Root 'src\Refresh.cs') -Raw
+    if ($r -notmatch 'if \(TakeoverActive\(\)\)') { return '刷新时没判接管' }
+    if ($r.IndexOf('S.FastSwitchTkOff') -lt 0) { return '接管下仍显示原勾选文案' }
+    if ($r.IndexOf('S.FastSwitchTkTip') -lt 0) { return '接管下没有对应提示' }
+    $s = Get-Content (Join-Path $Root 'src\MenuState.cs') -Raw
+    if ($s.IndexOf('"fastswitch"') -lt 0) { return 'gate 里没有 fastswitch' }
+    if ($s.IndexOf('return !g.Takeover;') -lt 0) { return 'gate 没按接管置灰' }
+    return $true
+}
+
+Check '接管下补图不把原图当重复副本丢掉' {
+    $t = Get-Content (Join-Path $Root 'bing-wallpaper.ps1') -Raw
+    $m = [regex]::Match($t, '(?s)if \(\$UpgradeFile\) \{.*?Exit-Run 7')
+    if (-not $m.Success) { return '找不到补图分支' }
+    if ($m.Value.IndexOf('$script:UpgradeDest = $ufPath') -lt 0) { return '补图没设 UpgradeDest，接管下会丢弃刚下好的原图' }
+    return $true
+}
+
+Check '照片墙保留下失败要说真话' {
+    $w = Get-Content (Join-Path $Root 'src\Forms\PhotoWallForm.cs') -Raw
+    if ($w.IndexOf('int rcKeep = Program.RunScriptExit("-WallKeep")') -lt 0) { return '返回值仍被丢弃' }
+    if ($w.IndexOf('bool okKeep = (rcKeep == 0)') -lt 0) { return '没判退出码' }
+    if ($w.IndexOf('S.WallKeepBlocked') -lt 0) { return '失败时仍弹成功文案' }
+    return $true
+}
+
+Check '接管只读语义未被放松' {
+    $t = Get-Content (Join-Path $Root 'bing-wallpaper.ps1') -Raw
+    $m = [regex]::Match($t, '(?s)if \(\$script:Takeover -and -not \$DryRun\) \{.*?exit 10')
+    if (-not $m.Success) { return '找不到只读拦截块' }
+    foreach ($k in @('-Clean', '-CleanAll', '-CleanArchive', '-CleanFavorites', '-WallKeep', '-Gallery')) {
+        if ($m.Value.IndexOf("`$roBlocked += '$k'") -lt 0) { return ('只读拦截少了 ' + $k) }
+    }
+    if ($t.IndexOf('if ($script:Takeover) { return 0 }') -lt 0) { return '容量上限清理没在接管下短路' }
+    return $true
+}
+
+Check '日更快速模式同样排除四种场景' {
+    $t = Get-Content (Join-Path $Root 'bing-wallpaper.ps1') -Raw
+    $i = $t.IndexOf('$fastMode = (')
+    if ($i -lt 0) { return '没有日更快速模式判定' }
+    $j = $t.IndexOf(')', $i)
+    if ($j -le $i) { return '判定表达式不完整' }
+    $seg = $t.Substring($i, $j - $i)
+    foreach ($k in @('-not $Gallery', '-not $script:NoApply', '-not $script:WallMode', '-not $script:Takeover')) {
+        if ($seg.IndexOf($k) -lt 0) { return ('日更快速模式没排除 ' + $k) }
+    }
+    return $true
+}
+
+Check '照片墙认接管图库（Active 路径）' {
+    $w = Get-Content (Join-Path $Root 'src\Forms\PhotoWallForm.cs') -Raw
+    if ($w.IndexOf('Program.ActiveArchiveImgPath') -lt 0) { return '照片墙还在用静态 ArchiveImgPath，接管下看不见图库' }
+    if ($w -match 'FavDirPath, Program\.CacheDirPath') { return 'FindLocal 还在用静态 FavDir/CacheDir' }
+    return $true
+}
+
+Check '收藏家模式可点开文件夹' {
+    $m = Get-Content (Join-Path $Root 'src\Menu.cs') -Raw
+    if ($m -notmatch 'modeState\.Click \+= delegate') { return 'modestate 没绑点击' }
+    if ($m.IndexOf('Program.OpenTakeoverRoot') -lt 0) { return '没调打开目录的方法' }
+    if ($m -match 'modeState\.Enabled = false') { return 'modestate 还被写死禁用' }
+    $s = Get-Content (Join-Path $Root 'src\MenuState.cs') -Raw
+    $i = $s.IndexOf('MenuInfoOnly = new string[]')
+    $seg = $s.Substring($i, 200)
+    if ($seg.IndexOf('modestate') -ge 0) { return 'modestate 仍在 MenuInfoOnly 里，会恒灰' }
+    if ($s.IndexOf('return g.Takeover;') -lt 0) { return 'gate 没按接管放行 modestate' }
+    return $true
+}
+
+Check '接管窗口能刷新并带统计时间' {
+    $t2 = Get-Content (Join-Path $Root 'src\Forms\TakeoverForm.cs') -Raw
+    if ($t2.IndexOf('btnRefresh') -lt 0) { return '没有刷新按钮' }
+    if ($t2.IndexOf('S.TkRefresh') -lt 0) { return '刷新按钮没文案' }
+    if ($t2.IndexOf('S.TkStatAt') -lt 0) { return '状态行没带统计时间' }
+    return $true
+}
+
+Check '接管窗口说明提到索引文件' {
+    $s = Get-Content (Join-Path $Root 'src\Strings.cs') -Raw
+    if ($s.IndexOf('_bing-chronicle-index.json') -lt 0) { return 'TkTip 没说明会往图库写索引文件' }
+    return $true
+}
+
+Check '显示全部图片分页渲染' {
+    $w = Get-Content (Join-Path $Root 'src\Forms\PhotoWallForm.cs') -Raw
+    if ($w.IndexOf('private const int PageSize = 120;') -lt 0) { return '没有 PageSize' }
+    if ($w.IndexOf('ToggleShowAll') -lt 0) { return '没有切换全部/默认' }
+    if ($w.IndexOf('ScanLibraryDates') -lt 0) { return '没有扫图库日期' }
+    if ($w.IndexOf('GetRange(skip') -lt 0) { return 'LoadData 没做分页切片' }
+    if ($w.IndexOf('S.WallFetchMissing') -lt 0) { return '非接管分支的按钮文案被抹掉了' }
+    return $true
+}
+
+Check '图库新鲜度出现在状态输出里' {
+    $r = Run-Script @('-Status', '-Json')
+    $j = $r.Output | ConvertFrom-Json
+    if (-not $j.library) { return '状态输出没有 library 段' }
+    $latest = [string]$j.library.latest
+    if ($latest -notmatch '^\d{8}$') { return ('library.latest 不是 8 位日期: [' + $latest + ']') }
+    $stale = $j.library.staleDays
+    if ($null -eq $stale) { return '没有 staleDays' }
+    if ([int]$stale -lt 0) { return 'staleDays 为负，说明没算出来' }
+    return $true
+}
+
+Check '接管窗口统计带最新一天' {
+    $f = Get-Content (Join-Path $Root 'src\Forms\TakeoverForm.cs') -Raw
+    if ($f.IndexOf('S.TkOnBody(root, n, days, latest, stale)') -lt 0) { return 'TakeoverForm 没传最新日期' }
+    $s = Get-Content (Join-Path $Root 'src\Strings.cs') -Raw
+    if ($s.IndexOf('TkOnBody(string root, int n, int days, string latest, int staleDays)') -lt 0) { return 'TkOnBody 签名没扩展' }
+    if ($s.IndexOf('最新 {2}') -lt 0) { return '文案里没有最新一天' }
+    return $true
+}
+
+Check '菜单能标出图库停摆' {
+    $s = Get-Content (Join-Path $Root 'src\Strings.cs') -Raw
+    if ($s.IndexOf('LibStaleN') -lt 0) { return '没有停摆警告文案' }
+    $r2 = Get-Content (Join-Path $Root 'src\Refresh.cs') -Raw
+    if ($r2.IndexOf('S.LibStaleN(gapS)') -lt 0) { return '菜单没插告警行' }
+    if ($r2.IndexOf('ActiveArchiveImgPath') -lt 0) { return '告警行没认接管图库' }
+    if ($r2.IndexOf('gapS > 2') -lt 0) { return '没有 2 天阈值' }
+    return $true
+}
+
+Check '计划任务入口写审计日志' {
+    $p = Get-Content (Join-Path $Root 'src\Program.cs') -Raw
+    if ($p.IndexOf('BingWallpaperLite.task.log') -lt 0) { return '没有审计日志文件' }
+    if ($p.IndexOf('private static void TaskAudit(') -lt 0) { return '没有 TaskAudit 方法' }
+    $m = [regex]::Match($p, '(?s)if \(arg0 == "--run".*?Environment\.Exit\(rc\)')
+    if (-not $m.Success) { return '找不到 --run 分支' }
+    if ($m.Value.IndexOf('TaskAudit("start"') -lt 0) { return '--run 没写 start' }
+    if ($m.Value.IndexOf('TaskAudit("end"') -lt 0) { return '--run 没写 end' }
+    if ($m.Value.IndexOf('rc=') -lt 0) { return 'end 行没记退出码' }
+    return $true
+}
+
+Check '审计日志有体积上限' {
+    $p = Get-Content (Join-Path $Root 'src\Program.cs') -Raw
+    if ($p.IndexOf('TaskAuditTrim') -lt 0) { return '没有裁剪方法' }
+    if ($p.IndexOf('256 * 1024') -lt 0) { return '没有 256 KB 阈值' }
+    if ($p.IndexOf('64 * 1024') -lt 0) { return '没有 64 KB 保留量' }
+    return $true
+}
+
+Check '修复任务幂等，不清空运行历史' {
+    $r = Get-Content (Join-Path $Root 'src\Refresh.cs') -Raw
+    if ($r.IndexOf('ReregisterTask(bool force)') -lt 0) { return '签名没加 force' }
+    $m = [regex]::Match($r, '(?s)private static bool ReregisterTask\(bool force\).*?\n        \}')
+    if (-not $m.Success) { return '找不到方法体' }
+    $iShort = $m.Value.IndexOf('if (!force)')
+    $iDel = $m.Value.IndexOf('/delete /tn')
+    if ($iShort -lt 0) { return '没有 force 短路' }
+    if ($iDel -lt 0) { return '没有 delete 调用' }
+    if ($iShort -gt $iDel) { return 'force 短路排在 delete 之后，等于没生效' }
+    if ($r.IndexOf('ReregisterTask(false)') -lt 0) { return '修复入口没走幂等分支' }
+    if ($r.IndexOf('ReregisterTask(true)') -lt 0) { return '改时间入口没强制重建' }
+    return $true
+}
+
+Check '四个共享状态文件都有接管版本' {
+    $p = Get-Content (Join-Path $Root 'src\Program.cs') -Raw
+    foreach ($k in @('StatePathNow', 'CacheIndexPathNow', 'LockPathNow', 'FavIndexPathNow')) {
+        if ($p.IndexOf('internal static string ' + $k) -lt 0) { return ('缺 ' + $k) }
+    }
+    if ($p.IndexOf('takeover\state.json') -lt 0 -and $p.IndexOf('"state.json"') -lt 0) { return 'StatePathNow 没指向接管沙盒' }
+    if ($p.IndexOf('cache-index.json') -lt 0) { return 'CacheIndexPathNow 没指向 cache-index.json' }
+    if ($p.IndexOf('takeoverCached') -lt 0) { return '没有缓存变量' }
+    if ($p.IndexOf('GetLastWriteTimeUtc') -lt 0) { return '缓存没按 mtime 失效' }
+    return $true
+}
+
+Check 'UI 侧不再直接读裸静态路径' {
+    $files = @('Program.cs', 'Refresh.cs', 'Script.cs', 'Tray.cs', 'Info.cs', 'MenuState.cs')
+    $bad = @()
+    foreach ($f in $files) {
+        $path = Join-Path $Root ('src\' + $f)
+        if (-not (Test-Path $path)) { continue }
+        $c = Get-Content $path -Raw
+        foreach ($pat in @('ReadJson(statePath)', 'ReadJson(indexPath)', 'ReadJson(favIndexPath)', 'File.Exists(lockPath)', 'File.Exists(statePath)')) {
+            if ($c.IndexOf($pat) -ge 0) { $bad += ($f + ':' + $pat) }
+        }
+    }
+    if ($bad.Count -gt 0) { return ('还在直接用裸路径：' + ($bad -join ', ')) }
+    return $true
+}
+
+Check '回到今天在边界时给反馈' {
+    $s = Get-Content (Join-Path $Root 'src\Script.cs') -Raw
+    if ($s.IndexOf('code == 4') -lt 0) { return '没有 code==4 分支' }
+    if ($s.IndexOf('S.AlreadyToday') -lt 0) { return '没有 AlreadyToday 提示' }
+    $st = Get-Content (Join-Path $Root 'src\Strings.cs') -Raw
+    if ($st.IndexOf('AlreadyTodayHint') -lt 0) { return '没有提示文案' }
     return $true
 }
 

@@ -1,4 +1,4 @@
-﻿using System;
+﻿﻿﻿﻿﻿﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -19,9 +19,9 @@ using Microsoft.Win32;
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyConfiguration("Release")]
 [assembly: AssemblyCulture("")]
-[assembly: AssemblyVersion("3.6.73.0")]
-[assembly: AssemblyFileVersion("3.6.73.0")]
-[assembly: AssemblyInformationalVersion("3.6.73")]
+[assembly: AssemblyVersion("3.6.88.0")]
+[assembly: AssemblyFileVersion("3.6.88.0")]
+[assembly: AssemblyInformationalVersion("3.6.88")]
 [assembly: ComVisible(false)]
 
 namespace BingWallpaperLite
@@ -31,7 +31,7 @@ namespace BingWallpaperLite
         // ---------------------------------------------------------------- 常量
 
         internal const string AppName     = "必应壁纸编年史";
-        internal const string AppVersion  = "3.6.73";
+        internal const string AppVersion  = "3.6.88";
         private const string TaskName    = "BingWallpaperChronicle";
         private const string RunValue    = "BingWallpaperChronicle";
 
@@ -148,6 +148,115 @@ namespace BingWallpaperLite
             catch { return ""; }
         }
 
+        // ---- 接管感知的「当前生效」路径 ------------------------------------
+        // 脚本在接管下把这四个文件写在 takeover\ 沙盒里，UI 侧必须跟着走，
+        // 否则菜单标题、托盘提示、busy 判断、收藏判定全部读的是安装目录里的过期副本。
+
+        private static bool takeoverCached = false;
+        private static DateTime takeoverStampUtc = DateTime.MinValue;
+
+        /// <summary>按 takeover\config.json 的最后修改时间缓存，文件没变就不重复解析。</summary>
+        private static bool TakeoverCached()
+        {
+            try
+            {
+                string p = TakeoverCfgPath;
+                if (!File.Exists(p)) { return false; }
+                DateTime st = File.GetLastWriteTimeUtc(p);
+                if (st == takeoverStampUtc) { return takeoverCached; }
+                takeoverStampUtc = st;
+                takeoverCached = TakeoverActive();
+                return takeoverCached;
+            }
+            catch { return false; }
+        }
+
+        internal static string StatePathNow
+        {
+            get { return TakeoverCached() ? Path.Combine(TakeoverDirPath, "state.json") : statePath; }
+        }
+
+        internal static string CacheIndexPathNow
+        {
+            get { return TakeoverCached() ? Path.Combine(TakeoverDirPath, "cache-index.json") : indexPath; }
+        }
+
+        internal static string LockPathNow
+        {
+            get { return TakeoverCached() ? Path.Combine(TakeoverDirPath, @"cache\.running") : lockPath; }
+        }
+
+        internal static string FavIndexPathNow
+        {
+            get { return TakeoverCached() ? Path.Combine(TakeoverDirPath, @"favorites\index.json") : favIndexPath; }
+        }
+
+        /// <summary>打开当前接管图库目录（资源管理器）。未接管时什么都不做。</summary>
+        internal static void OpenTakeoverRoot()
+        {
+            try
+            {
+                string root = CurrentTakeoverRoot();
+                if (string.IsNullOrEmpty(root) || !Directory.Exists(root)) { return; }
+                System.Diagnostics.Process.Start("explorer.exe", "\"" + root + "\"");
+            }
+            catch { }
+        }
+
+        /// <summary>计划任务审计日志：不依赖脚本，哪怕 PowerShell 起不来也能留痕。</summary>
+        private static string TaskAuditPath
+        {
+            get { return Path.Combine(Path.GetTempPath(), "BingWallpaperLite.task.log"); }
+        }
+
+        /// <summary>自动换图失败标记：托盘下次启动时读它并提示一次。</summary>
+        private static string TaskFailPath
+        {
+            get { return Path.Combine(Path.GetTempPath(), "BingWallpaperLite.taskfail"); }
+        }
+
+        private static void TaskAudit(string phase, string detail)
+        {
+            try
+            {
+                string line = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "  " + phase + "  " + detail + "\r\n";
+                File.AppendAllText(TaskAuditPath, line, new UTF8Encoding(false));
+                TaskAuditTrim();
+            }
+            catch { }
+        }
+
+        /// <summary>超过 256 KB 就只留最后 64 KB，和脚本日志同一策略。</summary>
+        private static void TaskAuditTrim()
+        {
+            try
+            {
+                FileInfo fi = new FileInfo(TaskAuditPath);
+                if (!fi.Exists || fi.Length <= 256 * 1024) { return; }
+                string txt = File.ReadAllText(TaskAuditPath, Encoding.UTF8);
+                string tail = txt.Substring(Math.Max(0, txt.Length - 64 * 1024));
+                File.WriteAllText(TaskAuditPath, tail, new UTF8Encoding(false));
+            }
+            catch { }
+        }
+
+        /// <summary>上次自动换图失败就报一次，报完删标记。</summary>
+        private static void ReportLastTaskFailure()
+        {
+            try
+            {
+                string p = TaskFailPath;
+                if (!File.Exists(p)) { return; }
+                string txt = File.ReadAllText(p, Encoding.UTF8);
+                try { File.Delete(p); } catch { }
+                string[] parts = txt.Split('|');
+                string when = parts.Length > 0 ? parts[0] : "";
+                string code = parts.Length > 1 ? parts[1] : "?";
+                Balloon(S.TaskFailTitle, S.TaskFailBody(when, code));
+            }
+            catch { }
+        }
+
         /// <summary>接管生效中：配置存在且目录还在。</summary>
         internal static bool TakeoverActive()
         {
@@ -239,6 +348,13 @@ namespace BingWallpaperLite
                 string v = GetStr(ReadConfig(), key);
                 return string.IsNullOrEmpty(v) ? dflt : v;
             }
+            catch { return dflt; }
+        }
+
+        /// <summary>读一个整型配置；没有或解析失败就返回 dflt。</summary>
+        internal static int CfgInt(string key, int dflt)
+        {
+            try { return GetCfgInt(ReadConfig(), key, dflt); }
             catch { return dflt; }
         }
 
@@ -970,23 +1086,10 @@ namespace BingWallpaperLite
             ResolvePaths();
             InstallCrashGuards();
 
-            // 语言：config 的 uiLanguage 优先；auto 时按系统 UI 语言（中文→中文，其它→英文）
-            bool useEn = false;
-            try
-            {
-                Dictionary<string, object> c0 = ReadConfig();
-                string ui = (c0 != null && c0.ContainsKey("uiLanguage") && c0["uiLanguage"] != null)
-                    ? c0["uiLanguage"].ToString().Trim().ToLowerInvariant() : "auto";
-                if (ui == "en") { useEn = true; }
-                else if (ui == "zh") { useEn = false; }
-                else
-                {
-                    string lang = System.Globalization.CultureInfo.CurrentUICulture.TwoLetterISOLanguageName;
-                    useEn = !string.Equals(lang, "zh", StringComparison.OrdinalIgnoreCase);
-                }
-            }
-            catch { useEn = false; }
-            S.Init(useEn);
+            // 英文版暂时停用（2026-11-25）：界面统一走中文，不再看 config.uiLanguage 与系统语言。
+            // 恢复路径两处一起改：把这里换回「读 config.uiLanguage，auto 时按系统语言决定 useEn」，
+            // 再把 Strings.Init 里的 _en = false 改回 _en = en。
+            S.Init(false);
 
             string arg0 = args.Length > 0 ? args[0].ToLowerInvariant() : "";
 
@@ -1035,7 +1138,27 @@ namespace BingWallpaperLite
                 {
                     tail = string.Join(" ", args, 1, args.Length - 1);
                 }
-                int rc = RunScriptBlocking(tail);
+                // 审计日志：这是「到底跑没跑」的唯一证据。不写就永远只能猜。
+                Stopwatch swTask = Stopwatch.StartNew();
+                TaskAudit("start", "args=[" + (tail.Length > 0 ? tail : "(none)") + "]  pid="
+                                   + Process.GetCurrentProcess().Id
+                                   + "  exe=" + Application.ExecutablePath);
+                int rc = -1;
+                try { rc = RunScriptBlocking(tail); }
+                catch (Exception exRun) { TaskAudit("error", "抛出异常：" + exRun.Message); }
+                swTask.Stop();
+                TaskAudit("end", "rc=" + rc + "  took="
+                                 + (swTask.ElapsedMilliseconds / 1000.0).ToString("0.0") + "s");
+                if (rc != 0)
+                {
+                    try
+                    {
+                        File.WriteAllText(TaskFailPath,
+                            DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "|" + rc,
+                            new UTF8Encoding(false));
+                    }
+                    catch { }
+                }
                 Environment.Exit(rc);
             }
 
@@ -1093,7 +1216,10 @@ namespace BingWallpaperLite
                     tray.MouseUp += TrayMouseUp;           // 左键右键都弹菜单
                     tray.MouseDown += delegate { };        // 占位（保留绑定避免后续空引用）
 
-                    bool firstRun = !File.Exists(statePath);
+                    bool firstRun = !File.Exists(StatePathNow);
+
+                    // 上次自动换图如果失败过，这里是唯一能报出来的时机
+                    try { ReportLastTaskFailure(); } catch { }
 
                     try { RefreshAll(); } catch { }
                     try { DetectResolutionOnce(); } catch { }
@@ -1136,7 +1262,7 @@ namespace BingWallpaperLite
                     {
                         try
                         {
-                            bool running = File.Exists(lockPath);
+                            bool running = File.Exists(LockPathNow);
 
                             // 复位分两档：
                             //   锁已经没了还挂着 5 秒以上 → 脚本被强杀/被安全软件打断，立刻复位；

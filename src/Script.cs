@@ -292,6 +292,11 @@ namespace BingWallpaperLite
                     SetBusy(false);
                     RefreshAll();
 
+                    // code==4 = 「已经在边界」：图没变，但得让人知道点了有效果
+                    if (code == 4 && (opMode.Length == 0 || opMode == "today"))
+                    {
+                        Balloon(S.AlreadyToday, S.AlreadyTodayHint);
+                    }
                     if (code == 0 || code == 8)
                     {
                         if (opMode == "firstrun")
@@ -353,7 +358,7 @@ namespace BingWallpaperLite
                         }
                         else if (GetCfgBool(ReadConfig(), "notify", false))
                         {
-                            Dictionary<string, object> st = ReadJson(statePath);
+                            Dictionary<string, object> st = ReadJson(StatePathNow);
                             string ttl = GetStr(st, "title");
                             if (ttl.Length == 0) { ttl = S.FallbackTitle; }
                             if (GetCfgBool(ReadConfig(), "locked", false))

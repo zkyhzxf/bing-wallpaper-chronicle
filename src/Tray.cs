@@ -120,6 +120,8 @@ namespace BingWallpaperLite
             return it;
         }
 
+        // 菜单入口已合并成「立即清理缓存…」（填 1 天近似清空）。
+        // 这里留着是为了将来需要「整目录清空 + 回收站选择」时还能直接调，别当死代码删。
         private static void ConfirmCleanAll()
         {
             if (busy) { NotifyBusy(); return; }
@@ -155,6 +157,8 @@ namespace BingWallpaperLite
             }
         }
 
+        // 菜单入口已并进「立即清理」的红色勾选项（带二次确认）。
+        // 留着是为了将来需要单独一个「只清收藏」入口时直接调。
         private static void ConfirmCleanFavorites()
         {
             if (busy) { NotifyBusy(); return; }
@@ -172,7 +176,7 @@ namespace BingWallpaperLite
         {
             try
             {
-                Dictionary<string, object> st = ReadJson(statePath);
+                Dictionary<string, object> st = ReadJson(StatePathNow);
                 string date = GetStr(st, "date");
                 string title = GetStr(st, "title");
                 if (string.IsNullOrEmpty(title) && date.Length > 0) { title = LookupTitle(date); }

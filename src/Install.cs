@@ -130,6 +130,10 @@ namespace BingWallpaperLite
                     string xml = p.StandardOutput.ReadToEnd();
                     p.WaitForExit(10000);
                     if (p.ExitCode != 0) { return false; }
+                    // 任务的动作是「exe + --run」（见 BuildTaskXml）。老版本曾直接跑 ps1，
+                    // 两种形态都算指向这里 —— 只认 ps1 的话，改时间会永远报「修复失败」，
+                    // 而任务其实已经注册成功了。
+                    if (xml.IndexOf(Application.ExecutablePath, StringComparison.OrdinalIgnoreCase) >= 0) { return true; }
                     return xml.IndexOf(scriptPath, StringComparison.OrdinalIgnoreCase) >= 0;
                 }
             }

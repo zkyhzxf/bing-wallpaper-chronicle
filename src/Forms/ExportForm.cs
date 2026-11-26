@@ -130,7 +130,7 @@ namespace BingWallpaperLite
         {
             if (string.Equals(dir, Program.CacheDirPath, StringComparison.OrdinalIgnoreCase)) { return S.IsEn ? "Cache" : "缓存"; }
             if (string.Equals(dir, Program.FavDirPath, StringComparison.OrdinalIgnoreCase)) { return S.IsEn ? "Favorites" : "收藏"; }
-            return S.IsEn ? "Archived" : "历史归档";
+            return S.IsEn ? "Archived" : "我存下的图";
         }
 
         private static string DefaultDest()
