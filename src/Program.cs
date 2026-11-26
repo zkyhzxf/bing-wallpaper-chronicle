@@ -19,9 +19,9 @@ using Microsoft.Win32;
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyConfiguration("Release")]
 [assembly: AssemblyCulture("")]
-[assembly: AssemblyVersion("3.6.94.0")]
-[assembly: AssemblyFileVersion("3.6.94.0")]
-[assembly: AssemblyInformationalVersion("3.6.94")]
+[assembly: AssemblyVersion("3.6.95.0")]
+[assembly: AssemblyFileVersion("3.6.95.0")]
+[assembly: AssemblyInformationalVersion("3.6.95")]
 [assembly: ComVisible(false)]
 
 namespace BingWallpaperLite
@@ -31,7 +31,7 @@ namespace BingWallpaperLite
         // ---------------------------------------------------------------- 常量
 
         internal const string AppName     = "必应壁纸编年史";
-        internal const string AppVersion  = "3.6.94";
+        internal const string AppVersion  = "3.6.95";
         private const string TaskName    = "BingWallpaperChronicle";
         private const string RunValue    = "BingWallpaperChronicle";
 
@@ -1268,6 +1268,17 @@ namespace BingWallpaperLite
                     catch { }
                 }
                 Environment.Exit(rc);
+            }
+
+            if (arg0 == "--takeover" || arg0 == "/takeover")
+            {
+                Application.EnableVisualStyles();
+                Application.SetCompatibleTextRenderingDefault(false);
+                using (TakeoverForm f = new TakeoverForm())
+                {
+                    f.ShowDialog();
+                }
+                return;
             }
 
             if (arg0 == "--about" || arg0 == "/about")

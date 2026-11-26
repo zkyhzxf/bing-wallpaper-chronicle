@@ -2345,7 +2345,7 @@ Check '编年史窗口有今日与自动换图两行' {
     if ($s.IndexOf('lblToday') -lt 0) { return '没有今日那行' }
     if ($s.IndexOf('lblAuto') -lt 0) { return '没有自动换图那行' }
     if ($s.IndexOf('S.TkStatLine') -lt 0) { return '统计行没换成带跨度的' }
-    if ($s.IndexOf('S.TkMissingDays') -lt 0) { return '没有断档提示' }
+    if ($s.IndexOf('S.TkMissingFixable') -lt 0) { return '没有断档提示' }
     $st = Get-Content (Join-Path $Root 'src\Strings.cs') -Raw
     if ($st.IndexOf('TkTodayMissing') -lt 0) { return '没有未就位文案' }
     return $true
@@ -2522,6 +2522,35 @@ Check '开轮播自动关掉换图通知' {
     if ($body.IndexOf('"lastRotate"') -lt 0) { return '锚点也没写，可能改错地方了' }
     $m = Get-Content (Join-Path $Root 'src\Menu.cs') -Raw
     if ($m.IndexOf('S.RotateNotifOffHint') -lt 0) { return '关通知时没提示用户' }
+    return $true
+}
+
+Check '补齐缺失日期按真实范围走' {
+    $t = Get-Content (Join-Path $Root 'src\Forms\TakeoverForm.cs') -Raw
+    if ($t.IndexOf('to.AddYears(-3)') -ge 0 -and $t.IndexOf('fillFrom') -lt 0) {
+        return '还在用写死的「最近 3 年」'
+    }
+    if ($t.IndexOf('private DateTime fillFrom') -lt 0) { return '没有真实范围字段' }
+    if ($t.IndexOf('private int fillMissing') -lt 0) { return '没有可补数量' }
+    if ($t.IndexOf('private int fillUnfixable') -lt 0) { return '没有不可补数量' }
+    # 2016-03-05 是索引最早一天，两类缺口靠它分界
+    if ($t.IndexOf('"20160305"') -lt 0) { return '没有按索引覆盖范围区分缺口' }
+    $s = Get-Content (Join-Path $Root 'src\Strings.cs') -Raw
+    if ($s.IndexOf('TkMissingMixed') -lt 0) { return '没有「部分能补部分不能」的文案' }
+    if ($s.IndexOf('TkMissingNoIndex') -lt 0) { return '没有「索引没收录」的文案' }
+    if ($s.IndexOf('TkFillAsk(DateTime from, DateTime to, int missing)') -lt 0) {
+        return '确认框没带缺失数量'
+    }
+    # 按钮文字不能再自称「最近 3 年」
+    if ($s -match 'TkFillBtn\s*\{[^}]*最近 3 年') { return '按钮还写着最近 3 年' }
+    return $true
+}
+
+Check '接管窗口按钮不留空洞' {
+    $t = Get-Content (Join-Path $Root 'src\Forms\TakeoverForm.cs') -Raw
+    if ($t.IndexOf('btnExit.Left = 18') -lt 0) { return '接管时没把退出按钮左移补位' }
+    if ($t.IndexOf('btnImport.Left = 158') -lt 0) { return '接管时没把备份按钮左移' }
+    if ($t.IndexOf('private readonly Button btnImport;') -lt 0) { return 'btnImport 还是局部变量' }
     return $true
 }
 

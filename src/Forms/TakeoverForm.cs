@@ -19,8 +19,15 @@ namespace BingWallpaperLite
         private readonly Label lblMissing;
         private readonly Button btnPick;
         private readonly Button btnExit;
+        private readonly Button btnImport;
         private Button btnFill;
         private Button btnRefresh;
+        // 补齐用的真实范围与数量：RefreshState 算好，DoFill 直接用。
+        // 原来写死「最近 3 年」，那个数字和图库实际情况没关系 —— 缺的日期可能落在任何地方。
+        private DateTime fillFrom = DateTime.MinValue;
+        private DateTime fillTo = DateTime.MinValue;
+        private int fillMissing = 0;
+        private int fillUnfixable = 0;
 
         public TakeoverForm()
         {
@@ -80,25 +87,25 @@ namespace BingWallpaperLite
 
             btnPick = new Button();
             btnPick.Text = S.TkPick;
-            btnPick.SetBounds(18, 282, 160, 34);
+            btnPick.SetBounds(18, 282, 130, 34);
             btnPick.Click += delegate { DoPick(); };
             Controls.Add(btnPick);
 
             btnExit = new Button();
             btnExit.Text = S.TkExit;
-            btnExit.SetBounds(190, 282, 160, 34);
+            btnExit.SetBounds(158, 282, 130, 34);
             btnExit.Click += delegate { DoExit(); };
             Controls.Add(btnExit);
 
-            Button btnImport = new Button();
+            btnImport = new Button();
             btnImport.Text = S.TkImport;
-            btnImport.SetBounds(362, 282, 150, 34);
+            btnImport.SetBounds(298, 282, 140, 34);
             btnImport.Click += delegate { DoImport(); };
             Controls.Add(btnImport);
 
             Button btnClose = new Button();
             btnClose.Text = S.BtnClose;
-            btnClose.SetBounds(524, 282, 90, 34);
+            btnClose.SetBounds(512, 282, 90, 34);
             btnClose.Click += delegate { Close(); };
             Controls.Add(btnClose);
             AcceptButton = btnClose;
@@ -107,7 +114,7 @@ namespace BingWallpaperLite
             // 补齐缺失日期：只补图库里没有的那几天，已有的一张都不碰
             btnFill = new Button();
             btnFill.Text = S.TkFillBtn;
-            btnFill.SetBounds(18, 240, 220, 30);
+            btnFill.SetBounds(18, 240, 200, 30);
             btnFill.Click += delegate { DoFill(); };
             Controls.Add(btnFill);
 
@@ -118,9 +125,13 @@ namespace BingWallpaperLite
         private void DoFill()
         {
             if (!Program.TakeoverActive()) { return; }
-            DateTime to = DateTime.Today;
-            DateTime from = to.AddYears(-3);
-            if (MessageBox.Show(S.TkFillAsk(from, to), Program.AppName,
+            // 范围用 RefreshState 算出来的真实首日，不写死「最近 3 年」：
+            // 图库建了十几年，缺的那几天可能落在任何地方
+            DateTime to = fillTo == DateTime.MinValue ? DateTime.Today : fillTo;
+            DateTime from = fillFrom == DateTime.MinValue ? to.AddYears(-3) : fillFrom;
+            int missing = fillMissing > 0 ? fillMissing : 1;
+
+            if (MessageBox.Show(S.TkFillAsk(from, to, missing), Program.AppName,
                     MessageBoxButtons.OKCancel, MessageBoxIcon.Question) != DialogResult.OK)
             {
                 return;
@@ -197,8 +208,20 @@ namespace BingWallpaperLite
                                 {
                                     string k = d.ToString("yyyyMMdd");
                                     if (ds.Contains(k)) { continue; }
-                                    if (miss.Count < 3) { miss.Add(k.Substring(4, 2) + "-" + k.Substring(6, 2)); }
                                     missingN++;
+                                    // 2016-03-05 是全量索引的最早一天。比它更早的日期
+                                    // 必应索引本身就没有，想补也补不到 —— 两类要分开说，
+                                    // 否则点「补齐」会以为全都能补回来。
+                                    if (string.CompareOrdinal(k, "20160305") >= 0)
+                                    {
+                                        if (miss.Count < 3) { miss.Add(k.Substring(4, 2) + "-" + k.Substring(6, 2)); }
+                                        fillMissing++;
+                                        if (fillFrom == DateTime.MinValue || d.Date < fillFrom) { fillFrom = d.Date; }
+                                    }
+                                    else
+                                    {
+                                        fillUnfixable++;
+                                    }
                                 }
                                 missingSample = string.Join(" / ", miss.ToArray());
                             }
@@ -227,13 +250,32 @@ namespace BingWallpaperLite
                                                 mode == Program.WallModeRotate,
                                                 Program.RotateMinutes);
 
-                    lblMissing.Text = missingN > 0 ? S.TkMissingDays(missingN, missingSample) : "";
+                    if (fillMissing > 0 && fillUnfixable > 0)
+                    {
+                        lblMissing.Text = S.TkMissingMixed(fillMissing, fillUnfixable, missingSample);
+                    }
+                    else if (fillMissing > 0)
+                    {
+                        lblMissing.Text = S.TkMissingFixable(fillMissing, missingSample);
+                    }
+                    else if (fillUnfixable > 0)
+                    {
+                        lblMissing.Text = S.TkMissingNoIndex(fillUnfixable);
+                    }
+                    else
+                    {
+                        lblMissing.Text = "";
+                    }
+                    if (btnFill != null) { btnFill.Enabled = fillMissing > 0; }
 
                     // 统计时间附在目录那段末尾：窗口没开时看不到，开窗时一眼知道数据是新算的还是旧的
                     lblPath.Text = S.TkOnBody(root, n, days, latest, stale) +
                         "\r\n" + S.TkStatAt(DateTime.Now.ToString("HH:mm:ss"));
-                    // 接管中不给「换一个目录」：换库要么先把当前库退出，要么两边搅在一起
+                    // 接管中不给「换一个目录」：换库要么先把当前库退出，要么两边搅在一起。
+                    // 藏掉之后把后面两个按钮左移补位，不然左边留一个空洞。
                     if (btnPick != null) { btnPick.Visible = false; }
+                    btnExit.Left = 18;
+                    btnImport.Left = 158;
                     btnExit.Enabled = true;
                     if (btnFill != null) { btnFill.Enabled = true; }
                 }
@@ -244,7 +286,9 @@ namespace BingWallpaperLite
                     lblAuto.Text = "";
                     lblMissing.Text = "";
                     lblPath.Text = S.TkBrokenBody(root);
-                    if (btnPick != null) { btnPick.Visible = true; btnPick.Text = S.TkPick; }
+                    if (btnPick != null) { btnPick.Visible = true; btnPick.Text = S.TkPick; btnPick.Left = 18; }
+                    btnExit.Left = 158;
+                    btnImport.Left = 298;
                     btnExit.Enabled = true;
                 }
                 else
@@ -254,7 +298,9 @@ namespace BingWallpaperLite
                     lblAuto.Text = "";
                     lblMissing.Text = "";
                     lblPath.Text = S.TkTip;
-                    if (btnPick != null) { btnPick.Visible = true; btnPick.Text = S.TkPick; }
+                    if (btnPick != null) { btnPick.Visible = true; btnPick.Text = S.TkPick; btnPick.Left = 18; }
+                    btnExit.Left = 158;
+                    btnImport.Left = 298;
                     btnExit.Enabled = false;
                 }
                 if (btnFill != null) { btnFill.Enabled = active; }

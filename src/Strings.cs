@@ -592,15 +592,44 @@ namespace BingWallpaperLite
             string tpl = _en ? "counted at {0}" : "统计于 {0}";
             return string.Format(tpl, hm);
         }
-        public static string TkFillBtn  { get { return T("补齐缺失日期（最近 3 年）…", "Fill missing days (last 3 years)…"); } }
+        public static string TkFillBtn  { get { return T("补齐缺失日期…", "Fill missing days…"); } }
+        /// <summary>缺口里能补的部分（2016-03 之后，全量索引有收录）。</summary>
+        public static string TkMissingFixable(int n, string sample)
+        {
+            return _en ? ("Missing " + n + " day(s) (" + sample + ")")
+                       : ("图库缺 " + n + " 天（" + sample + "）");
+        }
+        /// <summary>两种缺口都有：能补的 + 索引本身没收录的，一句话说清。</summary>
+        public static string TkMissingMixed(int fixable, int unfixable, string sample)
+        {
+            if (_en)
+            {
+                return "Missing " + (fixable + unfixable) + " day(s): " + fixable +
+                       " recoverable (" + sample + "), " + unfixable + " before 2016-03 and not in Bing's index";
+            }
+            return "图库缺 " + (fixable + unfixable) + " 天：可补 " + fixable + " 天（" + sample +
+                   "），另有 " + unfixable + " 天在 2016 年 3 月前，索引没收录";
+        }
+        /// <summary>缺口里补不了的部分：2016 年 3 月之前，必应索引本身没收录这些日子。</summary>
+        public static string TkMissingNoIndex(int n)
+        {
+            return _en ? ("Another " + n + " day(s) fall before 2016-03 and are not in Bing's index — those cannot be recovered")
+                       : ("另有 " + n + " 天在 2016 年 3 月之前，必应索引本来就没收录，补不回来");
+        }
         public static string TkFilling  { get { return T("正在补齐，进度见日志…", "Filling — see the log for progress…"); } }
-        public static string TkFillAsk(DateTime from, DateTime to)
+        public static string TkFillAsk(DateTime from, DateTime to, int missing)
         {
             string a = from.ToString("yyyy-MM-dd");
             string b = to.ToString("yyyy-MM-dd");
-            return _en
-                ? ("Add every day between " + a + " and " + b + " that the library does not have yet.\r\nExisting days are skipped, nothing is overwritten. Roughly 2 seconds per image; close this window to stop.\r\n\r\nStart?")
-                : ("把 " + a + " ~ " + b + " 之间图库还没有的日期逐天补进来。\r\n已有的一张都不动、不覆盖；每张约 2 秒，关掉这个窗口就停。\r\n\r\n开始吗？");
+            if (_en)
+            {
+                return "The library is missing " + missing + " day(s) between " + a + " and " + b + ".\r\n" +
+                       "Each one gets downloaded from Bing and saved into the library; existing days are skipped, nothing is overwritten.\r\n" +
+                       "Roughly 2 seconds per image — closing this window stops it.\r\n\r\nStart?";
+            }
+            return "图库在 " + a + " ~ " + b + " 之间缺 " + missing + " 天。\r\n" +
+                   "会逐天去必应下载原图存进图库；已有的一张都不动、不覆盖。\r\n" +
+                   "每张大约 2 秒，关掉这个窗口就停。\r\n\r\n开始吗？";
         }
         /// <summary>菜单里的常驻模式标牌：接管时显示「编年史 · 目录名」。</summary>
         public static string ModeBadge(string name)
