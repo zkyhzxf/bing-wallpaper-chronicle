@@ -599,22 +599,43 @@ namespace BingWallpaperLite
             return _en ? ("Missing " + n + " day(s) (" + sample + ")")
                        : ("图库缺 " + n + " 天（" + sample + "）");
         }
-        /// <summary>两种缺口都有：能补的 + 索引本身没收录的，一句话说清。</summary>
+        /// <summary>两种缺口都有：能补的 + 取不到的，一句话说清。</summary>
         public static string TkMissingMixed(int fixable, int unfixable, string sample)
         {
             if (_en)
             {
                 return "Missing " + (fixable + unfixable) + " day(s): " + fixable +
-                       " recoverable (" + sample + "), " + unfixable + " before 2016-03 and not in Bing's index";
+                       " recoverable (" + sample + "), " + unfixable + " unavailable";
             }
             return "图库缺 " + (fixable + unfixable) + " 天：可补 " + fixable + " 天（" + sample +
-                   "），另有 " + unfixable + " 天原图已取不到";
+                   "），另有 " + unfixable + " 天取不到";
         }
-        /// <summary>缺口里补不了的部分：2016 年 3 月之前，必应索引本身没收录这些日子。</summary>
+        /// <summary>缺口里连官方记录都没有的那类：2016 年前的老图索引与全量索引都不含这一天。</summary>
         public static string TkMissingNoIndex(int n)
         {
-            return _en ? ("Another " + n + " day(s) are not in Bing's index nor in the mirror archive — the original cannot be fetched")
-                       : ("另有 " + n + " 天必应索引和镜像站存档里都没有，原图取不到");
+            return _en ? ("Another " + n + " day(s) never appeared in Bing's index — only an outside archive can supply them")
+                       : ("另有 " + n + " 天官方索引就没有这一天，只能另找源头");
+        }
+        /// <summary>
+        /// 取不到的缺口按来源拆开说：原图已从必应下架（索引有记录、文件没了），
+        /// 还是连官方索引都没收录。两类混成一句会让人以为都是同一回事。
+        /// </summary>
+        public static string TkMissingGone(int noFile, int noRecord)
+        {
+            if (noRecord <= 0) { return TkMissingGoneFile(noFile); }
+            if (noFile <= 0) { return TkMissingNoIndex(noRecord); }
+            if (_en)
+            {
+                return "Another " + (noFile + noRecord) + " day(s) unavailable: " + noFile +
+                       " deleted at source, " + noRecord + " never indexed";
+            }
+            return "另有 " + (noFile + noRecord) + " 天取不到：" + noFile + " 天下架、" + noRecord + " 天从未入索引";
+        }
+        /// <summary>只有「原图被必应下架」这一类。</summary>
+        public static string TkMissingGoneFile(int n)
+        {
+            return _en ? ("Another " + n + " day(s) were deleted at source — the mirror archive lacks them too")
+                       : ("另有 " + n + " 天原图已从必应下架，镜像站也没存");
         }
         public static string TkFilling  { get { return T("正在补齐，进度见日志…", "Filling — see the log for progress…"); } }
         public static string TkFillAsk(DateTime from, DateTime to, int missing)

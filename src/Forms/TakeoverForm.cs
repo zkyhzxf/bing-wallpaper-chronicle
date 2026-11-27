@@ -28,6 +28,39 @@ namespace BingWallpaperLite
         private DateTime fillTo = DateTime.MinValue;
         private int fillMissing = 0;
         private int fillUnfixable = 0;
+        // 取不到的缺口再分两类：索引里有记录但文件没了 / 索引里连记录都没有。
+        // 原来合成一句「索引和镜像站都没有」，对前者不准确 —— 记录明明是有的。
+        private int unfixNoFile = 0;
+        private int unfixNoRecord = 0;
+
+        // 官方索引收录了哪些日期。2016 年前的老图索引 2424 天 + 全量索引 3916 天，两个 json 一共 1.4 MB，
+        // 首次读约 60 ms，之后走静态缓存 —— 只在开窗时用一次，不值得拖慢别处。
+        private static System.Collections.Generic.HashSet<string> idxDates;
+        private static System.Collections.Generic.HashSet<string> IndexDates()
+        {
+            if (idxDates != null) { return idxDates; }
+            System.Collections.Generic.HashSet<string> set =
+                new System.Collections.Generic.HashSet<string>();
+            try
+            {
+                string dir = Program.ArchiveDirPath;
+                string[] names = new string[] { "all-index.json", "old-index.json" };
+                foreach (string nm in names)
+                {
+                    string p = System.IO.Path.Combine(dir, nm);
+                    if (!System.IO.File.Exists(p)) { continue; }
+                    string body = System.IO.File.ReadAllText(p);
+                    foreach (System.Text.RegularExpressions.Match m in
+                             System.Text.RegularExpressions.Regex.Matches(body, "\"d\":\"(\\d{8})\""))
+                    {
+                        set.Add(m.Groups[1].Value);
+                    }
+                }
+            }
+            catch { }
+            idxDates = set;
+            return set;
+        }
 
         public TakeoverForm()
         {
@@ -162,6 +195,8 @@ namespace BingWallpaperLite
             fillTo = DateTime.MinValue;
             fillMissing = 0;
             fillUnfixable = 0;
+            unfixNoFile = 0;
+            unfixNoRecord = 0;
 
             try
             {
@@ -229,6 +264,8 @@ namespace BingWallpaperLite
                                     else
                                     {
                                         fillUnfixable++;
+                                        if (IndexDates().Contains(k)) { unfixNoFile++; }
+                                        else { unfixNoRecord++; }
                                     }
                                 }
                                 missingSample = string.Join(" / ", miss.ToArray());
@@ -268,7 +305,7 @@ namespace BingWallpaperLite
                     }
                     else if (fillUnfixable > 0)
                     {
-                        lblMissing.Text = S.TkMissingNoIndex(fillUnfixable);
+                        lblMissing.Text = S.TkMissingGone(unfixNoFile, unfixNoRecord);
                     }
                     else
                     {
