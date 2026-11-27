@@ -80,6 +80,9 @@ namespace BingWallpaperLite
             pic.SizeMode = PictureBoxSizeMode.Zoom;
             pic.SetBounds(20, 20, ThumbW, ThumbH);
             pic.BorderStyle = BorderStyle.FixedSingle;
+            // 双击预览图不做任何事，但必须显式接住：不接的话事件会冒到窗口层，
+            // 而窗口此时可能正因为翻页重建位图，历史上这里崩过。
+            pic.DoubleClick += delegate { try { pic.Invalidate(); } catch { } };
             Controls.Add(pic);
             textLeft = 20 + ThumbW + 18;
             textWidth = 580 - ThumbW - 18;
@@ -494,11 +497,20 @@ namespace BingWallpaperLite
             curFile = file == null ? "" : file;
             if (btnLearn != null) { btnLearn.Enabled = curSearchUrl.Length > 0; }
             if (btnFolder != null) { btnFolder.Enabled = curFile.Length > 0; }
+            // 顺序不能反：先把新图挂上去，再释放旧图。
+            // 反过来写的话，Dispose 到赋值之间 pic.Image 指向的是一块已经释放的位图，
+            // 这期间只要有一次重绘（鼠标划过、窗口重画、双击都算），GDI+ 就会去读野指针。
             try
             {
-                if (thumb != null) { thumb.Dispose(); thumb = null; }
-                thumb = MakeThumb(file, ThumbW, ThumbH);
-                if (pic != null) { pic.Image = thumb; }
+                Bitmap fresh = null;
+                try { fresh = MakeThumb(file, ThumbW, ThumbH); } catch { }
+                Bitmap stale = thumb;
+                thumb = fresh;
+                if (pic != null) { pic.Image = fresh; pic.Invalidate(); }
+                if (stale != null && !ReferenceEquals(stale, fresh))
+                {
+                    try { stale.Dispose(); } catch { }
+                }
             }
             catch { }
 
@@ -568,7 +580,12 @@ namespace BingWallpaperLite
 
         protected override void Dispose(bool disposing)
         {
-            if (disposing && thumb != null) { thumb.Dispose(); }
+            // 同样先摘引用：控件销毁时还会走一次重绘，指向已释放位图就是崩溃点
+            if (disposing)
+            {
+                try { if (pic != null) { pic.Image = null; } } catch { }
+                if (thumb != null) { try { thumb.Dispose(); } catch { } thumb = null; }
+            }
             base.Dispose(disposing);
         }
     }
