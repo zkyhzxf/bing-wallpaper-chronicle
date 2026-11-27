@@ -289,9 +289,8 @@ namespace BingWallpaperLite
             ToolStripMenuItem searchItem = MakeItem(S.SearchMenu, delegate { DoSearch(); });
             searchItem.Name = "search";
             m.Items.Add(searchItem);
-            ToolStripMenuItem aiItem = MakeItem(S.AiMenu, delegate { DoAi(); });
-            aiItem.Name = "ai";
-            m.Items.Add(aiItem);
+            // 「命令行说明」不是高频操作，放一级菜单白占黄金位置；挪进系统子菜单，跟「关于」并排。
+            // Name 保持 "ai"，MenuState 的判定表按名字查。
 
 
 
@@ -546,6 +545,9 @@ namespace BingWallpaperLite
             sysMenu.DropDownItems.Add(MakeItem(S.HelpItem, delegate { ShowHelp(); }));
             sysMenu.DropDownItems.Add(new ToolStripSeparator());
             sysMenu.DropDownItems.Add(MakeItem(S.AboutItem + AppName, delegate { ShowAbout(); }));
+            ToolStripMenuItem aiItem = MakeItem(S.AiMenu, delegate { DoAi(); });
+            aiItem.Name = "ai";
+            sysMenu.DropDownItems.Add(aiItem);
             sysMenu.DropDownItems.Add(MakeItem(S.OpenLog, delegate { OpenTarget(logPath); }));
             sysMenu.DropDownItems.Add(new ToolStripSeparator());
             sysMenu.DropDownItems.Add(MakeItem(S.UninstallItem, delegate { DoUninstall(); }));

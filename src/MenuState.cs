@@ -61,7 +61,7 @@ namespace BingWallpaperLite
         private static readonly string[] MenuBusyBlocked = new string[]
         {
             "prev", "next", "today", "years", "library", "randompick",
-            "pickdate", "festival", "search", "ai", "clean", "archive"
+            "pickdate", "festival", "search", "clean", "archive"
         };
 
         /// <summary>最近一次 RefreshAll 算出的 gate；Opening 直接用缓存，不做 IO。</summary>
@@ -187,7 +187,7 @@ namespace BingWallpaperLite
             // busy 时：会起脚本的重活必须挡
             string[] mustBlock = new string[] {
                 "prev", "next", "today", "years", "library", "randompick",
-                "pickdate", "festival", "search", "ai", "clean", "archive"
+                "pickdate", "festival", "search", "clean", "archive"
             };
             for (int i = 0; i < mustBlock.Length; i++)
             {

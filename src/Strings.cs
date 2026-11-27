@@ -114,7 +114,7 @@ namespace BingWallpaperLite
         public static string IndexOkHint      { get { return T("关键词搜索会用到最新数据", "Keyword search now uses the latest data"); } }
         public static string UpdateTimeMenu   { get { return T("更新时间", "Update time"); } }
         public static string SearchMenu       { get { return T("按关键词找…", "Search by keyword…"); } }
-        public static string AiMenu           { get { return T("AI 调用…", "AI access…"); } }
+        public static string AiMenu           { get { return T("命令行说明（给 AI 用）…", "Command line (for AI)…"); } }
 
         public static string SrchTitle        { get { return T(" · 按关键词找壁纸", " · Search wallpapers"); } }
         public static string SrchLabel        { get { return T("关键词（空格分隔，可多个）：", "Keywords (space-separated):"); } }
@@ -133,8 +133,8 @@ namespace BingWallpaperLite
         public static string SrchIndexRefresh { get { return T("正在刷新索引…", "Refreshing index…"); } }
         public static string SrchIndexDone    { get { return T("索引已刷新", "Index refreshed"); } }
 
-        public static string AiTitle          { get { return T(" · AI 调用", " · AI access"); } }
-        public static string AiIntro          { get { return T("命令行接口可被任何 AI 助手直接调用。\r\n把下面这段复制给你的 AI，再把需求写在最后一行：", "The CLI can be driven by any AI assistant.\r\nCopy the block below to your AI, then append your request as the last line:"); } }
+        public static string AiTitle          { get { return T(" · 命令行说明", " · Command line"); } }
+        public static string AiIntro          { get { return T("这个软件的所有操作都走一个 PowerShell 脚本，参数固定、可脚本化。\r\n如果你的助手能执行本地命令，把下面这段连同一句需求贴给它；不能执行的话，这里当参数手册看也行：", "Every operation goes through one PowerShell script with fixed parameters.\r\nIf your assistant can run local commands, paste the block below with your request; otherwise read it as a parameter reference:"); } }
         public static string AiCopyPath       { get { return T("复制路径", "Copy path"); } }
         public static string AiCopyCmds       { get { return T("复制命令示例", "Copy examples"); } }
         public static string AiCopyPrompt     { get { return T("复制给 AI 的说明", "Copy AI prompt"); } }
@@ -1102,19 +1102,21 @@ namespace BingWallpaperLite
                 sb.AppendLine("  -Use \"path\"         use a local file");
                 sb.AppendLine("  -Favorite           favorite the current image");
                 sb.AppendLine("  -Unfavorite         unfavorite it");
-                sb.AppendLine("  -Query \"keyword\"    search and list matches");
+                sb.AppendLine("  -Query \"keyword\"    search and list matches (does not switch)");
+                sb.AppendLine("  -Search \"keyword\"   search and switch to the first match");
                 sb.AppendLine("  -Status             current state (JSON)");
                 sb.AppendLine("  -Json               return structured output for any command");
                 sb.AppendLine("  -DryRun             show what would happen");
                 sb.AppendLine();
                 sb.AppendLine("Add -Json after a switch to see which image was applied.");
-                sb.AppendLine("  -Search \"keyword\"   search and switch to the first match");
                 sb.AppendLine();
                 sb.AppendLine("About search:");
                 sb.AppendLine("  · Keywords are space-separated and matched literally against title + copyright");
                 sb.AppendLine("  · Chinese word segmentation is your job — expand 「雪山」 into \"雪 山 冰川 雪峰\"");
                 sb.AppendLine("  · Use -Query first to inspect results, then -Date to switch");
                 sb.AppendLine("  · Dates before 2019 have no UHD; 1080p or a mirror copy is expected, not an error");
+                sb.AppendLine("  · Six days are missing: 20091026 / 20101201 / 20121009 were deleted at source,");
+                sb.AppendLine("    20100416 / 20100417 / 20120814 never appeared in Bing's index");
                 sb.AppendLine();
                 sb.AppendLine("My request: write what you want here.");
                 return sb.ToString();
@@ -1134,19 +1136,21 @@ namespace BingWallpaperLite
             sb.AppendLine(@"  -Use ""路径""         用本地图片");
             sb.AppendLine(@"  -Favorite           收藏当前");
             sb.AppendLine(@"  -Unfavorite         取消收藏");
-            sb.AppendLine(@"  -Query ""关键词""     搜索并列出匹配项");
+            sb.AppendLine(@"  -Query ""关键词""     搜索并列出匹配项（不改图）");
+            sb.AppendLine(@"  -Search ""关键词""    搜索并换第一张匹配的");
             sb.AppendLine(@"  -Status             查当前状态（返回 JSON）");
             sb.AppendLine(@"  -Json               加在任何命令后，返回结构化结果");
             sb.AppendLine(@"  -DryRun             只演示不执行");
             sb.AppendLine();
             sb.AppendLine(@"换图后加 -Json 就知道换成了哪张。");
-            sb.AppendLine(@"  -Search ""关键词""    搜索并换第一张匹配的");
             sb.AppendLine();
             sb.AppendLine(@"搜索说明：");
             sb.AppendLine(@"  · 关键词用空格分隔，脚本做字面匹配（标题 + 版权）");
             sb.AppendLine(@"  · 中文分词要靠你自己扩词，比如「雪山」要拆成 ""雪 山 冰川 雪峰""");
             sb.AppendLine(@"  · 先用 -Query 看结果，挑好了再用 -Date 换");
             sb.AppendLine(@"  · 2019 年前的日期没有 UHD，拿到的是 1080p 或镜像档，不是出错");
+            sb.AppendLine(@"  · 图库缺 6 天：20091026 / 20101201 / 20121009 原图已从必应下架，");
+            sb.AppendLine(@"    20100416 / 20100417 / 20120814 官方索引从未收录，这六天换不出来");
             sb.AppendLine();
             sb.AppendLine(@"我的需求：在这里写你要什么。");
             return sb.ToString();
