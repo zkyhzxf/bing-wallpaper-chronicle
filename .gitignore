@@ -12,6 +12,7 @@ pinned.json
 BingWallpaperLite.exe
 *.exe
 *.zip
+!patch/*.zip
 
 # 日志
 *.log

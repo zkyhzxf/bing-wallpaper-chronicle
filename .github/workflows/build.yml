@@ -160,4 +160,5 @@ jobs:
           body_path: release-body.md
           files: |
             dist/BingWallpaperChronicle-${{ github.ref_name }}-Setup.exe
+            patch/*.zip
 
